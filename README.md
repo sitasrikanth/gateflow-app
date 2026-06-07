@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # gateflow
 
 A new Flutter project.
@@ -15,3 +16,7 @@ A few resources to get you started if this is your first Flutter project:
 For help getting started with Flutter development, view the
 [online documentation](https://docs.flutter.dev/), which offers tutorials,
 samples, guidance on mobile development, and a full API reference.
+=======
+# gateflow-app
+GateFlow - Community Management App for Gated Societies
+>>>>>>> 4f20d407bdbba5af51290760e56869b0258518b1
