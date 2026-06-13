@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'profile_setup_screen.dart';
+import '../../main.dart';
 
 class OtpScreen extends StatefulWidget {
   final String verificationId;
@@ -42,13 +44,30 @@ class _OtpScreenState extends State<OtpScreen> {
         verificationId: widget.verificationId,
         smsCode: _otpCode,
       );
-      await FirebaseAuth.instance.signInWithCredential(credential);
+      final userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
+      final uid = userCredential.user!.uid;
+
+      // Check if profile already exists in Firestore
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get();
 
       if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const ProfileSetupScreen()),
-        );
+        if (userDoc.exists) {
+          // Profile exists → go to home based on role
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (_) => const AuthWrapper()),
+            (route) => false,
+          );
+        } else {
+          // New user → go to profile setup
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const ProfileSetupScreen()),
+          );
+        }
       }
     } on FirebaseAuthException catch (e) {
       setState(() {

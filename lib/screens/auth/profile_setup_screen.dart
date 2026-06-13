@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'login_screen.dart';
-import '../guard/guard_home_screen.dart';
+import '../../main.dart';
 
 class ProfileSetupScreen extends StatefulWidget {
   const ProfileSetupScreen({super.key});
@@ -58,10 +58,10 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
             backgroundColor: Color(0xFF1A73E8),
           ),
         );
-        // Navigate to home (placeholder for now)
+        // Navigate to AuthWrapper — it will route based on role
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(builder: (_) => const GuardHomeScreen()),
+          MaterialPageRoute(builder: (_) => const AuthWrapper()),
           (route) => false,
         );
       }
