@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'login_screen.dart';
 
 class ProfileSetupScreen extends StatefulWidget {
   const ProfileSetupScreen({super.key});
@@ -66,7 +67,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     } catch (e) {
       setState(() {
         _isLoading = false;
-        _errorMessage = 'Failed to save profile. Please try again.';
+        _errorMessage = e.toString();
       });
     }
   }
@@ -204,7 +205,6 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   }
 }
 
-// Temporary Home Screen placeholder
 class HomeScreen extends StatelessWidget {
   final String role;
   const HomeScreen({super.key, required this.role});
@@ -224,6 +224,23 @@ class HomeScreen extends StatelessWidget {
             const SizedBox(height: 8),
             Text('Logged in as $role',
                 style: const TextStyle(fontSize: 16, color: Colors.white70)),
+            const SizedBox(height: 48),
+            ElevatedButton.icon(
+              onPressed: () async {
+                await FirebaseAuth.instance.signOut();
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  (route) => false,
+                );
+              },
+              icon: const Icon(Icons.logout),
+              label: const Text('Sign Out'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: const Color(0xFF1A73E8),
+              ),
+            ),
           ],
         ),
       ),
