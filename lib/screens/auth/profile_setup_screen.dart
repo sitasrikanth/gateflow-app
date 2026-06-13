@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'login_screen.dart';
+import '../guard/guard_home_screen.dart';
 
 class ProfileSetupScreen extends StatefulWidget {
   const ProfileSetupScreen({super.key});
@@ -60,7 +61,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
         // Navigate to home (placeholder for now)
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(builder: (_) => const HomeScreen(role: 'resident')),
+          MaterialPageRoute(builder: (_) => const GuardHomeScreen()),
           (route) => false,
         );
       }
