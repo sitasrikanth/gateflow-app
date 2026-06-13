@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "862953136740",
+    "project_id": "gateflow-ss",
+    "storage_bucket": "gateflow-ss.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:862953136740:android:8483d020de370fc7ab7571",
+        "android_client_info": {
+          "package_name": "com.example.gateflow"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAe0suPxQiOAsjBv8ZxggWB9a1A3Iya_jU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
