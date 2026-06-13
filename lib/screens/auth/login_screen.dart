@@ -28,6 +28,7 @@ class _LoginScreenState extends State<LoginScreen> {
       _errorMessage = '';
     });
 
+    await FirebaseAuth.instance.setSettings(appVerificationDisabledForTesting: true);
     await FirebaseAuth.instance.verifyPhoneNumber(
       phoneNumber: '+91$phone',
       timeout: const Duration(seconds: 60),
