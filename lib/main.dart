@@ -2,14 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'firebase_options.dart';
 import 'screens/auth/login_screen.dart';
+import 'screens/auth/pin_entry_screen.dart';
+import 'screens/auth/pin_setup_screen.dart';
+import 'screens/auth/pending_approval_screen.dart';
 import 'screens/guard/guard_home_screen.dart';
 import 'screens/resident/resident_home_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  // Reset session flags on every app launch — forces PIN/code entry each time
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setBool('pin_verified_session', false);
+
   runApp(const MyApp());
 }
 
@@ -38,48 +47,130 @@ class AuthWrapper extends StatelessWidget {
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
-        // Still loading
+        // Loading
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            backgroundColor: Color(0xFF1A73E8),
-            body: Center(
-                child: CircularProgressIndicator(color: Colors.white)),
-          );
+          return const _LoadingScreen();
         }
 
-        // Not logged in
+        // Not logged in → Login screen
         if (!snapshot.hasData) {
           return const LoginScreen();
         }
 
-        // Logged in — check role in Firestore
-        return FutureBuilder<DocumentSnapshot>(
-          future: FirebaseFirestore.instance
-              .collection('users')
-              .doc(snapshot.data!.uid)
-              .get(),
+        // Logged in → check profile + PIN
+        return FutureBuilder<_UserState>(
+          future: _getUserState(snapshot.data!.uid),
           builder: (context, userSnap) {
             if (userSnap.connectionState == ConnectionState.waiting) {
-              return const Scaffold(
-                backgroundColor: Color(0xFF1A73E8),
-                body: Center(
-                    child: CircularProgressIndicator(color: Colors.white)),
-              );
+              return const _LoadingScreen();
             }
 
-            final role = userSnap.data?.get('role') ?? 'resident';
+            final state = userSnap.data;
+            if (state == null) return const LoginScreen();
 
-            if (role == 'guard') {
-              return const GuardHomeScreen();
-            } else if (role == 'admin') {
-              // Admin panel coming soon
-              return const GuardHomeScreen();
-            } else {
-              return const ResidentHomeScreen();
+            // No profile yet → handled by OTP screen
+            if (!state.profileExists) return const LoginScreen();
+
+            // Resident pending approval
+            if (state.status == 'pending') {
+              return const PendingApprovalScreen();
             }
+
+            // Inactive account
+            if (state.status == 'inactive') {
+              return const PendingApprovalScreen();
+            }
+
+            // PIN not set → set PIN first
+            if (!state.pinSet) {
+              return const PinSetupScreen();
+            }
+
+            // PIN set but needs entry → PIN entry screen
+            if (!state.pinVerifiedThisSession) {
+              return const PinEntryScreen();
+            }
+
+            // All good → route by role
+            if (state.role == 'guard') return const GuardHomeScreen();
+            if (state.role == 'admin') return const GuardHomeScreen(); // Admin panel coming soon
+            return const ResidentHomeScreen();
           },
         );
       },
+    );
+  }
+}
+
+Future<_UserState> _getUserState(String uid) async {
+  final prefs = await SharedPreferences.getInstance();
+  final savedPin = prefs.getString('user_pin') ?? '';
+  final pinVerified = prefs.getBool('pin_verified_session') ?? false;
+  final pinSet = savedPin.isNotEmpty;
+  final isGuardSession = prefs.getBool('is_guard_session') ?? false;
+
+  // Guard session — no Firebase Auth needed
+  if (isGuardSession) {
+    return _UserState(
+      profileExists: true,
+      role: 'guard',
+      status: 'active',
+      pinSet: true,
+      pinVerifiedThisSession: pinVerified,
+      isGuardSession: true,
+    );
+  }
+
+  final userDoc = await FirebaseFirestore.instance
+      .collection('users')
+      .doc(uid)
+      .get();
+
+  if (!userDoc.exists) {
+    return _UserState(profileExists: false);
+  }
+
+  final data = userDoc.data()!;
+  final role = data['role'] ?? 'resident';
+  final status = data['status'] ?? 'active';
+
+  return _UserState(
+    profileExists: true,
+    role: role,
+    status: status,
+    pinSet: pinSet,
+    pinVerifiedThisSession: pinVerified,
+  );
+}
+
+class _UserState {
+  final bool profileExists;
+  final String role;
+  final String status;
+  final bool pinSet;
+  final bool pinVerifiedThisSession;
+  final bool isGuardSession;
+
+  _UserState({
+    this.profileExists = false,
+    this.role = 'resident',
+    this.status = 'active',
+    this.pinSet = false,
+    this.pinVerifiedThisSession = false,
+    this.isGuardSession = false,
+  });
+}
+
+class _LoadingScreen extends StatelessWidget {
+  const _LoadingScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      backgroundColor: Color(0xFF1A73E8),
+      body: Center(
+        child: CircularProgressIndicator(color: Colors.white),
+      ),
     );
   }
 }

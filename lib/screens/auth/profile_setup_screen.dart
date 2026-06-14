@@ -42,12 +42,21 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
 
     try {
       final user = FirebaseAuth.instance.currentUser!;
+
+      // Residents need admin approval, admins are auto-approved
+      final status = _selectedRole == 'resident' ? 'pending' : 'active';
+      final permissions = _selectedRole == 'admin'
+          ? ['admin-resident', 'admin-guard', 'admin-notice', 'admin-complaint']
+          : [];
+
       await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
         'name': _nameController.text.trim(),
         'phone': user.phoneNumber,
         'flatNumber': _flatController.text.trim(),
         'tower': _towerController.text.trim(),
         'role': _selectedRole,
+        'status': status,
+        'permissions': permissions,
         'createdAt': FieldValue.serverTimestamp(),
       });
 
