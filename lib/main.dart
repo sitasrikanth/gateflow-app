@@ -10,6 +10,7 @@ import 'screens/auth/pin_setup_screen.dart';
 import 'screens/auth/pending_approval_screen.dart';
 import 'screens/guard/guard_home_screen.dart';
 import 'screens/resident/resident_home_screen.dart';
+import 'screens/admin/admin_home_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -86,7 +87,7 @@ class AuthWrapper extends StatelessWidget {
 
         // Route by role
         if (state.role == 'guard') return const GuardHomeScreen();
-        if (state.role == 'admin') return const GuardHomeScreen(); // Admin panel coming soon
+        if (state.role == 'admin') return const AdminHomeScreen();
         return const ResidentHomeScreen();
       },
     );
