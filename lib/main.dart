@@ -44,65 +44,56 @@ class AuthWrapper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
-      builder: (context, snapshot) {
-        // Loading
-        if (snapshot.connectionState == ConnectionState.waiting) {
+    // Always check full user state (handles guard sessions + Firebase Auth)
+    return FutureBuilder<_UserState>(
+      future: _getUserState(FirebaseAuth.instance.currentUser?.uid),
+      builder: (context, userSnap) {
+        if (userSnap.connectionState == ConnectionState.waiting) {
           return const _LoadingScreen();
         }
 
-        // Not logged in → Login screen
-        if (!snapshot.hasData) {
+        final state = userSnap.data;
+        if (state == null) return const LoginScreen();
+
+        // Guard session (no Firebase Auth needed)
+        if (state.isGuardSession) {
+          if (!state.pinVerifiedThisSession) return const LoginScreen();
+          return const GuardHomeScreen();
+        }
+
+        // Not logged in via Firebase Auth
+        if (FirebaseAuth.instance.currentUser == null) {
           return const LoginScreen();
         }
 
-        // Logged in → check profile + PIN
-        return FutureBuilder<_UserState>(
-          future: _getUserState(snapshot.data!.uid),
-          builder: (context, userSnap) {
-            if (userSnap.connectionState == ConnectionState.waiting) {
-              return const _LoadingScreen();
-            }
+        // No profile yet
+        if (!state.profileExists) return const LoginScreen();
 
-            final state = userSnap.data;
-            if (state == null) return const LoginScreen();
+        // Resident pending approval
+        if (state.status == 'pending' || state.status == 'inactive') {
+          return const PendingApprovalScreen();
+        }
 
-            // No profile yet → handled by OTP screen
-            if (!state.profileExists) return const LoginScreen();
+        // PIN not set → set PIN first
+        if (!state.pinSet) {
+          return const PinSetupScreen();
+        }
 
-            // Resident pending approval
-            if (state.status == 'pending') {
-              return const PendingApprovalScreen();
-            }
+        // PIN set but not verified this session
+        if (!state.pinVerifiedThisSession) {
+          return const PinEntryScreen();
+        }
 
-            // Inactive account
-            if (state.status == 'inactive') {
-              return const PendingApprovalScreen();
-            }
-
-            // PIN not set → set PIN first
-            if (!state.pinSet) {
-              return const PinSetupScreen();
-            }
-
-            // PIN set but needs entry → PIN entry screen
-            if (!state.pinVerifiedThisSession) {
-              return const PinEntryScreen();
-            }
-
-            // All good → route by role
-            if (state.role == 'guard') return const GuardHomeScreen();
-            if (state.role == 'admin') return const GuardHomeScreen(); // Admin panel coming soon
-            return const ResidentHomeScreen();
-          },
-        );
+        // Route by role
+        if (state.role == 'guard') return const GuardHomeScreen();
+        if (state.role == 'admin') return const GuardHomeScreen(); // Admin panel coming soon
+        return const ResidentHomeScreen();
       },
     );
   }
 }
 
-Future<_UserState> _getUserState(String uid) async {
+Future<_UserState> _getUserState(String? uid) async {
   final prefs = await SharedPreferences.getInstance();
   final savedPin = prefs.getString('user_pin') ?? '';
   final pinVerified = prefs.getBool('pin_verified_session') ?? false;
@@ -120,6 +111,8 @@ Future<_UserState> _getUserState(String uid) async {
       isGuardSession: true,
     );
   }
+
+  if (uid == null) return _UserState(profileExists: false);
 
   final userDoc = await FirebaseFirestore.instance
       .collection('users')

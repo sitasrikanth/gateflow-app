@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 class NewVisitorScreen extends StatefulWidget {
-  const NewVisitorScreen({super.key});
+  final String guardId;
+  const NewVisitorScreen({super.key, required this.guardId});
 
   @override
   State<NewVisitorScreen> createState() => _NewVisitorScreenState();
@@ -42,7 +42,6 @@ class _NewVisitorScreenState extends State<NewVisitorScreen> {
     });
 
     try {
-      final guard = FirebaseAuth.instance.currentUser;
       await FirebaseFirestore.instance.collection('visitors').add({
         'visitorName': _nameController.text.trim(),
         'flatNumber': _flatController.text.trim(),
@@ -50,7 +49,7 @@ class _NewVisitorScreenState extends State<NewVisitorScreen> {
         'purpose': _selectedPurpose,
         'entryTime': DateTime.now().toIso8601String(),
         'status': 'entered',
-        'loggedBy': guard?.uid ?? 'unknown',
+        'loggedBy': widget.guardId,
       });
 
       if (mounted) {
@@ -213,8 +212,8 @@ class _NewVisitorScreenState extends State<NewVisitorScreen> {
                     ? const SizedBox(
                         width: 20,
                         height: 20,
-                        child:
-                            CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                        child: CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2),
                       )
                     : const Icon(Icons.check, color: Colors.white),
                 label: Text(
