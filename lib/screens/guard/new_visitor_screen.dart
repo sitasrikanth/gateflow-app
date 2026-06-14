@@ -48,7 +48,7 @@ class _NewVisitorScreenState extends State<NewVisitorScreen> {
         'visitorPhone': _phoneController.text.trim(),
         'purpose': _selectedPurpose,
         'entryTime': DateTime.now().toIso8601String(),
-        'status': 'entered',
+        'status': 'pending',
         'loggedBy': widget.guardId,
       });
 

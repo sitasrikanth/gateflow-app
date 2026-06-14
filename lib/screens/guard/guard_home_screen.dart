@@ -535,10 +535,17 @@ class _GuardHomeScreenState extends State<GuardHomeScreen> {
                                 fontWeight: FontWeight.bold)),
                         subtitle: Text(
                             'Flat ${data['flatNumber'] ?? ''} • ${data['purpose'] ?? ''}'),
-                        trailing: Text(
-                          displayTime,
-                          style: TextStyle(
-                              color: Colors.grey.shade500, fontSize: 12),
+                        trailing: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(displayTime,
+                                style: TextStyle(
+                                    color: Colors.grey.shade500,
+                                    fontSize: 11)),
+                            const SizedBox(height: 4),
+                            _StatusBadge(status: data['status'] ?? 'pending'),
+                          ],
                         ),
                       ),
                     );
@@ -568,6 +575,44 @@ class _GuardHomeScreenState extends State<GuardHomeScreen> {
                       color: Colors.white, fontWeight: FontWeight.bold)),
             )
           : null,
+    );
+  }
+}
+
+class _StatusBadge extends StatelessWidget {
+  final String status;
+  const _StatusBadge({required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    Color color;
+    String label;
+    switch (status) {
+      case 'approved':
+        color = Colors.green;
+        label = '✅ Approved';
+        break;
+      case 'denied':
+        color = Colors.red;
+        label = '❌ Denied';
+        break;
+      case 'entered':
+        color = Colors.blue;
+        label = '🟢 Entered';
+        break;
+      default:
+        color = Colors.orange;
+        label = '⏳ Pending';
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(label,
+          style: TextStyle(
+              color: color, fontSize: 10, fontWeight: FontWeight.w600)),
     );
   }
 }
