@@ -134,20 +134,93 @@ Phase 4 — Testing & Launch       ░░░░░░░░░░░░  Week 9�
 
 ---
 
-### ✅ WEEK 5 — Notice Board + Complaints (Resident)
+### 🔜 WEEK 5 — Pre-approved Guest OTP + FCM Notifications
 **Status:** 🔲 Not Started  
-**Dates:** 2026-06-27 → 2026-07-03  
-**Theme:** Communication and complaints
+**Dates:** Next session  
+**Theme:** Smart entry + background notifications
+
+| Task | Status | Notes |
+|------|--------|-------|
+| Pre-approve guest screen (resident) | 🔲 | Enter guest name + expiry → generate 6-digit OTP |
+| Store pre-approval in Firestore /preapprovals | 🔲 | flatNumber, guestName, otp, expiresAt, status |
+| Guard verifies OTP on visitor entry | 🔲 | OTP field in new visitor form |
+| Auto-approve if OTP matches | 🔲 | status → 'approved' instantly |
+| FCM push notifications setup | 🔲 | Background alerts when app is closed |
+| FCM token saved on login | 🔲 | users/{uid}.fcmToken |
+| Notify resident when guard logs visitor | 🔲 | Cloud Function or direct FCM |
+
+**Success Criteria:**
+- [ ] Resident generates OTP in under 10 seconds
+- [ ] Guard verifies OTP and entry auto-approved
+- [ ] Resident gets push notification even when app is closed
+
+**Blockers:** None yet  
+**Notes:** —
+
+---
+
+### 🔜 WEEK 6 — Emergency SOS + Parking Management
+**Status:** 🔲 Not Started  
+**Dates:** TBD  
+**Theme:** Safety features
+
+| Task | Status | Notes |
+|------|--------|-------|
+| Emergency SOS button in resident app | 🔲 | Big red panic button on home screen |
+| SOS alert → guard home screen instantly | 🔲 | Firestore real-time alert with flat + name |
+| SOS history log (admin view) | 🔲 | All SOS events with timestamp |
+| Visitor parking entry (guard logs) | 🔲 | Vehicle number, parking slot |
+| Parking vacancy tracker | 🔲 | Available slots count |
+| Parking approval by resident | 🔲 | Resident approves visitor parking |
+
+**Success Criteria:**
+- [ ] SOS reaches guard in under 2 seconds
+- [ ] Guard sees resident flat + name on SOS alert
+- [ ] Parking entry logged in under 20 seconds
+
+**Blockers:** None yet  
+**Notes:** —
+
+---
+
+### 🔜 WEEK 7 — Guard Patrol + Staff Tracking + Overstay Alerts
+**Status:** 🔲 Not Started  
+**Dates:** TBD  
+**Theme:** Advanced guard features
+
+| Task | Status | Notes |
+|------|--------|-------|
+| Guard patrol tracking (QR checkpoints) | 🔲 | QR scan at each checkpoint during night rounds |
+| Patrol log (admin view) | 🔲 | Time + location of each checkpoint scan |
+| Staff/Domestic Help entry form | 🔲 | Name, role, flat, attendance mark |
+| Staff regular schedule tracking | 🔲 | Expected arrival/departure times |
+| Overstay alert | 🔲 | Auto-alert if visitor stays > X hours |
+| Move-in/Move-out controls | 🔲 | Admin approval required for large moves |
+| Vehicle entry log | 🔲 | Plate number, vehicle type, flat |
+
+**Success Criteria:**
+- [ ] Patrol QR scan logs in under 5 seconds
+- [ ] Overstay alert fires automatically
+- [ ] Staff attendance tracked daily
+
+**Blockers:** None yet  
+**Notes:** —
+
+---
+
+### 🔜 WEEK 8 — Notice Board + Complaints
+**Status:** 🔲 Not Started  
+**Dates:** TBD  
+**Theme:** Community communication
 
 | Task | Status | Notes |
 |------|--------|-------|
 | Build Notice list screen | 🔲 | Category tabs, unread dot |
 | Build Notice detail screen | 🔲 | Full text, timestamp |
-| Mark notice as read (Firestore update) | 🔲 | |
+| Admin posts notice → all residents notified | 🔲 | FCM broadcast |
 | Build Raise Complaint form | 🔲 | Title, category, description, photo |
-| Upload complaint photo to Firebase Storage | 🔲 | |
 | Build My Complaints list screen | 🔲 | Status chips: Open/In Progress/Resolved |
-| Build Complaint detail screen | 🔲 | Status history timeline |
+| Admin complaint dashboard + status update | 🔲 | Notifies resident on update |
 
 **Success Criteria:**
 - [ ] Notice broadcasts to all residents within 10 seconds
@@ -159,53 +232,45 @@ Phase 4 — Testing & Launch       ░░░░░░░░░░░░  Week 9�
 
 ---
 
-### ✅ WEEK 6 — Admin Panel (In-App)
+### 🔜 WEEK 9 — Delivery + Intercom + Boom Barrier
 **Status:** 🔲 Not Started  
-**Dates:** 2026-07-04 → 2026-07-10  
-**Theme:** Admin can manage everything from the app
+**Dates:** TBD  
+**Theme:** Complete guard app
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Build Admin home dashboard (stats cards) | 🔲 | Total residents, open complaints, today visitors |
-| Build Resident Management screen | 🔲 | List, add, deactivate |
-| Build Add Resident form | 🔲 | Name, flat, phone |
-| Build Post Notice screen | 🔲 | Title, body, category, expiry |
-| Build Complaint Dashboard | 🔲 | List all, filter by status |
-| Build Complaint detail + status update | 🔲 | Admin updates, notifies resident |
-| Build Visitor Log screen (admin view) | 🔲 | All entries, date filter |
-| Add audit logging for all admin actions | 🔲 | /communities/{id}/auditLogs |
+| Delivery Entry form (guard) | 🔲 | Courier, package type, flat number |
+| Delivery notification to resident | 🔲 | "Package from Amazon at gate" |
+| Intercom simulation | 🔲 | Guard calls resident via app before entry |
+| Boom barrier integration (future) | 🔲 | Auto open on approval |
+| Offline entry queue | 🔲 | Store locally, sync on reconnect |
+| Sync status indicator | 🔲 | "Syncing..." / "All synced ✓" |
 
 **Success Criteria:**
-- [ ] Admin posts notice → all residents notified
-- [ ] Complaint status update notifies resident
-- [ ] Resident deactivation blocks login
+- [ ] Delivery notification in under 5 seconds
+- [ ] Offline entries sync correctly on reconnect
 
 **Blockers:** None yet  
 **Notes:** —
 
 ---
 
-### ✅ WEEK 7 — Delivery + Staff Entry + Offline Queue
+### 🔜 WEEK 10 — Polish + Bug Fix + Internal Testing
 **Status:** 🔲 Not Started  
-**Dates:** 2026-07-11 → 2026-07-17  
-**Theme:** Complete guard app + offline-first
+**Dates:** TBD  
+**Theme:** Make it feel like a real product
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Build Delivery Entry form | 🔲 | Courier, package type, flat number |
-| Send delivery notification to resident | 🔲 | "Package from Amazon at gate" |
-| Build Staff/Domestic Help entry form | 🔲 | Name, role, flat, attendance mark |
-| Build Vehicle Entry log | 🔲 | Plate number, vehicle type |
-| Implement offline entry queue (drift/SQLite) | 🔲 | Store locally, sync on reconnect |
-| Show sync status indicator in guard app | 🔲 | "Syncing..." / "All synced ✓" |
-
-**Success Criteria:**
-- [ ] Delivery notification in under 5 seconds
-- [ ] Offline entries sync correctly on reconnect
-- [ ] Guard logs delivery in under 20 seconds
-
-**Blockers:** None yet  
-**Notes:** —
+| Fix all P0/P1 bugs | 🔲 | |
+| Add loading states on all async operations | 🔲 | |
+| Add empty states on all list screens | 🔲 | |
+| Design and set app icon | 🔲 | 512x512 PNG |
+| Build splash screen | 🔲 | |
+| Build community onboarding flow | 🔲 | First-time setup for new society |
+| Performance audit (cold start < 3 seconds) | 🔲 | |
+| Security audit (Firebase rules) | 🔲 | OWASP checklist |
+| Test on 3 Android devices | 🔲 | Low/mid/high-end |
 
 ---
 
@@ -369,7 +434,13 @@ Phase 4 — Testing & Launch       ░░░░░░░░░░░░  Week 9�
 
 | # | Description | Severity | Status | Week Found | Week Fixed |
 |---|---|---|---|---|---|
-| — | — | — | — | — | — |
+| 1 | Cross-drive Kotlin incremental build error (C: pub cache, D: project) | 🟠 P1 | ✅ Fixed | Week 2 | Week 2 |
+| 2 | mitmproxy global proxy blocking Firestore | 🔴 P0 | ✅ Fixed | Week 2 | Week 2 |
+| 3 | Firestore composite index missing (status+entryTime query) | 🟠 P1 | ✅ Fixed | Week 3 | Week 3 |
+| 4 | PIN session persisting after app close | 🟡 P2 | ✅ Fixed | Week 3 | Week 3 |
+| 5 | Guard routed to resident screen (Firebase Auth check before guard session) | 🔴 P0 | ✅ Fixed | Week 4 | Week 4 |
+| 6 | Guards not showing in admin panel (missing createdAt field) | 🟡 P2 | ✅ Fixed | Week 4 | Week 4 |
+| 7 | Visitors tab "no such method" error (null safety) | 🟠 P1 | ✅ Fixed | Week 4 | Week 4 |
 
 **Severity:** 🔴 P0 (blocker) | 🟠 P1 (critical) | 🟡 P2 (major) | 🟢 P3 (minor)
 
@@ -382,6 +453,12 @@ Phase 4 — Testing & Launch       ░░░░░░░░░░░░  Week 9�
 | 2026-05-30 | Flutter + Firebase chosen | Best AI support, offline-first, free tier |
 | 2026-05-30 | Android Phase 1 only | Faster launch, validate before iOS investment |
 | 2026-05-30 | Society subscription pricing | Predictable MRR, single decision-maker |
+| 2026-06-13 | Guard login via 6-digit quick code (no OTP) | Guards don't have smartphones always; simpler UX |
+| 2026-06-13 | Guard session in SharedPreferences (no Firebase Auth) | Guards need fast login without phone verification |
+| 2026-06-13 | Hybrid RBAC — roles for routing, permissions array for admin UI | Flexible without complex Firebase rules |
+| 2026-06-13 | Resident status = 'pending' until admin approves | Security — prevents unauthorized access |
+| 2026-06-14 | Visitor notification via Firestore StreamBuilder (not FCM) | Works in-app instantly; FCM added later for background |
+| 2026-06-14 | Visitor status flow: pending → approved/denied | Guard logs, resident decides, guard sees result |
 
 ---
 
