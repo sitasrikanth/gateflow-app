@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../auth/login_screen.dart';
+import '../events/event_list_screen.dart';
 
 class ResidentHomeScreen extends StatefulWidget {
   const ResidentHomeScreen({super.key});
@@ -413,6 +414,30 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen> {
                 ),
               );
             },
+          ),
+
+          // ── Events shortcut ─────────────────────────────────────
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: OutlinedButton.icon(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const EventListScreen(isAdmin: false),
+                  ),
+                ),
+                icon: const Icon(Icons.celebration_outlined),
+                label: const Text('View Event Fund Dashboard'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.deepPurple,
+                  side: const BorderSide(color: Colors.deepPurple),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  minimumSize: const Size(double.infinity, 48),
+                ),
+              ),
+            ),
           ),
 
           const SliverToBoxAdapter(child: SizedBox(height: 40)),

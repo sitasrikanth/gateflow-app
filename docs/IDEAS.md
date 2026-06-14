@@ -170,6 +170,28 @@
 
 ---
 
+## 🎉 Event Fund Manager (NEW)
+
+> Track collections + expenses for society events like Ganesh Chaturthi, Diwali, Holi etc.
+> All residents see real-time dashboard. Admin manages funds. Notifications for pooja/prasad.
+
+| # | Feature | Priority | Effort | Status | Notes |
+|---|---|---|---|---|---|
+| EF1 | Create Event (admin) | 🔥 | S | 🔲 | Name, target amount, date range, description |
+| EF2 | Contribution tracking per flat | 🔥 | M | 🔲 | Admin marks who paid + amount |
+| EF3 | Real-time fund dashboard (all residents) | 🔥 | M | 🔲 | Total collected, total spent, balance |
+| EF4 | Expense logging (admin) | 🔥 | M | 🔲 | Item, amount, category, receipt photo |
+| EF5 | Resident contribution status | 🔥 | S | 🔲 | Each resident sees if they've paid |
+| EF6 | Event notifications (pooja/prasad alerts) | 🔥 | M | 🔲 | "Ganesh pooja at 6PM today — all are invited!" |
+| EF7 | Expense breakdown chart | ⭐ | M | 🔲 | Decorations, food, priest, misc |
+| EF8 | Payment reminder to non-contributors | ⭐ | S | 🔲 | Admin sends reminder to pending flats |
+| EF9 | Multiple events support | ⭐ | S | 🔲 | Ganesh Chaturthi, Diwali, Holi etc. |
+| EF10 | Event photo gallery | ⭐ | M | 🔲 | Upload celebration photos |
+| EF11 | Final event settlement report (PDF) | 💡 | M | 🔲 | Downloadable summary after event |
+| EF12 | Online payment for contribution (UPI) | 💡 | XL | 🔲 | Razorpay integration — Phase 2 |
+
+---
+
 ## 📝 Raw Ideas Inbox
 > Quick capture — unfiltered ideas, refined later
 

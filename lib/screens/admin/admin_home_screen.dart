@@ -4,6 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:math';
 import '../auth/login_screen.dart';
+import '../events/event_list_screen.dart';
+import 'settings_screen.dart';
 
 class AdminHomeScreen extends StatefulWidget {
   const AdminHomeScreen({super.key});
@@ -19,7 +21,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
   }
 
   @override
@@ -65,6 +67,16 @@ class _AdminHomeScreenState extends State<AdminHomeScreen>
                               fontWeight: FontWeight.bold)),
                     ),
                     IconButton(
+                      icon: const Icon(Icons.settings_outlined,
+                          color: Colors.white),
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const SettingsScreen()),
+                      ),
+                      tooltip: 'Settings',
+                    ),
+                    IconButton(
                       icon: const Icon(Icons.logout, color: Colors.white),
                       onPressed: _signOut,
                     ),
@@ -78,10 +90,12 @@ class _AdminHomeScreenState extends State<AdminHomeScreen>
                   unselectedLabelColor: Colors.white60,
                   labelStyle: const TextStyle(
                       fontWeight: FontWeight.w600, fontSize: 13),
+                  isScrollable: true,
                   tabs: const [
                     Tab(text: 'Residents'),
                     Tab(text: 'Guards'),
                     Tab(text: 'Visitors'),
+                    Tab(text: 'Events'),
                   ],
                 ),
               ],
@@ -96,6 +110,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen>
                 _ResidentsTab(),
                 _GuardsTab(),
                 _VisitorsTab(),
+                _EventsTab(),
               ],
             ),
           ),
@@ -862,6 +877,89 @@ class _MiniStat extends StatelessWidget {
             Text(label,
                 style: TextStyle(
                     color: color.withOpacity(0.7), fontSize: 13)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── EVENTS TAB ───────────────────────────────────────────────────────────────
+
+class _EventsTab extends StatelessWidget {
+  const _EventsTab();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.deepPurple.shade50,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.celebration,
+                  size: 64, color: Colors.deepPurple.shade300),
+            ),
+            const SizedBox(height: 24),
+            const Text('Event Fund Manager',
+                style: TextStyle(
+                    fontSize: 20, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Text(
+              'Track collections & expenses\nfor society events',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  color: Colors.grey.shade600, fontSize: 14),
+            ),
+            const SizedBox(height: 32),
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton.icon(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        const EventListScreen(isAdmin: true),
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.deepPurple,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                icon: const Icon(Icons.open_in_new),
+                label: const Text('Open Event Manager'),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: OutlinedButton.icon(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const SettingsScreen(),
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.grey.shade700,
+                  side: BorderSide(color: Colors.grey.shade300),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                icon: const Icon(Icons.settings_outlined, size: 18),
+                label: const Text('Community Settings (Wings)'),
+              ),
+            ),
           ],
         ),
       ),

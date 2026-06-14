@@ -1,5 +1,5 @@
 # GateFlow — 12-Week Progress Tracker
-> Last updated: 2026-06-14 | Tell Claude what you completed and this file gets updated automatically.
+> Last updated: 2026-06-14 (Session 2) | Tell Claude what you completed and this file gets updated automatically.
 
 ---
 
@@ -14,13 +14,13 @@
 
 ```
 Phase 1 — Foundation & Auth      ████████████  Week 1–2   [ 2 / 2 weeks done ] ✅
-Phase 2 — Core Features          ████████░░░░  Week 3–6   [ 2 / 4 weeks done ]
+Phase 2 — Core Features          ████████████  Week 3–6   [ 4 / 4 weeks done ] ✅
 Phase 3 — Complete MVP           ░░░░░░░░░░░░  Week 7–8   [ 0 / 2 weeks done ]
 Phase 4 — Testing & Launch       ░░░░░░░░░░░░  Week 9–12  [ 0 / 4 weeks done ]
 ```
 
-**Weeks completed:** 4 / 12  
-**Current week:** Week 5  
+**Weeks completed:** 6 / 12  
+**Current week:** Week 7  
 **On track:** ✅ Yes (ahead of schedule!)  
 **Launch date target:** ~2026-08-22  
 
@@ -134,28 +134,69 @@ Phase 4 — Testing & Launch       ░░░░░░░░░░░░  Week 9�
 
 ---
 
-### 🔜 WEEK 5 — Pre-approved Guest OTP + FCM Notifications
-**Status:** 🔲 Not Started  
-**Dates:** Next session  
-**Theme:** Smart entry + background notifications
+### ✅ WEEK 5 — Event Fund Manager: Core Module
+**Status:** ✅ Complete  
+**Dates:** 2026-06-14 (Session 1)  
+**Theme:** Community event/fund collection management
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Pre-approve guest screen (resident) | 🔲 | Enter guest name + expiry → generate 6-digit OTP |
-| Store pre-approval in Firestore /preapprovals | 🔲 | flatNumber, guestName, otp, expiresAt, status |
-| Guard verifies OTP on visitor entry | 🔲 | OTP field in new visitor form |
-| Auto-approve if OTP matches | 🔲 | status → 'approved' instantly |
-| FCM push notifications setup | 🔲 | Background alerts when app is closed |
-| FCM token saved on login | 🔲 | users/{uid}.fcmToken |
-| Notify resident when guard logs visitor | 🔲 | Cloud Function or direct FCM |
+| Event list screen with color palette + progress bars | ✅ | `event_list_screen.dart` |
+| Create Event form (name, description, target, dates) | ✅ | `create_event_screen.dart` |
+| Event dashboard — 3-tab (Overview, Contributions, Expenses) | ✅ | `event_dashboard_screen.dart` |
+| Add Contribution form (wing/block/flat, amount, type, mode) | ✅ | `add_contribution_screen.dart` |
+| Add Expense form (category, vendor, amount, note) | ✅ | `add_expense_screen.dart` |
+| Send Notification screen (pooja/prasad alerts) | ✅ | `send_notification_screen.dart` |
+| Three contribution types (Regular, Carry Forward, Ganesh Laddu) | ✅ | With Received/Pending toggle |
+| Edit existing contributions (pre-fill + adjust totalCollected diff) | ✅ | Atomic Firestore increment |
+| Wings & Blocks configurable from admin Settings | ✅ | Reads from community_settings |
+| Expense categories configurable from Settings (emoji picker) | ✅ | Load Defaults button |
+| Wire Events tab into AdminHomeScreen + ResidentHomeScreen | ✅ | Fixed nested Scaffold issue |
 
 **Success Criteria:**
-- [ ] Resident generates OTP in under 10 seconds
-- [ ] Guard verifies OTP and entry auto-approved
-- [ ] Resident gets push notification even when app is closed
+- [x] Admin can create event and track contributions per flat
+- [x] Dashboard shows live totals (received vs pending)
+- [x] Wings and blocks are configurable, not hardcoded
 
-**Blockers:** None yet  
-**Notes:** —
+**Blockers:** None  
+**Notes:** Wings/blocks read from `community_settings/address`. Flat number digits-only enforced. Reference ID optional.
+
+---
+
+### ✅ WEEK 6 — Event Fund Manager: Enhancements + Settings Polish
+**Status:** ✅ Complete  
+**Dates:** 2026-06-14 (Session 2)  
+**Theme:** Hierarchical categories, collapsible UI, event editing, bug fixes
+
+| Task | Status | Notes |
+|------|--------|-------|
+| Contributions tab — Wing → Block nested grouping | ✅ | `_ContributionsTab` rewritten with nested `ExpansionTile` |
+| Wing level: blue avatar, entry count, received total | ✅ | Sorted alphabetically |
+| Block level: flat count, pending badge | ✅ | Flats sorted by flat number |
+| Grand total banner (received only, excludes pending) | ✅ | |
+| Edit Event — rename, change dates | ✅ | `existingEventId`/`existingData` params added to `CreateEventScreen` |
+| Edit Event — deferred Firestore fetch if data not loaded yet | ✅ | Fixed race condition via `_fetchAndPrefill()` |
+| Dashboard popup "Edit Event" menu item | ✅ | Popup now shows for all admins (not just active events) |
+| Hierarchical expense categories (main + sub) | ✅ | Firestore: `{name, icon, subCategories:[...]}` |
+| 9 default main categories with sub-categories | ✅ | Annadam, Decoration, Idol, Priest, Music, Lighting, Transport, Prasad, Misc |
+| Settings: add/rename/delete main categories | ✅ | Emoji picker in dialog |
+| Settings: add/delete sub-category chips per main | ✅ | "Add Sub-category" inside each `ExpansionTile` |
+| Auto-seed default categories on first load | ✅ | `didUpdateWidget` silently seeds when empty |
+| Add Expense: two-level category selection (main → sub chips) | ✅ | Sub resets when main changes |
+| Expense list subtitle: Category • Sub-category • Vendor • Note | ✅ | |
+| Settings — Wings & Blocks section collapsible | ✅ | `ExpansionTile` wrapped in `Card` |
+| Settings — Expense Categories section collapsible | ✅ | Same pattern |
+| Compact + buttons beside section headers (no inline forms) | ✅ | `+` opens dialog |
+| Full settings_screen.dart rewrite with proper widget extraction | ✅ | `_SectionCard`, `_WingTile`, `_CategoryTile`, `_TileTrailing`, `_IconBtn` |
+
+**Success Criteria:**
+- [x] Contributions grouped by Wing → Block, totals visible at each level
+- [x] Admin can rename event and change dates after creation
+- [x] Categories have main + sub hierarchy, configurable from settings
+- [x] Settings screen clean, collapsible, no crashes
+
+**Blockers:** None  
+**Notes:** `flutter analyze` returned "No issues found!" after full rewrite. `PageStorageKey` used on each `ExpansionTile` for persistent expand/collapse state.
 
 ---
 
@@ -441,6 +482,11 @@ Phase 4 — Testing & Launch       ░░░░░░░░░░░░  Week 9�
 | 5 | Guard routed to resident screen (Firebase Auth check before guard session) | 🔴 P0 | ✅ Fixed | Week 4 | Week 4 |
 | 6 | Guards not showing in admin panel (missing createdAt field) | 🟡 P2 | ✅ Fixed | Week 4 | Week 4 |
 | 7 | Visitors tab "no such method" error (null safety) | 🟠 P1 | ✅ Fixed | Week 4 | Week 4 |
+| 8 | Red screen crash on dialog dismiss — `editable_text.dart:6268` assertion | 🔴 P0 | ✅ Fixed | Week 6 | Week 6 |
+| 9 | Settings screen not showing categories; wings/blocks not collapsible | 🔴 P0 | ✅ Fixed | Week 6 | Week 6 |
+| 10 | Event edit popup not appearing for closed/ended events | 🟠 P1 | ✅ Fixed | Week 6 | Week 6 |
+| 11 | Edit Event form blank due to StreamBuilder race condition | 🟠 P1 | ✅ Fixed | Week 6 | Week 6 |
+| 12 | `targetAmount` runtime error — `.toStringAsFixed()` on dynamic type | 🟠 P1 | ✅ Fixed | Week 6 | Week 6 |
 
 **Severity:** 🔴 P0 (blocker) | 🟠 P1 (critical) | 🟡 P2 (major) | 🟢 P3 (minor)
 
@@ -459,6 +505,11 @@ Phase 4 — Testing & Launch       ░░░░░░░░░░░░  Week 9�
 | 2026-06-13 | Resident status = 'pending' until admin approves | Security — prevents unauthorized access |
 | 2026-06-14 | Visitor notification via Firestore StreamBuilder (not FCM) | Works in-app instantly; FCM added later for background |
 | 2026-06-14 | Visitor status flow: pending → approved/denied | Guard logs, resident decides, guard sees result |
+| 2026-06-14 | Hierarchical expense categories (`{name, icon, subCategories:[]}`) | Flat list insufficient for community events (Annadam has rice/veg/plates sub-items) |
+| 2026-06-14 | Dialog-based add forms instead of inline forms in settings | Inline forms too space-heavy in collapsed card UI |
+| 2026-06-14 | `TextEditingController.dispose()` deferred via `addPostFrameCallback` in all dialogs | Synchronous dispose triggers `editable_text.dart` assertion during dismiss animation |
+| 2026-06-14 | Extract `StatelessWidget` subclasses when `ExpansionTile` tree gets complex | Monolithic build methods cause `PageStorageKey` state and gesture detection bugs |
+| 2026-06-14 | Contributions grouped Wing → Block, not flat list | Makes it easy to spot missing flats per block; pending count visible at block level |
 
 ---
 
