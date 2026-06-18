@@ -265,6 +265,23 @@ class _GuardHomeScreenState extends State<GuardHomeScreen> {
                               fontWeight: FontWeight.bold),
                         ),
                       ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(Icons.logout, color: Colors.white),
+                        tooltip: 'Logout',
+                        onPressed: () async {
+                          final prefs = await SharedPreferences.getInstance();
+                          await prefs.clear();
+                          if (mounted) {
+                            Navigator.pushAndRemoveUntil(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => const LoginScreen()),
+                              (route) => false,
+                            );
+                          }
+                        },
+                      ),
                     ],
                   ),
 

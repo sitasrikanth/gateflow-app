@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../auth/login_screen.dart';
 import 'event_dashboard_screen.dart';
 import 'create_event_screen.dart';
 
@@ -20,6 +22,18 @@ class EventListScreen extends StatelessWidget {
   const EventListScreen({super.key, required this.isAdmin});
 
   Color _colorFor(int index) => _kEventColors[index % _kEventColors.length];
+
+  Future<void> _logout(BuildContext context) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
+    if (context.mounted) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (route) => false,
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -57,6 +71,11 @@ class EventListScreen extends StatelessWidget {
                                 color: Colors.white70, fontSize: 13)),
                       ],
                     ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.logout, color: Colors.white70),
+                    tooltip: 'Logout',
+                    onPressed: () => _logout(context),
                   ),
                 ],
               ),

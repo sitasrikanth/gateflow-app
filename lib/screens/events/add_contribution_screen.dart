@@ -235,10 +235,30 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
           final wings = List<String>.from(settings['wings'] ?? []);
           final wingBlocksMap =
               Map<String, dynamic>.from(settings['wingBlocks'] ?? {});
-          // Blocks for the currently selected wing
-          final blocksForWing = _wing.isNotEmpty
-              ? List<String>.from(wingBlocksMap[_wing] ?? [])
-              : <String>[];
+
+          // Extract block names — wingBlocks[wing] is now Map<block, List<flat>>
+          List<String> _blocksFor(String wing) {
+            if (wing.isEmpty) return [];
+            final raw = wingBlocksMap[wing];
+            if (raw is Map) return (raw.keys.cast<String>().toList())..sort();
+            if (raw is List) return List<String>.from(raw)..sort(); // legacy
+            return [];
+          }
+
+          // Extract flat numbers for the selected block
+          List<String> _flatsFor(String wing, String block) {
+            if (wing.isEmpty || block.isEmpty) return [];
+            final raw = wingBlocksMap[wing];
+            if (raw is Map) {
+              final blockData = raw[block];
+              if (blockData is List)
+                return List<String>.from(blockData)..sort();
+            }
+            return [];
+          }
+
+          final blocksForWing = _blocksFor(_wing);
+          final flatsForBlock = _flatsFor(_wing, _block);
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(24),
@@ -268,7 +288,8 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
                         activeColor: Colors.blue.shade600,
                         onTap: (w) => setState(() {
                           _wing = w;
-                          _block = ''; // reset block when wing changes
+                          _block = '';
+                          _flatController.clear();
                         }),
                       ),
                 const SizedBox(height: 20),
@@ -284,23 +305,34 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
                             items: blocksForWing,
                             selected: _block,
                             activeColor: Colors.purple.shade600,
-                            onTap: (b) => setState(() => _block = b),
+                            onTap: (b) => setState(() {
+                              _block = b;
+                              _flatController.clear();
+                            }),
                           ),
                 const SizedBox(height: 20),
 
-                // ── Flat number (digits only) ─────────────────────
+                // ── Flat number ───────────────────────────────────
                 _label('Flat Number *'),
-                const SizedBox(height: 4),
-                Text('Numbers only  e.g. 101, 204, 501',
-                    style: TextStyle(
-                        color: Colors.grey.shade500, fontSize: 12)),
                 const SizedBox(height: 8),
-                TextField(
-                  controller: _flatController,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: _dec('e.g. 101', Icons.home_outlined),
-                ),
+                if (_block.isEmpty)
+                  _hint('Select a block first to see its flats')
+                else if (flatsForBlock.isEmpty)
+                  // No flats configured — fall back to free text
+                  TextField(
+                    controller: _flatController,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: _dec('e.g. 101', Icons.home_outlined),
+                  )
+                else
+                  _chips(
+                    items: flatsForBlock,
+                    selected: _flatController.text,
+                    activeColor: Colors.teal.shade600,
+                    onTap: (flat) =>
+                        setState(() => _flatController.text = flat),
+                  ),
                 const SizedBox(height: 20),
 
                 // ── Resident name ─────────────────────────────────

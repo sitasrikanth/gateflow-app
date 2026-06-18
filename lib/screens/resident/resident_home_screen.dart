@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../auth/login_screen.dart';
 import '../events/event_list_screen.dart';
+import 'resident_events_screen.dart';
 
 class ResidentHomeScreen extends StatefulWidget {
   const ResidentHomeScreen({super.key});
@@ -15,6 +16,7 @@ class ResidentHomeScreen extends StatefulWidget {
 class _ResidentHomeScreenState extends State<ResidentHomeScreen> {
   String _flatNumber = '';
   String _residentName = '';
+  String _userId = '';
   bool _loading = true;
 
   @override
@@ -24,26 +26,94 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen> {
   }
 
   Future<void> _loadProfile() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    final doc = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .get();
-    if (doc.exists) {
-      setState(() {
-        _flatNumber = doc['flatNumber'] ?? '';
-        _residentName = doc['name'] ?? 'Resident';
-        _loading = false;
-      });
-    }
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _residentName = prefs.getString('session_name') ?? 'Resident';
+      _flatNumber = prefs.getString('session_flat') ?? '';
+      _userId = prefs.getString('session_user_id') ?? '';
+      _loading = false;
+    });
+  }
+
+  Future<void> _changeCode() async {
+    final ctrl = TextEditingController();
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Change My Quick Code'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Enter a new 6-digit code you can remember.',
+                style: TextStyle(fontSize: 13, color: Colors.grey)),
+            const SizedBox(height: 16),
+            TextField(
+              controller: ctrl,
+              keyboardType: TextInputType.number,
+              maxLength: 6,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 6),
+              decoration: InputDecoration(
+                counterText: '',
+                hintText: '------',
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide:
+                      const BorderSide(color: Color(0xFF1A73E8), width: 2),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              WidgetsBinding.instance
+                  .addPostFrameCallback((_) => ctrl.dispose());
+              Navigator.pop(ctx);
+            },
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (ctrl.text.length != 6) return;
+              await FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(_userId)
+                  .update({'quickCode': ctrl.text});
+              WidgetsBinding.instance
+                  .addPostFrameCallback((_) => ctrl.dispose());
+              if (ctx.mounted) Navigator.pop(ctx);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Quick code updated successfully!'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF1A73E8),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _signOut() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('user_pin');
-    await prefs.setBool('pin_verified_session', false);
-    await FirebaseAuth.instance.signOut();
+    await prefs.clear();
     if (mounted) {
       Navigator.pushAndRemoveUntil(
         context,
@@ -137,50 +207,143 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen> {
     final today = DateTime.now();
     final todayStart =
         DateTime(today.year, today.month, today.day).toIso8601String();
+    final greeting = today.hour < 12
+        ? 'Good Morning'
+        : today.hour < 17
+            ? 'Good Afternoon'
+            : 'Good Evening';
 
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: const Color(0xFFF5F7FA),
       body: CustomScrollView(
         slivers: [
-          // ── Header ──────────────────────────────────────────────
+          // ── Hero Header ─────────────────────────────────────────
           SliverToBoxAdapter(
             child: Container(
-              color: const Color(0xFF1A73E8),
-              padding: const EdgeInsets.fromLTRB(20, 52, 20, 20),
-              child: Row(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFF1A73E8), Color(0xFF0D47A1)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius:
+                    BorderRadius.vertical(bottom: Radius.circular(32)),
+              ),
+              padding: const EdgeInsets.fromLTRB(20, 56, 20, 28),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  CircleAvatar(
-                    radius: 28,
-                    backgroundColor: Colors.white.withOpacity(0.2),
-                    child: Text(
-                      _residentName.isNotEmpty
-                          ? _residentName[0].toUpperCase()
-                          : 'R',
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold),
-                    ),
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 26,
+                        backgroundColor: Colors.white.withValues(alpha: 0.2),
+                        child: Text(
+                          _residentName.isNotEmpty
+                              ? _residentName[0].toUpperCase()
+                              : 'R',
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(greeting,
+                                style: const TextStyle(
+                                    color: Colors.white70, fontSize: 13)),
+                            Text(_residentName,
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.key,
+                            color: Colors.white70, size: 20),
+                        tooltip: 'Change My Code',
+                        onPressed: _changeCode,
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.logout,
+                            color: Colors.white70, size: 20),
+                        tooltip: 'Logout',
+                        onPressed: _signOut,
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  const SizedBox(height: 20),
+                  // Flat info card
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Row(
                       children: [
-                        Text('Welcome, $_residentName',
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold)),
+                        const Icon(Icons.home, color: Colors.white, size: 18),
+                        const SizedBox(width: 10),
                         Text('Flat $_flatNumber',
                             style: const TextStyle(
-                                color: Colors.white70, fontSize: 13)),
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15)),
+                        const Spacer(),
+                        const Icon(Icons.apartment,
+                            color: Colors.white54, size: 16),
+                        const SizedBox(width: 4),
+                        const Text('GateFlow Community',
+                            style: TextStyle(
+                                color: Colors.white70, fontSize: 12)),
                       ],
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.logout, color: Colors.white),
-                    onPressed: _signOut,
+                ],
+              ),
+            ),
+          ),
+
+          // ── Quick Actions ────────────────────────────────────────
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Quick Access',
+                      style: TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      _QuickActionCard(
+                        icon: Icons.celebration,
+                        label: 'My Events',
+                        subtitle: 'Contributions',
+                        color: Colors.deepPurple,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const ResidentEventsScreen()),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      _QuickActionCard(
+                        icon: Icons.people_outline,
+                        label: 'Visitors',
+                        subtitle: 'History',
+                        color: const Color(0xFF1A73E8),
+                        onTap: () {},
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -416,29 +579,6 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen> {
             },
           ),
 
-          // ── Events shortcut ─────────────────────────────────────
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: OutlinedButton.icon(
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const EventListScreen(isAdmin: false),
-                  ),
-                ),
-                icon: const Icon(Icons.celebration_outlined),
-                label: const Text('View Event Fund Dashboard'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.deepPurple,
-                  side: const BorderSide(color: Colors.deepPurple),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                  minimumSize: const Size(double.infinity, 48),
-                ),
-              ),
-            ),
-          ),
 
           const SliverToBoxAdapter(child: SizedBox(height: 40)),
         ],
@@ -509,6 +649,361 @@ class _VisitorStatusBadge extends StatelessWidget {
       child: Text(label,
           style: TextStyle(
               color: color, fontSize: 11, fontWeight: FontWeight.w600)),
+    );
+  }
+}
+
+// ── My Contributions Section ─────────────────────────────────────────────────
+
+class _MyContributionsSection extends StatelessWidget {
+  final String flatNumber;
+  const _MyContributionsSection({required this.flatNumber});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('events')
+          .where('status', isEqualTo: 'active')
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.all(16),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final events = snapshot.data?.docs ?? [];
+
+        if (events.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.celebration_outlined,
+                      color: Colors.grey.shade400, size: 28),
+                  const SizedBox(width: 12),
+                  Text('No active events right now',
+                      style: TextStyle(
+                          color: Colors.grey.shade500, fontSize: 14)),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return Column(
+          children: events
+              .map((eventDoc) => _EventContributionCard(
+                    eventDoc: eventDoc,
+                    flatNumber: flatNumber,
+                  ))
+              .toList(),
+        );
+      },
+    );
+  }
+}
+
+class _EventContributionCard extends StatefulWidget {
+  final QueryDocumentSnapshot eventDoc;
+  final String flatNumber;
+  const _EventContributionCard(
+      {required this.eventDoc, required this.flatNumber});
+
+  @override
+  State<_EventContributionCard> createState() => _EventContributionCardState();
+}
+
+class _EventContributionCardState extends State<_EventContributionCard> {
+  List<Map<String, dynamic>> _contributions = [];
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final snap = await FirebaseFirestore.instance
+        .collection('events')
+        .doc(widget.eventDoc.id)
+        .collection('contributions')
+        .where('flatNumber', isEqualTo: widget.flatNumber)
+        .get();
+    if (mounted) {
+      setState(() {
+        _contributions =
+            snap.docs.map((d) => d.data()).toList();
+        _loaded = true;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final event = widget.eventDoc.data() as Map<String, dynamic>;
+    final eventName = event['name'] ?? 'Event';
+
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => EventListScreen(isAdmin: false),
+        ),
+      ),
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 8,
+                offset: const Offset(0, 2))
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Event header
+            Container(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+              decoration: BoxDecoration(
+                color: Colors.deepPurple.shade50,
+                borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(12)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.celebration,
+                      color: Colors.deepPurple.shade400, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(eventName,
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            color: Colors.deepPurple.shade700)),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade100,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text('Active',
+                        style: TextStyle(
+                            color: Colors.green.shade700,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600)),
+                  ),
+                ],
+              ),
+            ),
+            // Contributions for this flat
+            if (!_loaded)
+              const Padding(
+                padding: EdgeInsets.all(14),
+                child: SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2)),
+              )
+            else if (_contributions.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(14),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline,
+                        color: Colors.grey.shade400, size: 18),
+                    const SizedBox(width: 8),
+                    Text('No contribution recorded yet',
+                        style: TextStyle(
+                            color: Colors.grey.shade500, fontSize: 13)),
+                  ],
+                ),
+              )
+            else
+              ...(_contributions.map((c) {
+                final isPending = c['amountReceived'] == false;
+                final amount = (c['amount'] ?? 0).toStringAsFixed(0);
+                final type = c['contributionType'] ?? 'Regular';
+                final mode = c['paymentMode'] ?? '';
+                final note = c['notes'] ?? '';
+
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+                  child: Row(
+                    children: [
+                      // Status icon
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: isPending
+                              ? Colors.orange.shade50
+                              : Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(
+                          isPending
+                              ? Icons.hourglass_top_rounded
+                              : Icons.check_circle_rounded,
+                          color: isPending
+                              ? Colors.orange.shade600
+                              : Colors.green.shade600,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      // Amount + details
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Text('₹$amount',
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 15)),
+                                const SizedBox(width: 8),
+                                if (type != 'Regular')
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blue.shade50,
+                                      borderRadius:
+                                          BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      type == 'Carry Forward'
+                                          ? 'CF'
+                                          : 'Laddu',
+                                      style: TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.blue.shade700,
+                                          fontWeight: FontWeight.w600),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              [
+                                if (mode.isNotEmpty) mode,
+                                if (note.isNotEmpty) note,
+                              ].join(' • '),
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade500),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Paid / Pending badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: isPending
+                              ? Colors.orange.shade50
+                              : Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: isPending
+                                ? Colors.orange.shade200
+                                : Colors.green.shade200,
+                          ),
+                        ),
+                        child: Text(
+                          isPending ? 'Pending' : 'Paid',
+                          style: TextStyle(
+                              color: isPending
+                                  ? Colors.orange.shade700
+                                  : Colors.green.shade700,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              })),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _QuickActionCard extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String subtitle;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _QuickActionCard({
+    required this.icon,
+    required this.label,
+    required this.subtitle,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                  color: color.withValues(alpha: 0.12),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4))
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: color, size: 24),
+              ),
+              const SizedBox(height: 14),
+              Text(label,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 14)),
+              const SizedBox(height: 2),
+              Text(subtitle,
+                  style: TextStyle(
+                      fontSize: 12, color: Colors.grey.shade500)),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

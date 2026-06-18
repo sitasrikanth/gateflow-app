@@ -5,7 +5,14 @@ import '../admin/settings_screen.dart' show kDefaultCategories;
 
 class AddExpenseScreen extends StatefulWidget {
   final String eventId;
-  const AddExpenseScreen({super.key, required this.eventId});
+  final String? existingExpenseId;
+  final Map<String, dynamic>? existingData;
+  const AddExpenseScreen({
+    super.key,
+    required this.eventId,
+    this.existingExpenseId,
+    this.existingData,
+  });
 
   @override
   State<AddExpenseScreen> createState() => _AddExpenseScreenState();
@@ -20,6 +27,22 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   String _subCategory = '';
   bool _saving = false;
   String _error = '';
+
+  bool get _isEdit => widget.existingExpenseId != null;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_isEdit && widget.existingData != null) {
+      final d = widget.existingData!;
+      _itemController.text = d['item'] ?? '';
+      _amountController.text = (d['amount'] ?? '').toString();
+      _vendorController.text = d['vendor'] ?? '';
+      _noteController.text = d['note'] ?? '';
+      _mainCategory = d['category'] ?? '';
+      _subCategory = d['subCategory'] ?? '';
+    }
+  }
 
   @override
   void dispose() {
@@ -58,17 +81,11 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
       final firestore = FirebaseFirestore.instance;
       final batch = firestore.batch();
 
-      final expenseRef = firestore
-          .collection('events')
-          .doc(widget.eventId)
-          .collection('expenses')
-          .doc();
-
       final catMap = categories.firstWhere(
           (c) => c['name'] == _mainCategory,
           orElse: () => {'name': _mainCategory, 'icon': '📦', 'subCategories': []});
 
-      batch.set(expenseRef, {
+      final payload = {
         'item': _itemController.text.trim(),
         'amount': amount,
         'category': _mainCategory,
@@ -76,24 +93,61 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
         'subCategory': _subCategory,
         'vendor': _vendorController.text.trim(),
         'note': _noteController.text.trim(),
-        'addedAt': DateTime.now().toIso8601String(),
-      });
+      };
 
-      batch.update(
-        firestore.collection('events').doc(widget.eventId),
-        {'totalSpent': FieldValue.increment(amount)},
-      );
+      if (_isEdit) {
+        // Edit mode — update doc and adjust totalSpent by diff
+        final oldAmount =
+            (widget.existingData!['amount'] as num?)?.toDouble() ?? 0;
+        final diff = amount - oldAmount;
+
+        final expenseRef = firestore
+            .collection('events')
+            .doc(widget.eventId)
+            .collection('expenses')
+            .doc(widget.existingExpenseId);
+
+        batch.update(expenseRef, payload);
+        if (diff != 0) {
+          batch.update(
+            firestore.collection('events').doc(widget.eventId),
+            {'totalSpent': FieldValue.increment(diff)},
+          );
+        }
+      } else {
+        // Add mode
+        final expenseRef = firestore
+            .collection('events')
+            .doc(widget.eventId)
+            .collection('expenses')
+            .doc();
+
+        batch.set(expenseRef, {
+          ...payload,
+          'addedAt': DateTime.now().toIso8601String(),
+        });
+
+        batch.update(
+          firestore.collection('events').doc(widget.eventId),
+          {'totalSpent': FieldValue.increment(amount)},
+        );
+      }
 
       await batch.commit();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-                '₹${amount.toStringAsFixed(0)} expense recorded ✅'),
+            content: Text(_isEdit
+                ? 'Expense updated ✅'
+                : '₹${amount.toStringAsFixed(0)} expense recorded ✅'),
             backgroundColor: Colors.red.shade400,
           ),
         );
+        if (_isEdit) {
+          Navigator.pop(context);
+          return;
+        }
         _itemController.clear();
         _amountController.clear();
         _vendorController.clear();
@@ -117,8 +171,8 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Record Expense',
-            style: TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(_isEdit ? 'Edit Expense' : 'Record Expense',
+            style: const TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.red.shade400,
         foregroundColor: Colors.white,
       ),
@@ -146,7 +200,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
           final selCat = categories.cast<Map<String, dynamic>?>()
               .firstWhere((c) => c!['name'] == _mainCategory, orElse: () => null);
           final subs = List<String>.from(
-              selCat?['subCategories'] as List? ?? []);
+              selCat?['subCategories'] is List ? selCat!['subCategories'] as List : []);
 
           // Reset sub if current sub is not in new list
           if (_subCategory.isNotEmpty && !subs.contains(_subCategory)) {

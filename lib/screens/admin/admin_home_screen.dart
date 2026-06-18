@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:math';
 import '../auth/login_screen.dart';
-import '../events/event_list_screen.dart';
+import '../events/event_dashboard_screen.dart';
+import '../events/create_event_screen.dart';
 import 'settings_screen.dart';
 
 class AdminHomeScreen extends StatefulWidget {
@@ -21,7 +22,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 4, vsync: this, initialIndex: 3);
   }
 
   @override
@@ -31,7 +32,8 @@ class _AdminHomeScreenState extends State<AdminHomeScreen>
   }
 
   Future<void> _signOut() async {
-    await FirebaseAuth.instance.signOut();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
     if (mounted) {
       Navigator.pushAndRemoveUntil(
         context,
@@ -122,218 +124,459 @@ class _AdminHomeScreenState extends State<AdminHomeScreen>
 
 // ─── RESIDENTS TAB ────────────────────────────────────────────────────────────
 
-class _ResidentsTab extends StatelessWidget {
+class _ResidentsTab extends StatefulWidget {
   const _ResidentsTab();
 
-  Future<void> _updateStatus(String docId, String status) async {
+  @override
+  State<_ResidentsTab> createState() => _ResidentsTabState();
+}
+
+class _ResidentsTabState extends State<_ResidentsTab> {
+  String _generateCode() =>
+      List.generate(6, (_) => Random().nextInt(10)).join();
+
+  Future<void> _addUser(String role) async {
+    final nameCtrl = TextEditingController();
+    final flatCtrl = TextEditingController();
+    final code = _generateCode();
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('Add ${role == 'admin' ? 'Admin' : 'Resident'}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameCtrl,
+              textCapitalization: TextCapitalization.words,
+              decoration: InputDecoration(
+                labelText: 'Full Name *',
+                prefixIcon: const Icon(Icons.person_outline),
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: flatCtrl,
+              decoration: InputDecoration(
+                labelText: role == 'admin' ? 'Flat (optional)' : 'Flat Number *',
+                prefixIcon: const Icon(Icons.home_outlined),
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.blue.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.key, color: Colors.blue.shade700, size: 18),
+                  const SizedBox(width: 8),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Quick Code (auto-generated)',
+                          style: TextStyle(
+                              fontSize: 11, color: Colors.blue.shade600)),
+                      Text(code,
+                          style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 4,
+                              color: Colors.blue.shade800)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              WidgetsBinding.instance
+                  .addPostFrameCallback((_) => nameCtrl.dispose());
+              WidgetsBinding.instance
+                  .addPostFrameCallback((_) => flatCtrl.dispose());
+              Navigator.pop(ctx);
+            },
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (nameCtrl.text.trim().isEmpty) return;
+              if (role == 'resident' && flatCtrl.text.trim().isEmpty) return;
+              await FirebaseFirestore.instance.collection('users').add({
+                'name': nameCtrl.text.trim(),
+                'flatNumber': flatCtrl.text.trim(),
+                'role': role,
+                'status': 'active',
+                'quickCode': code,
+                'createdAt': FieldValue.serverTimestamp(),
+              });
+              WidgetsBinding.instance
+                  .addPostFrameCallback((_) => nameCtrl.dispose());
+              WidgetsBinding.instance
+                  .addPostFrameCallback((_) => flatCtrl.dispose());
+              if (ctx.mounted) Navigator.pop(ctx);
+              if (mounted) {
+                _showCodeDialog(nameCtrl.text.trim(), code, role);
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF1A73E8),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text('Add & Save Code'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showCodeDialog(String name, String code, String role) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.green),
+            SizedBox(width: 8),
+            Text('User Created!'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Share this code with $name:',
+                style: TextStyle(color: Colors.grey.shade600)),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.green.shade200),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(code,
+                      style: const TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 6)),
+                  const SizedBox(width: 12),
+                  GestureDetector(
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: code));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Code copied!')),
+                      );
+                    },
+                    child: Icon(Icons.copy, color: Colors.green.shade600),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'They can use this code to log in as ${role == 'admin' ? 'Admin' : 'Resident'}.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text('Done'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _toggleStatus(String docId, String current) async {
+    final newStatus = current == 'active' ? 'inactive' : 'active';
     await FirebaseFirestore.instance
         .collection('users')
         .doc(docId)
-        .update({'status': status});
+        .update({'status': newStatus});
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('users')
-          .where('role', isEqualTo: 'resident')
-          .snapshots(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        final docs = snapshot.data?.docs ?? [];
-        final pending =
-            docs.where((d) => (d['status'] ?? '') == 'pending').toList();
-        final active =
-            docs.where((d) => (d['status'] ?? '') == 'active').toList();
-        final inactive =
-            docs.where((d) => (d['status'] ?? '') == 'inactive').toList();
-
-        if (docs.isEmpty) {
-          return const _EmptyState(
-              icon: Icons.people_outline,
-              message: 'No residents registered yet');
-        }
-
-        return ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            // Pending section
-            if (pending.isNotEmpty) ...[
-              _SectionHeader(
-                  label: 'Pending Approval',
-                  count: pending.length,
-                  color: Colors.orange),
-              ...pending.map((doc) => _ResidentCard(
-                    doc: doc,
-                    onApprove: () => _updateStatus(doc.id, 'active'),
-                    onReject: () => _updateStatus(doc.id, 'inactive'),
-                  )),
-              const SizedBox(height: 8),
-            ],
-
-            // Active section
-            if (active.isNotEmpty) ...[
-              _SectionHeader(
-                  label: 'Active Residents',
-                  count: active.length,
-                  color: Colors.green),
-              ...active.map((doc) => _ResidentCard(
-                    doc: doc,
-                    onDeactivate: () => _updateStatus(doc.id, 'inactive'),
-                  )),
-              const SizedBox(height: 8),
-            ],
-
-            // Inactive section
-            if (inactive.isNotEmpty) ...[
-              _SectionHeader(
-                  label: 'Inactive',
-                  count: inactive.length,
-                  color: Colors.grey),
-              ...inactive.map((doc) => _ResidentCard(
-                    doc: doc,
-                    onApprove: () => _updateStatus(doc.id, 'active'),
-                  )),
-            ],
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _ResidentCard extends StatelessWidget {
-  final QueryDocumentSnapshot doc;
-  final VoidCallback? onApprove;
-  final VoidCallback? onReject;
-  final VoidCallback? onDeactivate;
-
-  const _ResidentCard({
-    required this.doc,
-    this.onApprove,
-    this.onReject,
-    this.onDeactivate,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final data = doc.data() as Map<String, dynamic>;
-    final status = data['status'] ?? 'pending';
-    final statusColor = status == 'active'
-        ? Colors.green
-        : status == 'pending'
-            ? Colors.orange
-            : Colors.grey;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 6,
-              offset: const Offset(0, 2))
+  Future<void> _resetCode(String docId, String name, String role) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Reset Quick Code?'),
+        content: Text(
+            'This will generate a new code for $name. Their current code will stop working immediately.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text('Reset'),
+          ),
         ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  backgroundColor:
-                      const Color(0xFF1A73E8).withOpacity(0.1),
-                  child: Text(
-                    (data['name'] ?? 'R').substring(0, 1).toUpperCase(),
-                    style: const TextStyle(
-                        color: Color(0xFF1A73E8),
-                        fontWeight: FontWeight.bold),
+    );
+    if (confirmed != true) return;
+    final newCode = _generateCode();
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(docId)
+        .update({'quickCode': newCode});
+    if (mounted) _showCodeDialog(name, newCode, role);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        // Add buttons
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _addUser('resident'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1A73E8),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
                   ),
+                  icon: const Icon(Icons.person_add, size: 18),
+                  label: const Text('Add Resident'),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(data['name'] ?? 'Unknown',
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 15)),
-                      Text(
-                          'Flat ${data['flatNumber'] ?? ''} • ${data['phone'] ?? ''}',
-                          style: TextStyle(
-                              color: Colors.grey.shade600, fontSize: 13)),
-                    ],
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _addUser('admin'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.deepPurple,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
                   ),
+                  icon: const Icon(Icons.admin_panel_settings, size: 18),
+                  label: const Text('Add Admin'),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: statusColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    status[0].toUpperCase() + status.substring(1),
-                    style: TextStyle(
-                        color: statusColor,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ],
-            ),
-            if (onApprove != null || onReject != null || onDeactivate != null) ...[
-              const SizedBox(height: 10),
-              const Divider(height: 1),
-              const SizedBox(height: 10),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  if (onReject != null)
-                    TextButton(
-                      onPressed: onReject,
-                      style: TextButton.styleFrom(
-                          foregroundColor: Colors.red),
-                      child: const Text('Reject'),
-                    ),
-                  if (onDeactivate != null)
-                    TextButton(
-                      onPressed: onDeactivate,
-                      style: TextButton.styleFrom(
-                          foregroundColor: Colors.red),
-                      child: const Text('Deactivate'),
-                    ),
-                  if (onApprove != null) ...[
-                    const SizedBox(width: 8),
-                    ElevatedButton(
-                      onPressed: onApprove,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 8),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8)),
-                      ),
-                      child: Text(status == 'inactive'
-                          ? 'Reactivate'
-                          : 'Approve'),
-                    ),
-                  ],
-                ],
               ),
             ],
-          ],
+          ),
         ),
-      ),
+        const Divider(height: 1),
+        Expanded(
+          child: StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('users')
+                .orderBy('createdAt', descending: true)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final docs = snapshot.data?.docs ?? [];
+              if (docs.isEmpty) {
+                return const _EmptyState(
+                    icon: Icons.people_outline,
+                    message: 'No users yet. Add a resident or admin.');
+              }
+              return ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: docs.length,
+                itemBuilder: (context, i) {
+                  final data = docs[i].data() as Map<String, dynamic>;
+                  final role = data['role'] ?? 'resident';
+                  final isActive = data['status'] == 'active';
+                  final isAdmin = role == 'admin';
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.04),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2))
+                      ],
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              CircleAvatar(
+                                backgroundColor: isAdmin
+                                    ? Colors.deepPurple.shade50
+                                    : const Color(0xFF1A73E8)
+                                        .withValues(alpha: 0.1),
+                                child: Icon(
+                                  isAdmin
+                                      ? Icons.admin_panel_settings
+                                      : Icons.home,
+                                  color: isAdmin
+                                      ? Colors.deepPurple
+                                      : const Color(0xFF1A73E8),
+                                  size: 20,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(data['name'] ?? 'Unknown',
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 15)),
+                                    Text(
+                                      [
+                                        if ((data['flatNumber'] ?? '')
+                                            .isNotEmpty)
+                                          'Flat ${data['flatNumber']}',
+                                        role[0].toUpperCase() +
+                                            role.substring(1),
+                                      ].join(' • '),
+                                      style: TextStyle(
+                                          color: Colors.grey.shade600,
+                                          fontSize: 13),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: isActive
+                                      ? Colors.green.shade50
+                                      : Colors.grey.shade100,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  isActive ? 'Active' : 'Inactive',
+                                  style: TextStyle(
+                                      color: isActive
+                                          ? Colors.green.shade700
+                                          : Colors.grey.shade600,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          // Quick code row
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.grey.shade200),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.key,
+                                    size: 16, color: Colors.grey.shade500),
+                                const SizedBox(width: 8),
+                                Text('Code: ',
+                                    style: TextStyle(
+                                        color: Colors.grey.shade500,
+                                        fontSize: 13)),
+                                Text(
+                                  data['quickCode'] ?? '------',
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 18,
+                                      letterSpacing: 4),
+                                ),
+                                const Spacer(),
+                                GestureDetector(
+                                  onTap: () {
+                                    Clipboard.setData(ClipboardData(
+                                        text: data['quickCode'] ?? ''));
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                          content: Text('Code copied!')),
+                                    );
+                                  },
+                                  child: Icon(Icons.copy,
+                                      size: 16, color: Colors.grey.shade500),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              TextButton.icon(
+                                onPressed: () => _resetCode(
+                                    docs[i].id, data['name'] ?? '', data['role'] ?? 'resident'),
+                                style: TextButton.styleFrom(
+                                    foregroundColor: Colors.blue.shade700),
+                                icon: const Icon(Icons.refresh, size: 16),
+                                label: const Text('Reset Code'),
+                              ),
+                              TextButton(
+                                onPressed: () => _toggleStatus(
+                                    docs[i].id, data['status'] ?? 'active'),
+                                style: TextButton.styleFrom(
+                                    foregroundColor: isActive
+                                        ? Colors.red
+                                        : Colors.green),
+                                child: Text(
+                                    isActive ? 'Deactivate' : 'Reactivate'),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }
@@ -886,80 +1129,366 @@ class _MiniStat extends StatelessWidget {
 
 // ─── EVENTS TAB ───────────────────────────────────────────────────────────────
 
-class _EventsTab extends StatelessWidget {
+// ─── EVENTS TAB ───────────────────────────────────────────────────────────────
+
+class _EventsTab extends StatefulWidget {
   const _EventsTab();
 
   @override
+  State<_EventsTab> createState() => _EventsTabState();
+}
+
+class _EventsTabState extends State<_EventsTab>
+    with SingleTickerProviderStateMixin {
+  late TabController _innerTab;
+
+  @override
+  void initState() {
+    super.initState();
+    _innerTab = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _innerTab.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
+    return Column(
+      children: [
+        // Sub-tab bar + Create button row
+        Container(
+          color: Colors.deepPurple.shade50,
+          padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
+          child: Row(
+            children: [
+              Expanded(
+                child: TabBar(
+                  controller: _innerTab,
+                  labelColor: Colors.deepPurple,
+                  unselectedLabelColor: Colors.grey,
+                  indicatorColor: Colors.deepPurple,
+                  labelStyle: const TextStyle(fontWeight: FontWeight.w600),
+                  tabs: const [
+                    Tab(text: 'Active'),
+                    Tab(text: 'Closed'),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.add_circle,
+                    color: Colors.deepPurple, size: 28),
+                tooltip: 'Create Event',
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const CreateEventScreen()),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: _innerTab,
+            children: const [
+              _AdminEventList(status: 'active'),
+              _AdminEventList(status: 'closed'),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+const List<Color> _kEventColors = [
+  Color(0xFF6C63FF),
+  Color(0xFF00897B),
+  Color(0xFFE64A19),
+  Color(0xFF1565C0),
+  Color(0xFF6D4C41),
+  Color(0xFF00695C),
+  Color(0xFFAD1457),
+  Color(0xFF37474F),
+];
+
+class _AdminEventList extends StatelessWidget {
+  final String status;
+  const _AdminEventList({required this.status});
+
+  Color _colorFor(int i) => _kEventColors[i % _kEventColors.length];
+
+  String _fmt(double v) {
+    if (v >= 100000) return '${(v / 100000).toStringAsFixed(1)}L';
+    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
+    return v.toStringAsFixed(0);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('events')
+          .where('status', isEqualTo: status)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final events = snapshot.data?.docs ?? [];
+
+        if (events.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.celebration_outlined,
+                    size: 64, color: Colors.grey.shade300),
+                const SizedBox(height: 12),
+                Text(
+                  status == 'active'
+                      ? 'No active events'
+                      : 'No closed events yet',
+                  style: TextStyle(
+                      color: Colors.grey.shade500,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500),
+                ),
+                if (status == 'active') ...[
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const CreateEventScreen()),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.deepPurple,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                    ),
+                    icon: const Icon(Icons.add),
+                    label: const Text('Create First Event'),
+                  ),
+                ],
+              ],
+            ),
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 100),
+          itemCount: events.length,
+          itemBuilder: (context, i) {
+            final data = events[i].data() as Map<String, dynamic>;
+            final collected = (data['totalCollected'] ?? 0).toDouble();
+            final spent = (data['totalSpent'] ?? 0).toDouble();
+            final target = (data['targetAmount'] ?? 0).toDouble();
+            final balance = collected - spent;
+            final progress =
+                target > 0 ? (collected / target).clamp(0.0, 1.0) : 0.0;
+            final cardColor = _colorFor(i);
+
+            return GestureDetector(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => EventDashboardScreen(
+                    eventId: events[i].id,
+                    eventName: data['name'] ?? '',
+                    isAdmin: true,
+                  ),
+                ),
+              ),
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 14),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                        color: cardColor.withValues(alpha: 0.18),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4))
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Column(
+                    children: [
+                      // Colored top band
+                      Container(
+                        color: cardColor,
+                        padding:
+                            const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color:
+                                    Colors.white.withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(Icons.celebration,
+                                  color: Colors.white, size: 20),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                children: [
+                                  Text(data['name'] ?? '',
+                                      style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16)),
+                                  if ((data['startDate'] ?? '')
+                                      .isNotEmpty)
+                                    Text(data['startDate'],
+                                        style: const TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 12)),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color:
+                                    Colors.white.withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                status == 'active'
+                                    ? '🟢 Active'
+                                    : '🔴 Closed',
+                                style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // White bottom section
+                      Container(
+                        color: Colors.white,
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                _MiniStatChip(
+                                    label: 'Collected',
+                                    value: '₹${_fmt(collected)}',
+                                    color: Colors.green),
+                                const SizedBox(width: 8),
+                                _MiniStatChip(
+                                    label: 'Spent',
+                                    value: '₹${_fmt(spent)}',
+                                    color: Colors.red),
+                                const SizedBox(width: 8),
+                                _MiniStatChip(
+                                    label: 'Balance',
+                                    value: '₹${_fmt(balance)}',
+                                    color: Colors.blue),
+                              ],
+                            ),
+                            if (target > 0) ...[
+                              const SizedBox(height: 10),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text('Target: ₹${_fmt(target)}',
+                                      style: TextStyle(
+                                          color: Colors.grey.shade500,
+                                          fontSize: 12)),
+                                  Text(
+                                      '${(progress * 100).toStringAsFixed(0)}%',
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12,
+                                          color: cardColor)),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(4),
+                                child: LinearProgressIndicator(
+                                  value: progress,
+                                  minHeight: 6,
+                                  backgroundColor: Colors.grey.shade200,
+                                  valueColor:
+                                      AlwaysStoppedAnimation(cardColor),
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 10),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                Text('View Dashboard',
+                                    style: TextStyle(
+                                        color: cardColor,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 13)),
+                                const SizedBox(width: 4),
+                                Icon(Icons.arrow_forward_rounded,
+                                    color: cardColor, size: 16),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _MiniStatChip extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+  const _MiniStatChip(
+      {required this.label, required this.value, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(8),
+        ),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: Colors.deepPurple.shade50,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.celebration,
-                  size: 64, color: Colors.deepPurple.shade300),
-            ),
-            const SizedBox(height: 24),
-            const Text('Event Fund Manager',
+            Text(value,
                 style: TextStyle(
-                    fontSize: 20, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Text(
-              'Track collections & expenses\nfor society events',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                  color: Colors.grey.shade600, fontSize: 14),
-            ),
-            const SizedBox(height: 32),
-            SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: ElevatedButton.icon(
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        const EventListScreen(isAdmin: true),
-                  ),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.deepPurple,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ),
-                icon: const Icon(Icons.open_in_new),
-                label: const Text('Open Event Manager'),
-              ),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: OutlinedButton.icon(
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const SettingsScreen(),
-                  ),
-                ),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.grey.shade700,
-                  side: BorderSide(color: Colors.grey.shade300),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ),
-                icon: const Icon(Icons.settings_outlined, size: 18),
-                label: const Text('Community Settings (Wings)'),
-              ),
-            ),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: color)),
+            Text(label,
+                style: TextStyle(
+                    fontSize: 10,
+                    color: color.withValues(alpha: 0.8))),
           ],
         ),
       ),

@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../auth/login_screen.dart';
+import '../admin/admin_home_screen.dart';
+import '../resident/resident_home_screen.dart';
 import 'add_contribution_screen.dart';
 import 'add_expense_screen.dart';
 import 'send_notification_screen.dart';
@@ -28,7 +33,8 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(
+        length: widget.isAdmin ? 4 : 3, vsync: this);
   }
 
   @override
@@ -102,6 +108,20 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                               color: Colors.white),
                           onPressed: () => Navigator.pop(context),
                         ),
+                        IconButton(
+                          icon: const Icon(Icons.home_rounded,
+                              color: Colors.white70),
+                          tooltip: 'Home',
+                          onPressed: () => Navigator.pushAndRemoveUntil(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => widget.isAdmin
+                                  ? const AdminHomeScreen()
+                                  : const ResidentHomeScreen(),
+                            ),
+                            (route) => false,
+                          ),
+                        ),
                         Expanded(
                           child: Text(
                               (data['name'] as String?)?.isNotEmpty == true
@@ -111,6 +131,23 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                                   color: Colors.white,
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold)),
+                        ),
+                        // Logout always visible
+                        IconButton(
+                          icon: const Icon(Icons.logout, color: Colors.white70),
+                          tooltip: 'Logout',
+                          onPressed: () async {
+                            final prefs = await SharedPreferences.getInstance();
+                            await prefs.clear();
+                            if (context.mounted) {
+                              Navigator.pushAndRemoveUntil(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (_) => const LoginScreen()),
+                                (route) => false,
+                              );
+                            }
+                          },
                         ),
                         if (widget.isAdmin)
                           PopupMenuButton<String>(
@@ -141,7 +178,6 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                               }
                             },
                             itemBuilder: (_) => [
-                              // Edit always available to admin
                               const PopupMenuItem(
                                   value: 'edit',
                                   child: Row(children: [
@@ -150,7 +186,6 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                                     SizedBox(width: 8),
                                     Text('Edit Event'),
                                   ])),
-                              // Notify & close only when active
                               if (status == 'active') ...[
                                 const PopupMenuItem(
                                     value: 'notify',
@@ -235,10 +270,12 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                       indicatorColor: Colors.white,
                       labelColor: Colors.white,
                       unselectedLabelColor: Colors.white60,
-                      tabs: const [
-                        Tab(text: 'Overview'),
-                        Tab(text: 'Contributions'),
-                        Tab(text: 'Expenses'),
+                      tabs: [
+                        const Tab(text: 'Overview'),
+                        const Tab(text: 'Contributions'),
+                        const Tab(text: 'Expenses'),
+                        if (widget.isAdmin)
+                          const Tab(text: 'Follow-up'),
                       ],
                     ),
                   ],
@@ -264,47 +301,56 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                         eventId: widget.eventId,
                         isAdmin: widget.isAdmin,
                         status: status),
+                    if (widget.isAdmin)
+                      _FollowUpTab(
+                          eventId: widget.eventId,
+                          eventName: data['name'] ?? widget.eventName),
                   ],
                 ),
               ),
             ],
           ),
 
-          // Admin FABs
+          // Admin FABs — tab-aware
           floatingActionButton: widget.isAdmin && status == 'active'
-              ? Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    FloatingActionButton.extended(
-                      heroTag: 'expense',
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => AddExpenseScreen(
-                              eventId: widget.eventId),
+              ? AnimatedBuilder(
+                  animation: _tabController,
+                  builder: (context, _) {
+                    final tab = _tabController.index;
+                    if (tab == 1) {
+                      return FloatingActionButton.extended(
+                        heroTag: 'contribution',
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => AddContributionScreen(
+                                eventId: widget.eventId),
+                          ),
                         ),
-                      ),
-                      backgroundColor: Colors.red.shade400,
-                      icon: const Icon(Icons.remove, color: Colors.white),
-                      label: const Text('Add Expense',
-                          style: TextStyle(color: Colors.white)),
-                    ),
-                    const SizedBox(height: 12),
-                    FloatingActionButton.extended(
-                      heroTag: 'contribution',
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => AddContributionScreen(
-                              eventId: widget.eventId),
+                        backgroundColor: Colors.green,
+                        icon: const Icon(Icons.add, color: Colors.white),
+                        label: const Text('Add Contribution',
+                            style: TextStyle(color: Colors.white)),
+                      );
+                    }
+                    if (tab == 2) {
+                      return FloatingActionButton.extended(
+                        heroTag: 'expense',
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => AddExpenseScreen(
+                                eventId: widget.eventId),
+                          ),
                         ),
-                      ),
-                      backgroundColor: Colors.green,
-                      icon: const Icon(Icons.add, color: Colors.white),
-                      label: const Text('Add Contribution',
-                          style: TextStyle(color: Colors.white)),
-                    ),
-                  ],
+                        backgroundColor: Colors.red.shade400,
+                        icon: const Icon(Icons.remove, color: Colors.white),
+                        label: const Text('Add Expense',
+                            style: TextStyle(color: Colors.white)),
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  },
                 )
               : null,
         );
@@ -336,71 +382,193 @@ class _OverviewTab extends StatelessWidget {
     required this.data,
   });
 
+  String _fmt(double v) {
+    if (v >= 100000) return '${(v / 100000).toStringAsFixed(1)}L';
+    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
+    return v.toStringAsFixed(0);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final target = (data['targetAmount'] as num?)?.toDouble() ?? 0;
+    final collectedPct = target > 0 ? (collected / target).clamp(0.0, 1.0) : 0.0;
+    final spentPct     = target > 0 ? (spent / target).clamp(0.0, 1.0) : 0.0;
+    final isOverspent  = balance < 0;
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        // Summary cards
-        _SummaryCard(
-          title: 'Total Collected',
-          value: '₹${_fmt(collected)}',
-          subtitle: 'From all contributions',
-          icon: Icons.arrow_downward,
-          color: Colors.green,
-        ),
-        const SizedBox(height: 12),
-        _SummaryCard(
-          title: 'Total Spent',
-          value: '₹${_fmt(spent)}',
-          subtitle: 'All expenses combined',
-          icon: Icons.arrow_upward,
-          color: Colors.red,
-        ),
-        const SizedBox(height: 12),
-        _SummaryCard(
-          title: 'Available Balance',
-          value: '₹${_fmt(balance)}',
-          subtitle: balance >= 0 ? 'Funds available' : 'Overspent!',
-          icon: Icons.account_balance_wallet,
-          color: balance >= 0 ? Colors.blue : Colors.orange,
-        ),
 
-        if ((data['description'] ?? '').isNotEmpty) ...[
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: Colors.deepPurple.shade50,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('About this Event',
-                    style: TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 14)),
-                const SizedBox(height: 6),
-                Text(data['description'],
-                    style: TextStyle(
-                        color: Colors.grey.shade700, fontSize: 13)),
-              ],
-            ),
+        // ── Budget vs Actual Card ──────────────────────────────────
+        Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3))
+            ],
           ),
-        ],
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Text('Budget vs Actual',
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 16)),
+                  const Spacer(),
+                  if (isOverspent)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text('Overspent!',
+                          style: TextStyle(
+                              color: Colors.red.shade700,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 20),
+
+              // Target row
+              if (target > 0) ...[
+                _BudgetRow(
+                  label: 'Target',
+                  value: target,
+                  pct: 1.0,
+                  color: Colors.grey.shade300,
+                  fmt: _fmt,
+                  showPct: false,
+                ),
+                const SizedBox(height: 14),
+              ],
+
+              // Collected row
+              _BudgetRow(
+                label: 'Collected',
+                value: collected,
+                pct: collectedPct,
+                color: Colors.green,
+                fmt: _fmt,
+                showPct: target > 0,
+              ),
+              const SizedBox(height: 14),
+
+              // Spent row
+              _BudgetRow(
+                label: 'Spent',
+                value: spent,
+                pct: spentPct,
+                color: Colors.red.shade400,
+                fmt: _fmt,
+                showPct: target > 0,
+              ),
+              const SizedBox(height: 20),
+
+              // Balance highlight
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: isOverspent
+                      ? Colors.red.shade50
+                      : Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isOverspent
+                        ? Colors.red.shade200
+                        : Colors.green.shade200,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      isOverspent
+                          ? Icons.warning_rounded
+                          : Icons.account_balance_wallet,
+                      color: isOverspent
+                          ? Colors.red.shade600
+                          : Colors.green.shade600,
+                      size: 22,
+                    ),
+                    const SizedBox(width: 12),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          isOverspent ? 'Overspent by' : 'Balance Available',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: isOverspent
+                                  ? Colors.red.shade600
+                                  : Colors.green.shade600),
+                        ),
+                        Text(
+                          '₹${_fmt(balance.abs())}',
+                          style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: isOverspent
+                                  ? Colors.red.shade700
+                                  : Colors.green.shade700),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
 
         const SizedBox(height: 16),
 
-        // Quick stats
+        // ── 3 stat chips ──────────────────────────────────────────
+        Row(
+          children: [
+            _StatChip(
+              label: 'Collected',
+              value: '₹${_fmt(collected)}',
+              icon: Icons.arrow_downward_rounded,
+              color: Colors.green,
+            ),
+            const SizedBox(width: 8),
+            _StatChip(
+              label: 'Spent',
+              value: '₹${_fmt(spent)}',
+              icon: Icons.arrow_upward_rounded,
+              color: Colors.red,
+            ),
+            const SizedBox(width: 8),
+            _StatChip(
+              label: 'Target',
+              value: target > 0 ? '₹${_fmt(target)}' : '—',
+              icon: Icons.flag_outlined,
+              color: Colors.blue,
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 16),
+
+        // ── Event Details ─────────────────────────────────────────
         Container(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
-                  blurRadius: 6,
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 8,
                   offset: const Offset(0, 2))
             ],
           ),
@@ -408,12 +576,17 @@ class _OverviewTab extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text('Event Details',
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 14)),
+                  style:
+                      TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
               const SizedBox(height: 12),
+              if ((data['description'] ?? '').isNotEmpty) ...[
+                Text(data['description'],
+                    style: TextStyle(
+                        color: Colors.grey.shade600, fontSize: 13)),
+                const Divider(height: 20),
+              ],
               if ((data['startDate'] ?? '').isNotEmpty)
-                _DetailRow(
-                    label: 'Start Date', value: data['startDate']),
+                _DetailRow(label: 'Start Date', value: data['startDate']),
               if ((data['endDate'] ?? '').isNotEmpty)
                 _DetailRow(label: 'End Date', value: data['endDate']),
               _DetailRow(
@@ -421,21 +594,116 @@ class _OverviewTab extends StatelessWidget {
                   value: data['status'] == 'active'
                       ? '🟢 Active'
                       : '🔴 Closed'),
-              if ((data['targetAmount'] ?? 0) > 0)
-                _DetailRow(
-                    label: 'Target',
-                    value: '₹${_fmt((data['targetAmount'] ?? 0).toDouble())}'),
             ],
+          ),
+        ),
+
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+}
+
+// ── Budget Row Widget ─────────────────────────────────────────────────────────
+
+class _BudgetRow extends StatelessWidget {
+  final String label;
+  final double value;
+  final double pct;
+  final Color color;
+  final String Function(double) fmt;
+  final bool showPct;
+
+  const _BudgetRow({
+    required this.label,
+    required this.value,
+    required this.pct,
+    required this.color,
+    required this.fmt,
+    required this.showPct,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 8),
+            Text(label,
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+            const Spacer(),
+            Text('₹${fmt(value)}',
+                style: const TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.bold)),
+            if (showPct) ...[
+              const SizedBox(width: 6),
+              Text('(${(pct * 100).toStringAsFixed(0)}%)',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+            ],
+          ],
+        ),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: LinearProgressIndicator(
+            value: pct,
+            minHeight: 8,
+            backgroundColor: Colors.grey.shade100,
+            valueColor: AlwaysStoppedAnimation(color),
           ),
         ),
       ],
     );
   }
+}
 
-  String _fmt(double v) {
-    if (v >= 100000) return '${(v / 100000).toStringAsFixed(1)}L';
-    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
-    return v.toStringAsFixed(0);
+// ── Stat Chip ─────────────────────────────────────────────────────────────────
+
+class _StatChip extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+
+  const _StatChip({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: color, size: 18),
+            const SizedBox(height: 6),
+            Text(value,
+                style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: color)),
+            Text(label,
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -568,7 +836,7 @@ class _ContributionsTab extends StatelessWidget {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(14),
                   child: ExpansionTile(
-                    initiallyExpanded: true,
+                    initiallyExpanded: false,
                     // Wing header
                     leading: CircleAvatar(
                       backgroundColor: Colors.blue.shade600,
@@ -581,7 +849,7 @@ class _ContributionsTab extends StatelessWidget {
                             fontSize: 16),
                       ),
                     ),
-                    title: Text('$wing Wing',
+                    title: Text(wing,
                         style: const TextStyle(
                             fontWeight: FontWeight.bold, fontSize: 15)),
                     subtitle: Text(
@@ -733,24 +1001,19 @@ class _ContributionsTab extends StatelessWidget {
                                     backgroundColor: isPending
                                         ? Colors.orange.shade100
                                         : Colors.green.shade50,
-                                    child: Text(
-                                      'F${d['flatNumber'] ?? ''}',
-                                      style: TextStyle(
-                                          fontSize: 9,
-                                          fontWeight: FontWeight.bold,
-                                          color: isPending
-                                              ? Colors.orange.shade700
-                                              : Colors.green.shade700),
+                                    child: Icon(
+                                      Icons.home,
+                                      size: 16,
+                                      color: isPending
+                                          ? Colors.orange.shade700
+                                          : Colors.green.shade700,
                                     ),
                                   ),
                                   title: Row(
                                     children: [
                                       Expanded(
                                         child: Text(
-                                          d['residentName']?.isNotEmpty ==
-                                                  true
-                                              ? d['residentName']
-                                              : 'Flat ${d['flatNumber'] ?? ''}',
+                                          'Flat ${d['flatNumber'] ?? ''}',
                                           style: const TextStyle(
                                               fontWeight: FontWeight.w600,
                                               fontSize: 13),
@@ -763,7 +1026,12 @@ class _ContributionsTab extends StatelessWidget {
                                     ],
                                   ),
                                   subtitle: Text(
-                                    '${d['paymentMode'] ?? 'Cash'} • ${d['paidDate'] ?? ''}${(d['note'] ?? '').isNotEmpty ? ' • ${d['note']}' : ''}',
+                                    [
+                                      if ((d['residentName'] ?? '').isNotEmpty) d['residentName'],
+                                      d['paymentMode'] ?? 'Cash',
+                                      if ((d['paidDate'] ?? '').isNotEmpty) d['paidDate'],
+                                      if ((d['note'] ?? '').isNotEmpty) d['note'],
+                                    ].join(' • '),
                                     style: TextStyle(
                                         fontSize: 11,
                                         color: Colors.grey.shade600),
@@ -997,7 +1265,7 @@ class _ExpensesTab extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
-                        color: Colors.black.withOpacity(0.04),
+                        color: Colors.black.withValues(alpha: 0.04),
                         blurRadius: 6,
                         offset: const Offset(0, 2))
                   ],
@@ -1012,33 +1280,53 @@ class _ExpensesTab extends StatelessWidget {
                         style: const TextStyle(fontSize: 18)),
                   ),
                   title: Text(d['item'] ?? '',
-                      style:
-                          const TextStyle(fontWeight: FontWeight.bold)),
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
                   subtitle: Text([
                     d['category'] ?? 'Misc',
-                    if ((d['subCategory'] ?? '').isNotEmpty)
-                      d['subCategory'],
+                    if ((d['subCategory'] ?? '').isNotEmpty) d['subCategory'],
                     if ((d['vendor'] ?? '').isNotEmpty) d['vendor'],
                     if ((d['note'] ?? '').isNotEmpty) d['note'],
                   ].join(' • ')),
-                  trailing: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.end,
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        '₹${(d['amount'] ?? 0).toStringAsFixed(0)}',
-                        style: TextStyle(
-                            color: Colors.red.shade700,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16),
+                      Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            '₹${(d['amount'] ?? 0).toStringAsFixed(0)}',
+                            style: TextStyle(
+                                color: Colors.red.shade700,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16),
+                          ),
+                          Text(
+                            (d['addedAt'] ?? '').length >= 10
+                                ? d['addedAt'].substring(0, 10)
+                                : '',
+                            style: TextStyle(
+                                color: Colors.grey.shade400, fontSize: 11),
+                          ),
+                        ],
                       ),
-                      Text(
-                        (d['addedAt'] ?? '').length >= 10
-                            ? d['addedAt'].substring(0, 10)
-                            : '',
-                        style: TextStyle(
-                            color: Colors.grey.shade400, fontSize: 11),
-                      ),
+                      if (isAdmin) ...[
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => AddExpenseScreen(
+                                eventId: eventId,
+                                existingExpenseId: doc.id,
+                                existingData: d,
+                              ),
+                            ),
+                          ),
+                          child: Icon(Icons.edit,
+                              size: 18, color: Colors.grey.shade400),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -1192,3 +1480,694 @@ class _DetailRow extends StatelessWidget {
   }
 }
 
+// ── Follow-up Tab ─────────────────────────────────────────────────────────────
+
+class _FollowUpTab extends StatelessWidget {
+  final String eventId;
+  final String eventName;
+
+  const _FollowUpTab({required this.eventId, required this.eventName});
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<DocumentSnapshot>(
+      future: FirebaseFirestore.instance
+          .collection('community_settings')
+          .doc('address')
+          .get(),
+      builder: (context, settingsSnap) {
+        if (!settingsSnap.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final settingsData =
+            settingsSnap.data!.data() as Map<String, dynamic>? ?? {};
+        final wingBlocks =
+            Map<String, dynamic>.from(settingsData['wingBlocks'] ?? {});
+
+        // Build structure: wing → block → flats
+        final Map<String, Map<String, List<String>>> structure = {};
+        for (final wing in wingBlocks.keys.toList()..sort()) {
+          final raw = wingBlocks[wing];
+          structure[wing] = {};
+          if (raw is Map) {
+            for (final block in (raw.keys.toList()..sort())) {
+              structure[wing]![block] =
+                  (raw[block] is List ? List<String>.from(raw[block] as List) : <String>[])..sort();
+            }
+          } else if (raw is List) {
+            for (final block in (List<String>.from(raw)..sort())) {
+              structure[wing]![block] = [block];
+            }
+          }
+        }
+
+        final hasAnyFlats = structure.values
+            .any((b) => b.values.any((f) => f.isNotEmpty));
+
+        if (!hasAnyFlats) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.apartment_outlined,
+                    size: 64, color: Colors.grey.shade300),
+                const SizedBox(height: 12),
+                Text('No flats configured in Settings',
+                    style: TextStyle(
+                        color: Colors.grey.shade500, fontSize: 15)),
+              ],
+            ),
+          );
+        }
+
+        return StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('events')
+              .doc(eventId)
+              .collection('contributions')
+              .snapshots(),
+          builder: (context, contribSnap) {
+            final contribDocs = contribSnap.data?.docs ?? [];
+
+            // flat → 'paid' | 'pending'
+            final Map<String, String> flatStatus = {};
+            for (final doc in contribDocs) {
+              final d = doc.data() as Map<String, dynamic>;
+              final flat = (d['flatNumber'] as String?)?.trim() ?? '';
+              if (flat.isEmpty) continue;
+              final received = d['amountReceived'] != false;
+              if (flatStatus[flat] == 'paid') continue;
+              flatStatus[flat] = received ? 'paid' : 'pending';
+            }
+
+            // Count totals
+            int totalPending = 0, totalNotRecorded = 0;
+            for (final blocks in structure.values) {
+              for (final flats in blocks.values) {
+                for (final flat in flats) {
+                  final s = flatStatus[flat];
+                  if (s == null) totalNotRecorded++;
+                  else if (s == 'pending') totalPending++;
+                }
+              }
+            }
+            final totalUnpaid = totalPending + totalNotRecorded;
+
+            if (totalUnpaid == 0) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.check_circle_rounded,
+                        size: 72, color: Colors.green.shade400),
+                    const SizedBox(height: 16),
+                    const Text('All flats have paid!',
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 6),
+                    Text('No pending follow-ups',
+                        style: TextStyle(
+                            color: Colors.grey.shade500, fontSize: 14)),
+                  ],
+                ),
+              );
+            }
+
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 80),
+              children: [
+                // Summary banner
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.orange.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.pending_actions,
+                          color: Colors.orange.shade700),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          '$totalUnpaid flat${totalUnpaid == 1 ? '' : 's'} need follow-up',
+                          style: TextStyle(
+                              color: Colors.orange.shade800,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 15),
+                        ),
+                      ),
+                      Text(
+                        '$totalPending pending · $totalNotRecorded not recorded',
+                        style: TextStyle(
+                            color: Colors.orange.shade600, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Wing → Block collapsible structure
+                ...structure.entries.map((wingEntry) {
+                  final wing = wingEntry.key;
+                  final blocks = wingEntry.value;
+
+                  // Count unpaid across all blocks in this wing
+                  int wingUnpaid = 0;
+                  for (final flats in blocks.values) {
+                    for (final f in flats) {
+                      final s = flatStatus[f];
+                      if (s == null || s == 'pending') wingUnpaid++;
+                    }
+                  }
+                  if (wingUnpaid == 0) return const SizedBox.shrink();
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: [
+                        BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2))
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: ExpansionTile(
+                        initiallyExpanded: false,
+                        leading: CircleAvatar(
+                          backgroundColor: Colors.blue.shade600,
+                          radius: 18,
+                          child: Text(wing[0].toUpperCase(),
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold)),
+                        ),
+                        title: Text('$wing Wing',
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15)),
+                        subtitle: Text(
+                          '$wingUnpaid flat${wingUnpaid == 1 ? '' : 's'} pending',
+                          style: TextStyle(
+                              color: Colors.orange.shade700,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500),
+                        ),
+                        children: blocks.entries.map((blockEntry) {
+                          final block = blockEntry.key;
+                          final flats = blockEntry.value;
+
+                          final pendingInBlock = <String>[];
+                          final notRecordedInBlock = <String>[];
+                          for (final flat in flats) {
+                            final s = flatStatus[flat];
+                            if (s == null) notRecordedInBlock.add(flat);
+                            else if (s == 'pending') pendingInBlock.add(flat);
+                          }
+                          final blockUnpaid =
+                              pendingInBlock.length + notRecordedInBlock.length;
+                          if (blockUnpaid == 0) return const SizedBox.shrink();
+
+                          return Container(
+                            margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade50,
+                              borderRadius: BorderRadius.circular(10),
+                              border:
+                                  Border.all(color: Colors.grey.shade200),
+                            ),
+                            child: ExpansionTile(
+                              key: PageStorageKey(
+                                  'followup_${wing}_$block'),
+                              initiallyExpanded: false,
+                              tilePadding: const EdgeInsets.symmetric(
+                                  horizontal: 12),
+                              leading: Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  color: Colors.purple.shade100,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Center(
+                                  child: Text(block,
+                                      style: TextStyle(
+                                          color: Colors.purple.shade800,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13)),
+                                ),
+                              ),
+                              title: Text('Block $block',
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14)),
+                              subtitle: Text(
+                                '$blockUnpaid flat${blockUnpaid == 1 ? '' : 's'} pending',
+                                style: TextStyle(
+                                    color: Colors.orange.shade600,
+                                    fontSize: 11),
+                              ),
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                      12, 0, 12, 12),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      if (pendingInBlock.isNotEmpty) ...[
+                                        _FollowUpChipRow(
+                                          label: 'Pending',
+                                          flats: pendingInBlock,
+                                          color: Colors.orange,
+                                          wing: wing,
+                                          block: block,
+                                          eventName: eventName,
+                                        ),
+                                        const SizedBox(height: 8),
+                                      ],
+                                      if (notRecordedInBlock.isNotEmpty)
+                                        _FollowUpChipRow(
+                                          label: 'Not Recorded',
+                                          flats: notRecordedInBlock,
+                                          color: Colors.grey,
+                                          wing: wing,
+                                          block: block,
+                                          eventName: eventName,
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+// ── Follow-up chip row (compact, auto-fit) ────────────────────────────────────
+
+class _FollowUpChipRow extends StatelessWidget {
+  final String label;
+  final List<String> flats;
+  final MaterialColor color;
+  final String wing;
+  final String block;
+  final String eventName;
+
+  const _FollowUpChipRow({
+    required this.label,
+    required this.flats,
+    required this.color,
+    required this.wing,
+    required this.block,
+    required this.eventName,
+  });
+
+  void _sendBulkReminder(BuildContext context) {
+    final flatList = flats.join(', ');
+    final message =
+        'Hi, this is a reminder for your contribution to "$eventName". '
+        'The following flats in $wing Wing – Block $block are yet to pay: $flatList. '
+        'Please make the payment at the earliest. Thank you!';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.notifications_active,
+                color: Colors.deepPurple, size: 22),
+            const SizedBox(width: 8),
+            Text('Reminder — $wing Block $block'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('${flats.length} flat${flats.length == 1 ? '' : 's'}: $flatList',
+                style: const TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(message,
+                  style: const TextStyle(fontSize: 13, height: 1.4)),
+            ),
+            const SizedBox(height: 8),
+            Text('Copy and send via WhatsApp or SMS.',
+                style:
+                    TextStyle(color: Colors.grey.shade500, fontSize: 12)),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel')),
+          ElevatedButton.icon(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: message));
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text('Reminder copied for ${flats.length} flat${flats.length == 1 ? '' : 's'}'),
+                backgroundColor: Colors.deepPurple,
+                duration: const Duration(seconds: 2),
+              ));
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.deepPurple,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+            icon: const Icon(Icons.copy, size: 16),
+            label: const Text('Copy Message'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: color.shade50,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: color.shade200),
+              ),
+              child: Text(label,
+                  style: TextStyle(
+                      color: color.shade700,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600)),
+            ),
+            const Spacer(),
+            GestureDetector(
+              onTap: () => _sendBulkReminder(context),
+              child: Row(
+                children: [
+                  Icon(Icons.notifications_active_outlined,
+                      size: 14, color: Colors.deepPurple.shade400),
+                  const SizedBox(width: 3),
+                  Text('Send Reminder',
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.deepPurple.shade400,
+                          fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        // Auto-fit chips in a single row using LayoutBuilder
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final maxWidth = constraints.maxWidth;
+            // Calculate chip width: fit all flats in one row
+            final count = flats.length;
+            // Each chip: padding 8*2 + text ~28px min, with 4px gap
+            final double chipWidth = count > 0
+                ? ((maxWidth - (count - 1) * 4.0) / count.toDouble())
+                    .clamp(28.0, 80.0)
+                    .toDouble()
+                : 60.0;
+            return Row(
+              children: flats.asMap().entries.map((e) {
+                final i = e.key;
+                final flat = e.value;
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (i > 0) const SizedBox(width: 4),
+                    SizedBox(
+                      width: chipWidth,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        decoration: BoxDecoration(
+                          color: color.shade50,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: color.shade200),
+                        ),
+                        child: Center(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(flat,
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: color.shade700)),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              }).toList(),
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _FollowUpSectionLabel extends StatelessWidget {
+  final String label;
+  final Color color;
+  const _FollowUpSectionLabel({required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(label,
+          style: TextStyle(
+              color: color, fontWeight: FontWeight.w700, fontSize: 13)),
+    );
+  }
+}
+
+// _FollowUpFlatCard removed — replaced by _FollowUpChipRow
+class _FollowUpFlatCard extends StatelessWidget {
+  final String wing;
+  final String block;
+  final String flatNumber;
+  final String tag;
+  final MaterialColor tagColor;
+  final String eventName;
+
+  const _FollowUpFlatCard({
+    required this.wing,
+    required this.block,
+    required this.flatNumber,
+    required this.tag,
+    required this.tagColor,
+    required this.eventName,
+  });
+
+  void _sendReminder(BuildContext context) {
+    final message =
+        'Hi, this is a reminder for your contribution to "$eventName" '
+        'for flat $flatNumber ($wing). '
+        'Please make the payment at the earliest. Thank you!';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.notifications_active,
+                color: Colors.deepPurple, size: 22),
+            const SizedBox(width: 8),
+            const Text('Send Reminder'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Flat: $flatNumber  ·  $wing',
+                style: const TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(message,
+                  style: const TextStyle(fontSize: 13, height: 1.4)),
+            ),
+            const SizedBox(height: 10),
+            Text('Copy this message and send via WhatsApp or SMS.',
+                style:
+                    TextStyle(color: Colors.grey.shade500, fontSize: 12)),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: message));
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content:
+                      Text('Reminder message copied for $flatNumber'),
+                  backgroundColor: Colors.deepPurple,
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.deepPurple,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+            icon: const Icon(Icons.copy, size: 16),
+            label: const Text('Copy Message'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<QuerySnapshot>(
+      future: FirebaseFirestore.instance
+          .collection('users')
+          .where('flatNumber', isEqualTo: flatNumber)
+          .where('status', isEqualTo: 'active')
+          .limit(1)
+          .get(),
+      builder: (context, snap) {
+        final residentName = snap.hasData && snap.data!.docs.isNotEmpty
+            ? (snap.data!.docs.first.data()
+                        as Map<String, dynamic>)['name'] as String? ??
+                ''
+            : '';
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade200),
+            boxShadow: [
+              BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2)),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+                horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: tagColor.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Center(
+                    child: Icon(Icons.home_outlined,
+                        color: tagColor.shade600, size: 20),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(flatNumber,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15)),
+                      Text(
+                        [
+                          '$wing Wing',
+                          if (block.isNotEmpty && block != flatNumber)
+                            'Block $block',
+                          if (residentName.isNotEmpty) residentName,
+                        ].join(' · '),
+                        style: TextStyle(
+                            color: Colors.grey.shade500, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 3),
+                  margin: const EdgeInsets.only(right: 10),
+                  decoration: BoxDecoration(
+                    color: tagColor.shade50,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: tagColor.shade200),
+                  ),
+                  child: Text(tag,
+                      style: TextStyle(
+                          color: tagColor.shade700,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600)),
+                ),
+                IconButton(
+                  onPressed: () => _sendReminder(context),
+                  icon: Icon(Icons.notifications_active_outlined,
+                      color: Colors.deepPurple.shade400),
+                  tooltip: 'Send Reminder',
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.deepPurple.shade50,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}

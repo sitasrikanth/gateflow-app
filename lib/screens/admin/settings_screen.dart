@@ -79,8 +79,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // ── Blocks ─────────────────────────────────────────────────────────────────
 
+  // Returns block names for a wing (handles both old List and new Map format)
+  List<String> _blocksFor(Map<String, dynamic> wingBlocks, String wing) {
+    final raw = wingBlocks[wing];
+    if (raw is Map) return (raw.keys.cast<String>().toList())..sort();
+    if (raw is List) return List<String>.from(raw)..sort();
+    return [];
+  }
+
+  // Returns flats for a block within a wing
+  List<String> _flatsFor(
+      Map<String, dynamic> wingBlocks, String wing, String block) {
+    final raw = wingBlocks[wing];
+    if (raw is Map) {
+      final blockData = raw[block];
+      if (blockData is List) return List<String>.from(blockData)..sort();
+    }
+    return [];
+  }
+
+  // Returns the wing data as Map<block, List<flat>>
+  Map<String, dynamic> _wingData(Map<String, dynamic> wingBlocks, String wing) {
+    final raw = wingBlocks[wing];
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    // Migrate old List<String> format: blocks had no flats
+    if (raw is List) {
+      return {for (final b in raw as List<dynamic>) b.toString(): <String>[]};
+    }
+    return {};
+  }
+
   Future<void> _addBlock(
-      Map<String, dynamic> wingBlocks, String wing, List<String> current) async {
+      Map<String, dynamic> wingBlocks, String wing) async {
     final ctrl = TextEditingController();
     final name = await showDialog<String>(
       context: context,
@@ -106,13 +136,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
     WidgetsBinding.instance.addPostFrameCallback((_) => ctrl.dispose());
     if (name == null || name.isEmpty) return;
-    if (current.any((b) => b.toLowerCase() == name.toLowerCase())) {
+    final existing = _blocksFor(wingBlocks, wing);
+    if (existing.any((b) => b.toLowerCase() == name.toLowerCase())) {
       _snack('"$name" already exists in $wing', Colors.orange);
       return;
     }
     try {
       final updated = Map<String, dynamic>.from(wingBlocks);
-      updated[wing] = [...current, name.toUpperCase()];
+      final wingMap = _wingData(wingBlocks, wing);
+      wingMap[name.toUpperCase()] = <String>[];
+      updated[wing] = wingMap;
       await _ref.set({'wingBlocks': updated}, SetOptions(merge: true));
     } catch (e) {
       _snack('Failed: $e', Colors.red);
@@ -122,13 +155,252 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _deleteBlock(
       Map<String, dynamic> wingBlocks, String wing, String block) async {
     final ok = await _confirmDialog(
-        'Remove "$block" from $wing Wing?', 'Existing records are not affected.');
+        'Remove block "$block" from $wing Wing?',
+        'All flats in this block will also be removed. Existing records are not affected.');
     if (ok == true) {
-      final current = List<String>.from(wingBlocks[wing] ?? []);
       final updated = Map<String, dynamic>.from(wingBlocks);
-      updated[wing] = current.where((b) => b != block).toList();
+      final wingMap = _wingData(wingBlocks, wing);
+      wingMap.remove(block);
+      updated[wing] = wingMap;
       await _ref.set({'wingBlocks': updated}, SetOptions(merge: true));
     }
+  }
+
+  // ── Flats ──────────────────────────────────────────────────────────────────
+
+  Future<void> _addFlat(
+      Map<String, dynamic> wingBlocks, String wing, String block) async {
+    final fromCtrl = TextEditingController();
+    final toCtrl = TextEditingController();
+    final smartPrefix = (wing.isNotEmpty ? wing[0].toUpperCase() : '') +
+        (block.isNotEmpty ? block[0].toUpperCase() : '');
+    final prefixCtrl = TextEditingController(text: smartPrefix);
+    final singleCtrl = TextEditingController(text: smartPrefix);
+
+    List<String>? result = await showDialog<List<String>>(
+      context: context,
+      builder: (ctx) {
+        bool isBulk = false;
+        return StatefulBuilder(
+          builder: (ctx, set) => AlertDialog(
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16)),
+            insetPadding: const EdgeInsets.symmetric(
+                horizontal: 24, vertical: 24),
+            title: Text('Add Flats to $wing – Block $block'),
+            content: SingleChildScrollView(
+              child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Toggle
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => set(() => isBulk = false),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          decoration: BoxDecoration(
+                            color: !isBulk
+                                ? Colors.teal.shade600
+                                : Colors.grey.shade100,
+                            borderRadius: const BorderRadius.horizontal(
+                                left: Radius.circular(8)),
+                          ),
+                          child: Center(
+                            child: Text('Single',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    color: !isBulk
+                                        ? Colors.white
+                                        : Colors.grey.shade600)),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => set(() => isBulk = true),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          decoration: BoxDecoration(
+                            color: isBulk
+                                ? Colors.teal.shade600
+                                : Colors.grey.shade100,
+                            borderRadius: const BorderRadius.horizontal(
+                                right: Radius.circular(8)),
+                          ),
+                          child: Center(
+                            child: Text('Bulk Range',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    color: isBulk
+                                        ? Colors.white
+                                        : Colors.grey.shade600)),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                if (!isBulk) ...[
+                  TextField(
+                    controller: singleCtrl,
+                    autofocus: true,
+                    textCapitalization: TextCapitalization.characters,
+                    decoration: InputDecoration(
+                      labelText: 'Flat number',
+                      hintText: '${smartPrefix}101',
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                ] else ...[
+                  TextField(
+                    controller: prefixCtrl,
+                    textCapitalization: TextCapitalization.characters,
+                    decoration: InputDecoration(
+                      labelText: 'Prefix (optional)',
+                      hintText: smartPrefix,
+                      helperText: 'Added before each number',
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: fromCtrl,
+                          autofocus: true,
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                            labelText: 'From',
+                            hintText: '101',
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 10),
+                        child: Text('to',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16)),
+                      ),
+                      Expanded(
+                        child: TextField(
+                          controller: toCtrl,
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                            labelText: 'To',
+                            hintText: '112',
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'e.g. prefix "$smartPrefix", from 101 to 112  →  ${smartPrefix}101 … ${smartPrefix}112',
+                    style: TextStyle(
+                        color: Colors.grey.shade500, fontSize: 11),
+                  ),
+                ],
+              ],
+            ),
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel')),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.teal.shade600,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8))),
+                onPressed: () {
+                  if (!isBulk) {
+                    final v = singleCtrl.text.trim().toUpperCase();
+                    if (v.isNotEmpty) Navigator.pop(ctx, [v]);
+                  } else {
+                    final from = int.tryParse(fromCtrl.text.trim());
+                    final to = int.tryParse(toCtrl.text.trim());
+                    final prefix = prefixCtrl.text.trim().toUpperCase();
+                    if (from != null && to != null && to >= from) {
+                      final flats = List.generate(
+                          to - from + 1,
+                          (i) => '$prefix${from + i}');
+                      Navigator.pop(ctx, flats);
+                    }
+                  }
+                },
+                child: const Text('Add'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      singleCtrl.dispose();
+      fromCtrl.dispose();
+      toCtrl.dispose();
+      prefixCtrl.dispose();
+    });
+
+    if (result == null || result.isEmpty) return;
+
+    final currentFlats = _flatsFor(wingBlocks, wing, block);
+    final toAdd = result
+        .where((f) => !currentFlats.any(
+            (existing) => existing.toLowerCase() == f.toLowerCase()))
+        .toList();
+
+    if (toAdd.isEmpty) {
+      _snack('All flat(s) already exist in $wing-$block', Colors.orange);
+      return;
+    }
+
+    final skipped = result.length - toAdd.length;
+
+    try {
+      final updated = Map<String, dynamic>.from(wingBlocks);
+      final wingMap = _wingData(wingBlocks, wing);
+      final rawF = wingMap[block];
+      final flats = List<String>.from(rawF is List ? rawF : []);
+      flats.addAll(toAdd);
+      wingMap[block] = flats;
+      updated[wing] = wingMap;
+      await _ref.set({'wingBlocks': updated}, SetOptions(merge: true));
+      _snack(
+        '${toAdd.length} flat${toAdd.length == 1 ? '' : 's'} added'
+        '${skipped > 0 ? ', $skipped skipped (duplicates)' : ''}',
+        Colors.teal.shade700,
+      );
+    } catch (e) {
+      _snack('Failed: $e', Colors.red);
+    }
+  }
+
+  Future<void> _deleteFlat(
+      Map<String, dynamic> wingBlocks, String wing, String block, String flat) async {
+    final updated = Map<String, dynamic>.from(wingBlocks);
+    final wingMap = _wingData(wingBlocks, wing);
+    final rawF2 = wingMap[block];
+    final flats = List<String>.from(rawF2 is List ? rawF2 : [])
+      ..remove(flat);
+    wingMap[block] = flats;
+    updated[wing] = wingMap;
+    await _ref.set({'wingBlocks': updated}, SetOptions(merge: true));
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -224,6 +496,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onAdd: () => _addWing(wings),
                 addTooltip: 'Add Wing',
                 children: [
+                  // Info tip
+                  Container(
+                    margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.amber.shade200),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.lightbulb_outline,
+                            color: Colors.amber.shade700, size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Each wing has its own set of blocks and flats. '
+                            'When recording a contribution, selecting a wing will '
+                            'only show that wing\'s blocks. Deleting a wing or block '
+                            'does not affect existing records.',
+                            style: TextStyle(
+                                fontSize: 12, color: Colors.amber.shade900),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                   if (wings.isEmpty)
                     const Padding(
                       padding: EdgeInsets.all(16),
@@ -234,14 +534,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     for (final wing in wings)
                       _WingTile(
                         wing: wing,
-                        blocks: List<String>.from(wingBlocks[wing] ?? []),
+                        wingData: _wingData(wingBlocks, wing),
                         onRename: () => _renameWing(wings, wingBlocks, wing),
                         onDelete: () => _deleteWing(wings, wingBlocks, wing),
-                        onAddBlock: () => _addBlock(
-                            wingBlocks, wing,
-                            List<String>.from(wingBlocks[wing] ?? [])),
-                        onDeleteBlock: (b) =>
-                            _deleteBlock(wingBlocks, wing, b),
+                        onAddBlock: () => _addBlock(wingBlocks, wing),
+                        onDeleteBlock: (b) => _deleteBlock(wingBlocks, wing, b),
+                        onAddFlat: (b) => _addFlat(wingBlocks, wing, b),
+                        onDeleteFlat: (b, f) =>
+                            _deleteFlat(wingBlocks, wing, b, f),
                       ),
                 ],
               ),
@@ -254,34 +554,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 settingsRef: _ref,
                 onSnack: _snack,
               ),
-
-              const SizedBox(height: 16),
-
-              // ── Info tip ──────────────────────────────────────────
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Colors.amber.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.amber.shade200),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.lightbulb_outline,
-                        color: Colors.amber.shade700, size: 18),
-                    const SizedBox(width: 8),
-                    const Expanded(
-                      child: Text(
-                        'Each wing has its own set of blocks. When recording a contribution, '
-                        'selecting a wing will only show that wing\'s blocks. '
-                        'Deleting a wing or block does not affect existing records.',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             ],
           );
         },
@@ -290,27 +562,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 }
 
-// ── Wing tile (expandable, shows blocks) ──────────────────────────────────────
+// ── Wing tile (Wing → Block → Flats) ─────────────────────────────────────────
 
 class _WingTile extends StatelessWidget {
   final String wing;
-  final List<String> blocks;
+  final Map<String, dynamic> wingData; // block → List<flat>
   final VoidCallback onRename;
   final VoidCallback onDelete;
   final VoidCallback onAddBlock;
-  final void Function(String) onDeleteBlock;
+  final void Function(String block) onDeleteBlock;
+  final void Function(String block) onAddFlat;
+  final void Function(String block, String flat) onDeleteFlat;
 
   const _WingTile({
     required this.wing,
-    required this.blocks,
+    required this.wingData,
     required this.onRename,
     required this.onDelete,
     required this.onAddBlock,
     required this.onDeleteBlock,
+    required this.onAddFlat,
+    required this.onDeleteFlat,
   });
 
   @override
   Widget build(BuildContext context) {
+    final blocks = wingData.keys.toList()..sort();
+    final totalFlats = wingData.values
+        .fold<int>(0, (sum, v) => sum + (v is List ? v.length : 0));
+
     return ExpansionTile(
       key: PageStorageKey('wing_$wing'),
       leading: CircleAvatar(
@@ -327,9 +607,9 @@ class _WingTile extends StatelessWidget {
       subtitle: blocks.isEmpty
           ? const Text('No blocks — tap to expand',
               style: TextStyle(fontSize: 12, color: Colors.orange))
-          : Text(blocks.map((b) => '$b Block').join(', '),
+          : Text(
+              '${blocks.length} block${blocks.length == 1 ? '' : 's'} · $totalFlats flat${totalFlats == 1 ? '' : 's'}',
               style: const TextStyle(fontSize: 12)),
-      // Custom trailing: action icons + expand chevron
       trailing: _TileTrailing(
         actions: [
           _IconBtn(Icons.edit_outlined, Colors.blue, onRename, 'Rename'),
@@ -346,28 +626,200 @@ class _WingTile extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Text('No blocks configured.',
-                      style: TextStyle(color: Colors.grey.shade500, fontSize: 13)),
+                      style:
+                          TextStyle(color: Colors.grey.shade500, fontSize: 13)),
                 )
               else
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: blocks.map((b) => Chip(
-                        label: Text('$b Block'),
-                        backgroundColor: Colors.purple.shade50,
-                        labelStyle: TextStyle(color: Colors.purple.shade700,
-                            fontWeight: FontWeight.w600),
-                        deleteIcon:
-                            Icon(Icons.close, size: 16, color: Colors.red.shade400),
-                        onDeleted: () => onDeleteBlock(b),
-                      )).toList(),
-                ),
-              const SizedBox(height: 8),
+                // One sub-tile per block
+                ...blocks.map((block) {
+                  final flats = List<String>.from(
+                      wingData[block] is List ? wingData[block] as List : [])
+                    ..sort();
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.purple.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.purple.shade100),
+                    ),
+                    child: ExpansionTile(
+                      key: PageStorageKey('block_${wing}_$block'),
+                      tilePadding:
+                          const EdgeInsets.symmetric(horizontal: 12),
+                      leading: Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: Colors.purple.shade100,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Center(
+                          child: Text(block,
+                              style: TextStyle(
+                                  color: Colors.purple.shade800,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13)),
+                        ),
+                      ),
+                      title: Text('Block $block',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w600, fontSize: 14)),
+                      subtitle: Text(
+                        flats.isEmpty
+                            ? 'No flats yet'
+                            : '${flats.length} flat${flats.length == 1 ? '' : 's'}',
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: flats.isEmpty
+                                ? Colors.orange
+                                : Colors.grey.shade600),
+                      ),
+                      trailing: _TileTrailing(
+                        actions: [
+                          _IconBtn(Icons.delete_outline, Colors.red,
+                              () => onDeleteBlock(block), 'Delete Block'),
+                        ],
+                      ),
+                      children: [
+                        Padding(
+                          padding:
+                              const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (flats.isEmpty)
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.only(bottom: 8),
+                                  child: Text('No flats added yet.',
+                                      style: TextStyle(
+                                          color: Colors.grey.shade500,
+                                          fontSize: 12)),
+                                )
+                              else
+                                LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    final count = flats.length;
+                                    final double chipW = count > 0
+                                        ? ((constraints.maxWidth -
+                                                    (count - 1) * 4.0) /
+                                                count.toDouble())
+                                            .clamp(28.0, 88.0)
+                                            .toDouble()
+                                        : 60.0;
+                                    return SingleChildScrollView(
+                                      scrollDirection: Axis.horizontal,
+                                      child: Row(
+                                        children: flats
+                                            .asMap()
+                                            .entries
+                                            .map((e) {
+                                          final i = e.key;
+                                          final flat = e.value;
+                                          return Row(
+                                            mainAxisSize:
+                                                MainAxisSize.min,
+                                            children: [
+                                              if (i > 0)
+                                                const SizedBox(width: 4),
+                                              SizedBox(
+                                                width: chipW,
+                                                child: Container(
+                                                  padding: const EdgeInsets
+                                                      .symmetric(
+                                                      vertical: 6),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors
+                                                        .teal.shade50,
+                                                    borderRadius:
+                                                        BorderRadius
+                                                            .circular(6),
+                                                    border: Border.all(
+                                                        color: Colors
+                                                            .teal.shade200),
+                                                  ),
+                                                  child: Row(
+                                                    mainAxisAlignment:
+                                                        MainAxisAlignment
+                                                            .center,
+                                                    children: [
+                                                      Flexible(
+                                                        child: FittedBox(
+                                                          fit: BoxFit
+                                                              .scaleDown,
+                                                          child: Text(
+                                                            flat,
+                                                            style: TextStyle(
+                                                                fontSize:
+                                                                    12,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w600,
+                                                                color: Colors
+                                                                    .teal
+                                                                    .shade700),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      GestureDetector(
+                                                        onTap: () =>
+                                                            onDeleteFlat(
+                                                                block,
+                                                                flat),
+                                                        child: Icon(
+                                                          Icons.close,
+                                                          size: 12,
+                                                          color: Colors
+                                                              .red.shade400,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          );
+                                        }).toList(),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              const SizedBox(height: 8),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  onPressed: () => onAddFlat(block),
+                                  icon: Icon(Icons.add,
+                                      color: Colors.teal.shade600,
+                                      size: 16),
+                                  label: Text('Add Flat to Block $block',
+                                      style: TextStyle(
+                                          color: Colors.teal.shade600,
+                                          fontSize: 13)),
+                                  style: OutlinedButton.styleFrom(
+                                    side: BorderSide(
+                                        color: Colors.teal.shade200),
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(8)),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+
+              const SizedBox(height: 4),
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
                   onPressed: onAddBlock,
-                  icon: Icon(Icons.add, color: Colors.purple.shade600, size: 18),
+                  icon: Icon(Icons.add,
+                      color: Colors.purple.shade600, size: 18),
                   label: Text('Add Block to $wing Wing',
                       style: TextStyle(color: Colors.purple.shade600)),
                   style: OutlinedButton.styleFrom(
@@ -413,7 +865,7 @@ class _SectionCard extends StatelessWidget {
       shadowColor: Colors.black12,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ExpansionTile(
-        initiallyExpanded: true,
+        initiallyExpanded: false,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         collapsedShape:
             RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -742,7 +1194,8 @@ class _CategoriesCardState extends State<_CategoriesCard> {
     );
     WidgetsBinding.instance.addPostFrameCallback((_) => ctrl.dispose());
     if (sub == null || sub.isEmpty) return;
-    final subs = List<String>.from(cat['subCategories'] as List? ?? []);
+    final rawSubs = cat['subCategories'];
+    final subs = List<String>.from(rawSubs is List ? rawSubs : []);
     if (subs.any((s) => s.toLowerCase() == sub.toLowerCase())) {
       widget.onSnack('"$sub" already exists', Colors.orange);
       return;
@@ -755,7 +1208,8 @@ class _CategoriesCardState extends State<_CategoriesCard> {
   }
 
   Future<void> _deleteSub(Map<String, dynamic> cat, String sub) async {
-    final subs = List<String>.from(cat['subCategories'] as List? ?? [])..remove(sub);
+    final rawSubs2 = cat['subCategories'];
+    final subs = List<String>.from(rawSubs2 is List ? rawSubs2 : [])..remove(sub);
     final updated = widget.categories
         .map((c) => c['name'] == cat['name'] ? {...c, 'subCategories': subs} : c)
         .toList();
@@ -801,7 +1255,7 @@ class _CategoriesCardState extends State<_CategoriesCard> {
       shadowColor: Colors.black12,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ExpansionTile(
-        initiallyExpanded: true,
+        initiallyExpanded: false,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         collapsedShape:
             RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -907,7 +1361,8 @@ class _CategoryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final subs = List<String>.from(cat['subCategories'] as List? ?? []);
+    final rawSubs = cat['subCategories'];
+    final subs = List<String>.from(rawSubs is List ? rawSubs : []);
     final name = cat['name'] as String? ?? '';
     final icon = cat['icon'] as String? ?? '📦';
 
