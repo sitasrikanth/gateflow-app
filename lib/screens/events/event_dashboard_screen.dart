@@ -390,9 +390,9 @@ class _OverviewTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final target = (data['targetAmount'] as num?)?.toDouble() ?? 0;
-    final collectedPct = target > 0 ? (collected / target).clamp(0.0, 1.0) : 0.0;
-    final spentPct     = target > 0 ? (spent / target).clamp(0.0, 1.0) : 0.0;
+    final double target = (data['targetAmount'] as num?)?.toDouble() ?? 0.0;
+    final double collectedPct = target > 0 ? ((collected / target).clamp(0.0, 1.0) as num).toDouble() : 0.0;
+    final double spentPct     = target > 0 ? ((spent / target).clamp(0.0, 1.0) as num).toDouble() : 0.0;
     final isOverspent  = balance < 0;
 
     return ListView(
