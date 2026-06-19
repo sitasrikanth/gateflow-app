@@ -222,10 +222,10 @@ class _EventContributionCardState extends State<_EventContributionCard> {
   Widget build(BuildContext context) {
     final event = widget.eventDoc.data() as Map<String, dynamic>;
     final eventName = event['name'] ?? 'Event';
-    final target = (event['targetAmount'] as num?)?.toDouble() ?? 0;
-    final collected = (event['totalCollected'] as num?)?.toDouble() ?? 0;
-    final progress =
-        target > 0 ? (collected / target).clamp(0.0, 1.0) : 0.0;
+    final double target = (event['targetAmount'] as num?)?.toDouble() ?? 0.0;
+    final double collected = (event['totalCollected'] as num?)?.toDouble() ?? 0.0;
+    final double progress =
+        target > 0 ? ((collected / target).clamp(0.0, 1.0) as num).toDouble() : 0.0;
 
     final hasPaid = _contributions.isNotEmpty &&
         _contributions.any((c) => c['amountReceived'] != false);

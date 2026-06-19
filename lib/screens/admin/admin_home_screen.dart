@@ -1286,12 +1286,12 @@ class _AdminEventList extends StatelessWidget {
           itemCount: events.length,
           itemBuilder: (context, i) {
             final data = events[i].data() as Map<String, dynamic>;
-            final collected = (data['totalCollected'] ?? 0).toDouble();
-            final spent = (data['totalSpent'] ?? 0).toDouble();
-            final target = (data['targetAmount'] ?? 0).toDouble();
-            final balance = collected - spent;
-            final progress =
-                target > 0 ? (collected / target).clamp(0.0, 1.0) : 0.0;
+            final double collected = ((data['totalCollected'] ?? 0) as num).toDouble();
+            final double spent = ((data['totalSpent'] ?? 0) as num).toDouble();
+            final double target = ((data['targetAmount'] ?? 0) as num).toDouble();
+            final double balance = collected - spent;
+            final double progress =
+                target > 0 ? ((collected / target).clamp(0.0, 1.0) as num).toDouble() : 0.0;
             final cardColor = _colorFor(i);
 
             return GestureDetector(
