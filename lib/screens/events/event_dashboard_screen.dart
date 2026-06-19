@@ -1910,52 +1910,34 @@ class _FollowUpChipRow extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 6),
-        // Auto-fit chips in a single row using LayoutBuilder
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final maxWidth = constraints.maxWidth;
-            // Calculate chip width: fit all flats in one row
-            final count = flats.length;
-            // Each chip: padding 8*2 + text ~28px min, with 4px gap
-            final double chipWidth = count > 0
-                ? ((maxWidth - (count - 1) * 4.0) / count.toDouble())
-                    .clamp(28.0, 80.0)
-                    .toDouble()
-                : 60.0;
-            return Row(
-              children: flats.asMap().entries.map((e) {
-                final i = e.key;
-                final flat = e.value;
-                return Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (i > 0) const SizedBox(width: 4),
-                    SizedBox(
-                      width: chipWidth,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 6),
-                        decoration: BoxDecoration(
-                          color: color.shade50,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: color.shade200),
-                        ),
-                        child: Center(
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text(flat,
-                                style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: color.shade700)),
-                          ),
-                        ),
-                      ),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: flats.asMap().entries.map((e) {
+              final i = e.key;
+              final flat = e.value;
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (i > 0) const SizedBox(width: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: color.shade50,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: color.shade200),
                     ),
-                  ],
-                );
-              }).toList(),
-            );
-          },
+                    child: Text(flat,
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: color.shade700)),
+                  ),
+                ],
+              );
+            }).toList(),
+          ),
         ),
       ],
     );
