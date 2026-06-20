@@ -10,6 +10,15 @@ import 'screens/admin/admin_home_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    debugPrint('══════ FLUTTER ERROR STACK TRACE ══════');
+    debugPrint(details.exceptionAsString());
+    debugPrint(details.stack?.toString() ?? '(no stack)');
+    debugPrint('═══════════════════════════════════════');
+  };
+
   runApp(const MyApp());
 }
 

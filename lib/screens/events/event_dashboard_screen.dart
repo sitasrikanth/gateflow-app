@@ -9,6 +9,8 @@ import 'add_contribution_screen.dart';
 import 'add_expense_screen.dart';
 import 'send_notification_screen.dart';
 import 'create_event_screen.dart';
+import '../../utils/event_pdf_report.dart';
+import 'import_contributions_screen.dart';
 
 class EventDashboardScreen extends StatefulWidget {
   final String eventId;
@@ -132,6 +134,21 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold)),
                         ),
+                        if (!widget.isAdmin)
+                          IconButton(
+                            icon: const Icon(Icons.picture_as_pdf,
+                                color: Colors.white70),
+                            tooltip: 'Export PDF Report',
+                            onPressed: () => exportEventPdfReport(
+                              context: context,
+                              eventId: widget.eventId,
+                              eventData: data,
+                              collected: collected,
+                              spent: spent,
+                              balance: balance,
+                              target: target,
+                            ),
+                          ),
                         // Logout always visible
                         IconButton(
                           icon: const Icon(Icons.logout, color: Colors.white70),
@@ -154,6 +171,29 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                             icon: const Icon(Icons.more_vert,
                                 color: Colors.white),
                             onSelected: (val) {
+                              if (val == 'import') {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => ImportContributionsScreen(
+                                      eventId: widget.eventId,
+                                      eventName: data['name'] ??
+                                          widget.eventName,
+                                    ),
+                                  ),
+                                );
+                              }
+                              if (val == 'pdf') {
+                                exportEventPdfReport(
+                                  context: context,
+                                  eventId: widget.eventId,
+                                  eventData: data,
+                                  collected: collected,
+                                  spent: spent,
+                                  balance: balance,
+                                  target: target,
+                                );
+                              }
                               if (val == 'close') _closeEvent();
                               if (val == 'edit') {
                                 Navigator.push(
@@ -178,6 +218,22 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                               }
                             },
                             itemBuilder: (_) => [
+                              const PopupMenuItem(
+                                  value: 'import',
+                                  child: Row(children: [
+                                    Icon(Icons.upload_file_rounded,
+                                        color: Colors.teal),
+                                    SizedBox(width: 8),
+                                    Text('Import Contributions'),
+                                  ])),
+                              const PopupMenuItem(
+                                  value: 'pdf',
+                                  child: Row(children: [
+                                    Icon(Icons.picture_as_pdf,
+                                        color: Colors.deepPurple),
+                                    SizedBox(width: 8),
+                                    Text('Export PDF Report'),
+                                  ])),
                               const PopupMenuItem(
                                   value: 'edit',
                                   child: Row(children: [
@@ -1910,34 +1966,24 @@ class _FollowUpChipRow extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 6),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: flats.asMap().entries.map((e) {
-              final i = e.key;
-              final flat = e.value;
-              return Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (i > 0) const SizedBox(width: 4),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: color.shade50,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: color.shade200),
-                    ),
-                    child: Text(flat,
-                        style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: color.shade700)),
-                  ),
-                ],
-              );
-            }).toList(),
-          ),
+        Wrap(
+          spacing: 4,
+          runSpacing: 4,
+          children: flats.map((flat) {
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              decoration: BoxDecoration(
+                color: color.shade50,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: color.shade200),
+              ),
+              child: Text(flat,
+                  style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: color.shade700)),
+            );
+          }).toList(),
         ),
       ],
     );

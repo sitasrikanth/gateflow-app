@@ -697,65 +697,45 @@ class _WingTile extends StatelessWidget {
                                           fontSize: 12)),
                                 )
                               else
-                                SingleChildScrollView(
-                                  scrollDirection: Axis.horizontal,
-                                  child: Row(
-                                    children: flats
-                                        .asMap()
-                                        .entries
-                                        .map((e) {
-                                      final i = e.key;
-                                      final flat = e.value;
-                                      return Row(
+                                Wrap(
+                                  spacing: 4,
+                                  runSpacing: 4,
+                                  children: flats.map((flat) {
+                                    return Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 5),
+                                      decoration: BoxDecoration(
+                                        color: Colors.teal.shade50,
+                                        borderRadius:
+                                            BorderRadius.circular(6),
+                                        border: Border.all(
+                                            color: Colors.teal.shade200),
+                                      ),
+                                      child: Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          if (i > 0)
-                                            const SizedBox(width: 4),
-                                          Container(
-                                            padding: const EdgeInsets
-                                                .symmetric(
-                                                horizontal: 8,
-                                                vertical: 5),
-                                            decoration: BoxDecoration(
-                                              color: Colors.teal.shade50,
-                                              borderRadius:
-                                                  BorderRadius.circular(6),
-                                              border: Border.all(
-                                                  color: Colors
-                                                      .teal.shade200),
-                                            ),
-                                            child: Row(
-                                              mainAxisSize:
-                                                  MainAxisSize.min,
-                                              children: [
-                                                Text(
-                                                  flat,
-                                                  style: TextStyle(
-                                                      fontSize: 11,
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color: Colors
-                                                          .teal.shade700),
-                                                ),
-                                                const SizedBox(width: 3),
-                                                GestureDetector(
-                                                  onTap: () =>
-                                                      onDeleteFlat(
-                                                          block, flat),
-                                                  child: Icon(
-                                                    Icons.close,
-                                                    size: 11,
-                                                    color: Colors
-                                                        .red.shade400,
-                                                  ),
-                                                ),
-                                              ],
+                                          Text(
+                                            flat,
+                                            style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                                color:
+                                                    Colors.teal.shade700),
+                                          ),
+                                          const SizedBox(width: 3),
+                                          GestureDetector(
+                                            onTap: () =>
+                                                onDeleteFlat(block, flat),
+                                            child: Icon(
+                                              Icons.close,
+                                              size: 11,
+                                              color: Colors.red.shade400,
                                             ),
                                           ),
                                         ],
-                                      );
-                                    }).toList(),
-                                  ),
+                                      ),
+                                    );
+                                  }).toList(),
                                 ),
                               const SizedBox(height: 8),
                               SizedBox(
