@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../main.dart';
+import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -68,6 +69,8 @@ class _LoginScreenState extends State<LoginScreen> {
           role: data['role'] ?? 'resident',
           name: data['name'] ?? '',
           flatNumber: data['flatNumber'] ?? '',
+          userWing: data['wing'] ?? '',
+          userBlock: data['block'] ?? '',
         );
         return;
       }
@@ -115,6 +118,8 @@ class _LoginScreenState extends State<LoginScreen> {
     required String role,
     required String name,
     required String flatNumber,
+    String userWing = '',
+    String userBlock = '',
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('is_logged_in', true);
@@ -122,6 +127,41 @@ class _LoginScreenState extends State<LoginScreen> {
     await prefs.setString('session_user_id', userId);
     await prefs.setString('session_name', name);
     await prefs.setString('session_flat', flatNumber);
+
+    // Resolve wing/block for this flat
+    if (role == 'resident' && flatNumber.isNotEmpty) {
+      String wing = userWing;
+      String block = userBlock;
+      // If not in user doc, fall back to community_settings lookup
+      if (wing.isEmpty || block.isEmpty) {
+        try {
+          final settingsDoc = await FirebaseFirestore.instance
+              .collection('community_settings')
+              .doc('address')
+              .get();
+          if (settingsDoc.exists) {
+            final wingBlocks = (settingsDoc.data()?['wingBlocks'] as Map<String, dynamic>? ?? {});
+            outer:
+            for (final wEntry in wingBlocks.entries) {
+              final raw = wEntry.value;
+              if (raw is! Map) continue;
+              for (final bEntry in (raw as Map).entries) {
+                final flats = bEntry.value is List
+                    ? List<String>.from(bEntry.value)
+                    : <String>[];
+                if (flats.contains(flatNumber)) {
+                  wing = wEntry.key;
+                  block = bEntry.key.toString();
+                  break outer;
+                }
+              }
+            }
+          }
+        } catch (_) {}
+      }
+      await prefs.setString('session_wing', wing);
+      await prefs.setString('session_block', block);
+    }
     // Legacy guard keys (guard_home_screen reads these)
     if (role == 'guard') {
       await prefs.setBool('is_guard_session', true);
@@ -285,7 +325,27 @@ class _LoginScreenState extends State<LoginScreen> {
                               fontWeight: FontWeight.w600)),
                 ),
               ),
-              const SizedBox(height: 40),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('New resident?',
+                      style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
+                  TextButton(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const RegisterScreen()),
+                    ),
+                    child: const Text('Request Access',
+                        style: TextStyle(
+                            color: Color(0xFF1A73E8),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
             ],
           ),
         ),

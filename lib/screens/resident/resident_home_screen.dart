@@ -1,7 +1,10 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:image_picker/image_picker.dart';
 import '../auth/login_screen.dart';
 import '../events/event_list_screen.dart';
 import 'resident_events_screen.dart';
@@ -17,7 +20,11 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen> {
   String _flatNumber = '';
   String _residentName = '';
   String _userId = '';
+  String _wing = '';
+  String _block = '';
+  String _photoUrl = '';
   bool _loading = true;
+  bool _uploadingPhoto = false;
 
   @override
   void initState() {
@@ -27,12 +34,46 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen> {
 
   Future<void> _loadProfile() async {
     final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getString('session_user_id') ?? '';
     setState(() {
       _residentName = prefs.getString('session_name') ?? 'Resident';
       _flatNumber = prefs.getString('session_flat') ?? '';
-      _userId = prefs.getString('session_user_id') ?? '';
+      _userId = userId;
+      _wing = prefs.getString('session_wing') ?? '';
+      _block = prefs.getString('session_block') ?? '';
       _loading = false;
     });
+    // Load photo from Firestore
+    if (userId.isNotEmpty) {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(userId).get();
+      if (doc.exists && mounted) {
+        setState(() => _photoUrl = doc.data()?['photoBase64'] ?? '');
+      }
+    }
+  }
+
+  Future<void> _changePhoto() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+        source: ImageSource.gallery, maxWidth: 200, maxHeight: 200, imageQuality: 70);
+    if (picked == null || !mounted) return;
+
+    setState(() => _uploadingPhoto = true);
+    try {
+      final bytes = await File(picked.path).readAsBytes();
+      final base64Str = base64Encode(bytes);
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(_userId)
+          .update({'photoBase64': base64Str});
+      if (mounted) setState(() { _photoUrl = base64Str; _uploadingPhoto = false; });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _uploadingPhoto = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to save photo: $e')));
+      }
+    }
   }
 
   Future<void> _changeCode() async {
@@ -235,17 +276,46 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen> {
                 children: [
                   Row(
                     children: [
-                      CircleAvatar(
-                        radius: 26,
-                        backgroundColor: Colors.white.withValues(alpha: 0.2),
-                        child: Text(
-                          _residentName.isNotEmpty
-                              ? _residentName[0].toUpperCase()
-                              : 'R',
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold),
+                      GestureDetector(
+                        onTap: _uploadingPhoto ? null : _changePhoto,
+                        child: Stack(
+                          children: [
+                            CircleAvatar(
+                              radius: 26,
+                              backgroundColor: Colors.white.withValues(alpha: 0.2),
+                              backgroundImage: _photoUrl.isNotEmpty
+                                  ? MemoryImage(base64Decode(_photoUrl))
+                                  : null,
+                              child: _uploadingPhoto
+                                  ? const SizedBox(
+                                      width: 20, height: 20,
+                                      child: CircularProgressIndicator(
+                                          color: Colors.white, strokeWidth: 2))
+                                  : _photoUrl.isEmpty
+                                      ? Text(
+                                          _residentName.isNotEmpty
+                                              ? _residentName[0].toUpperCase()
+                                              : 'R',
+                                          style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 22,
+                                              fontWeight: FontWeight.bold))
+                                      : null,
+                            ),
+                            if (!_uploadingPhoto)
+                              Positioned(
+                                bottom: 0, right: 0,
+                                child: Container(
+                                  padding: const EdgeInsets.all(3),
+                                  decoration: const BoxDecoration(
+                                    color: Colors.white,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(Icons.camera_alt,
+                                      size: 10, color: Color(0xFF1A73E8)),
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -291,18 +361,21 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen> {
                       children: [
                         const Icon(Icons.home, color: Colors.white, size: 18),
                         const SizedBox(width: 10),
-                        Text('Flat $_flatNumber',
+                        Expanded(
+                          child: Text(
+                            [
+                              if (_wing.isNotEmpty) _wing,
+                              if (_block.isNotEmpty) 'Block $_block',
+                              if (_flatNumber.isNotEmpty) 'Flat $_flatNumber',
+                            ].join(' › '),
                             style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600,
-                                fontSize: 15)),
-                        const Spacer(),
+                                fontSize: 15),
+                          ),
+                        ),
                         const Icon(Icons.apartment,
                             color: Colors.white54, size: 16),
-                        const SizedBox(width: 4),
-                        const Text('GateFlow Community',
-                            style: TextStyle(
-                                color: Colors.white70, fontSize: 12)),
                       ],
                     ),
                   ),

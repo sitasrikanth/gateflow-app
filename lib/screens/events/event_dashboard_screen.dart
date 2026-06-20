@@ -805,13 +805,27 @@ class _ContributionsTab extends StatelessWidget {
           );
         }
 
-        // ── Group by Wing → Block ──────────────────────────────
-        // Map<wing, Map<block, List<doc>>>
+        // ── Split pending-verification (self-reported) from rest ──
+        final pendingVerification = docs
+            .where((d) {
+              final data = d.data() as Map<String, dynamic>;
+              return data['selfReported'] == true &&
+                  data['amountReceived'] == false;
+            })
+            .toList();
+
+        // ── Group confirmed contributions by Wing → Block ─────
+        final confirmedDocs = docs.where((d) {
+          final data = d.data() as Map<String, dynamic>;
+          return !(data['selfReported'] == true &&
+              data['amountReceived'] == false);
+        }).toList();
+
         final Map<String, Map<String, List<QueryDocumentSnapshot>>> grouped = {};
         double grandTotal = 0;
         int totalCount = 0;
 
-        for (final doc in docs) {
+        for (final doc in confirmedDocs) {
           final d = doc.data() as Map<String, dynamic>;
           final wing = (d['wing'] as String?)?.trim().isNotEmpty == true
               ? d['wing'] as String
@@ -822,7 +836,6 @@ class _ContributionsTab extends StatelessWidget {
           grouped.putIfAbsent(wing, () => {});
           grouped[wing]!.putIfAbsent(block, () => []);
           grouped[wing]![block]!.add(doc);
-          // Only count received amounts in total
           if (d['amountReceived'] != false) {
             grandTotal += (d['amount'] ?? 0).toDouble();
           }
@@ -835,6 +848,140 @@ class _ContributionsTab extends StatelessWidget {
         return ListView(
           padding: const EdgeInsets.all(12),
           children: [
+            // ── Pending Verification (self-reported) ───────────
+            if (isAdmin && pendingVerification.isNotEmpty) ...[
+              Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.orange.shade300),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      Icon(Icons.pending_actions,
+                          color: Colors.orange.shade700, size: 18),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${pendingVerification.length} Pending Verification',
+                        style: TextStyle(
+                            color: Colors.orange.shade800,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14),
+                      ),
+                    ]),
+                    const SizedBox(height: 2),
+                    Text('Residents reported these payments — confirm or reject each one.',
+                        style: TextStyle(
+                            color: Colors.orange.shade700, fontSize: 12)),
+                    const SizedBox(height: 10),
+                    ...pendingVerification.map((doc) {
+                      final d = doc.data() as Map<String, dynamic>;
+                      final amt = (d['amount'] as num?)?.toDouble() ?? 0;
+                      final flat = d['flatNumber'] ?? '';
+                      final name = d['residentName'] ?? '';
+                      final wing = d['wing'] ?? '';
+                      final block = d['block'] ?? '';
+                      final mode = d['paymentMode'] ?? '';
+                      final ref = d['referenceId'] ?? '';
+                      final date = d['paidDate'] ?? '';
+                      final location = [
+                        if (wing.isNotEmpty) wing,
+                        if (block.isNotEmpty) 'Block $block',
+                        if (flat.isNotEmpty) 'Flat $flat',
+                      ].join(' › ');
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.orange.shade200),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      location.isNotEmpty ? location : flat,
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14),
+                                    ),
+                                    if (name.isNotEmpty)
+                                      Text(name,
+                                          style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey.shade700)),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      [
+                                        mode,
+                                        if (ref.isNotEmpty) 'Ref: $ref',
+                                        if (date.isNotEmpty) date,
+                                      ].join('  ·  '),
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey.shade600),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Text('₹${amt.toStringAsFixed(0)}',
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16)),
+                            ]),
+                            const SizedBox(height: 10),
+                            Row(children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: () => _rejectSelfReport(context, doc),
+                                  icon: const Icon(Icons.close, size: 16),
+                                  label: const Text('Reject'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.red.shade700,
+                                    side: BorderSide(
+                                        color: Colors.red.shade300),
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(8)),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () =>
+                                      _confirmSelfReport(context, doc, amt),
+                                  icon: const Icon(Icons.check, size: 16),
+                                  label: const Text('Confirm'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.green.shade600,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(8)),
+                                  ),
+                                ),
+                              ),
+                            ]),
+                          ],
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            ],
+
             // ── Grand total banner ─────────────────────────────
             Container(
               margin: const EdgeInsets.only(bottom: 12),
@@ -1128,6 +1275,17 @@ class _ContributionsTab extends StatelessWidget {
                                           constraints:
                                               const BoxConstraints(),
                                         ),
+                                        IconButton(
+                                          icon: Icon(Icons.delete_outline,
+                                              color: Colors.red.shade300,
+                                              size: 17),
+                                          onPressed: () => _deleteContribution(
+                                              context, doc, d),
+                                          tooltip: 'Delete',
+                                          padding: EdgeInsets.zero,
+                                          constraints:
+                                              const BoxConstraints(),
+                                        ),
                                       ],
                                     ],
                                   ),
@@ -1188,6 +1346,111 @@ class _ContributionsTab extends StatelessWidget {
                 fontWeight: FontWeight.bold,
                 color: Colors.orange.shade800)),
       );
+
+  static Future<void> _deleteContribution(BuildContext context,
+      DocumentSnapshot doc, Map<String, dynamic> d) async {
+    final amt = (d['amount'] as num?)?.toDouble() ?? 0;
+    final flat = d['flatNumber'] ?? '';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete Contribution'),
+        content: Text(
+            'Delete ₹${amt.toStringAsFixed(0)} contribution from Flat $flat? '
+            '${d['amountReceived'] != false ? 'This will also deduct the amount from total collected.' : ''}'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red.shade600,
+                  foregroundColor: Colors.white),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final batch = FirebaseFirestore.instance.batch();
+    batch.delete(doc.reference);
+    // Only decrement totalCollected if this was a confirmed (received) payment
+    if (d['amountReceived'] != false) {
+      final eventRef = FirebaseFirestore.instance
+          .collection('events')
+          .doc(doc.reference.parent.parent!.id);
+      batch.update(
+          eventRef, {'totalCollected': FieldValue.increment(-amt)});
+    }
+    await batch.commit();
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Contribution deleted')));
+    }
+  }
+
+  static Future<void> _confirmSelfReport(
+      BuildContext context, DocumentSnapshot doc, double amt) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Confirm Payment'),
+        content: Text(
+            'Mark ₹${amt.toStringAsFixed(0)} as received and add to total collected?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green.shade600,
+                  foregroundColor: Colors.white),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Confirm')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final batch = FirebaseFirestore.instance.batch();
+    batch.update(doc.reference, {'amountReceived': true});
+    final eventRef =
+        FirebaseFirestore.instance.collection('events').doc(doc.reference.parent.parent!.id);
+    batch.update(eventRef, {'totalCollected': FieldValue.increment(amt)});
+    await batch.commit();
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Payment confirmed ✅')));
+    }
+  }
+
+  static Future<void> _rejectSelfReport(
+      BuildContext context, DocumentSnapshot doc) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Reject Report'),
+        content: const Text(
+            'Remove this self-reported payment? The resident will need to re-submit.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red.shade600,
+                  foregroundColor: Colors.white),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Reject')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await doc.reference.delete();
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Payment report rejected ❌')));
+    }
+  }
 }
 
 // ── Expenses Tab ──────────────────────────────────────────────────────────────

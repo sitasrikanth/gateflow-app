@@ -154,15 +154,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _deleteBlock(
       Map<String, dynamic> wingBlocks, String wing, String block) async {
+    _snack('Tap registered — confirm to delete block $block', Colors.blue);
     final ok = await _confirmDialog(
         'Remove block "$block" from $wing Wing?',
         'All flats in this block will also be removed. Existing records are not affected.');
     if (ok == true) {
-      final updated = Map<String, dynamic>.from(wingBlocks);
-      final wingMap = _wingData(wingBlocks, wing);
-      wingMap.remove(block);
-      updated[wing] = wingMap;
-      await _ref.set({'wingBlocks': updated}, SetOptions(merge: true));
+      try {
+        final updated = Map<String, dynamic>.from(wingBlocks);
+        final wingMap = _wingData(wingBlocks, wing);
+        wingMap.remove(block);
+        updated[wing] = wingMap;
+        await _ref.update({'wingBlocks': updated});
+        _snack('Block $block deleted', Colors.green);
+      } catch (e) {
+        _snack('Error: $e', Colors.red);
+      }
     }
   }
 
@@ -391,13 +397,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  Future<void> _deleteFlat(
-      Map<String, dynamic> wingBlocks, String wing, String block, String flat) async {
+  Future<void> _deleteFlats(Map<String, dynamic> wingBlocks, String wing,
+      String block, List<String> toDelete) async {
+    final ok = await _confirmDialog(
+      'Delete ${toDelete.length} flat${toDelete.length == 1 ? '' : 's'}?',
+      toDelete.length == 1
+          ? 'Remove flat "${toDelete.first}" from $wing – Block $block?'
+          : 'Remove ${toDelete.length} flats from $wing – Block $block? Existing records are not affected.',
+    );
+    if (ok != true) return;
     final updated = Map<String, dynamic>.from(wingBlocks);
     final wingMap = _wingData(wingBlocks, wing);
-    final rawF2 = wingMap[block];
-    final flats = List<String>.from(rawF2 is List ? rawF2 : [])
-      ..remove(flat);
+    final rawF = wingMap[block];
+    final flats = List<String>.from(rawF is List ? rawF : [])
+      ..removeWhere((f) => toDelete.contains(f));
+    wingMap[block] = flats;
+    updated[wing] = wingMap;
+    await _ref.set({'wingBlocks': updated}, SetOptions(merge: true));
+  }
+
+  Future<void> _renameFlat(Map<String, dynamic> wingBlocks, String wing,
+      String block, String flat) async {
+    final name = await _inputDialog('Rename Flat', flat);
+    if (name == null || name.isEmpty || name == flat) return;
+    final updated = Map<String, dynamic>.from(wingBlocks);
+    final wingMap = _wingData(wingBlocks, wing);
+    final rawF = wingMap[block];
+    final flats = List<String>.from(rawF is List ? rawF : [])
+        .map((f) => f == flat ? name.toUpperCase() : f)
+        .toList();
     wingMap[block] = flats;
     updated[wing] = wingMap;
     await _ref.set({'wingBlocks': updated}, SetOptions(merge: true));
@@ -491,8 +519,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 iconColor: Colors.blue,
                 title: 'Wings & Blocks',
                 subtitle: wings.isEmpty
-                    ? 'No wings yet'
-                    : '${wings.length} wing${wings.length == 1 ? '' : 's'}',
+                    ? 'No wings yet — tap + to add your first wing'
+                    : '${wings.length} wing${wings.length == 1 ? '' : 's'} · Tap ⊕ on a wing to add blocks · Tap ⊕ on a block to add flats',
                 onAdd: () => _addWing(wings),
                 addTooltip: 'Add Wing',
                 children: [
@@ -540,8 +568,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         onAddBlock: () => _addBlock(wingBlocks, wing),
                         onDeleteBlock: (b) => _deleteBlock(wingBlocks, wing, b),
                         onAddFlat: (b) => _addFlat(wingBlocks, wing, b),
-                        onDeleteFlat: (b, f) =>
-                            _deleteFlat(wingBlocks, wing, b, f),
+                        onDeleteFlats: (b, flats) =>
+                            _deleteFlats(wingBlocks, wing, b, flats),
+                        onRenameFlat: (b, f) =>
+                            _renameFlat(wingBlocks, wing, b, f),
                       ),
                 ],
               ),
@@ -572,7 +602,8 @@ class _WingTile extends StatelessWidget {
   final VoidCallback onAddBlock;
   final void Function(String block) onDeleteBlock;
   final void Function(String block) onAddFlat;
-  final void Function(String block, String flat) onDeleteFlat;
+  final void Function(String block, List<String> flats) onDeleteFlats;
+  final void Function(String block, String flat) onRenameFlat;
 
   const _WingTile({
     required this.wing,
@@ -582,7 +613,8 @@ class _WingTile extends StatelessWidget {
     required this.onAddBlock,
     required this.onDeleteBlock,
     required this.onAddFlat,
-    required this.onDeleteFlat,
+    required this.onDeleteFlats,
+    required this.onRenameFlat,
   });
 
   @override
@@ -593,27 +625,60 @@ class _WingTile extends StatelessWidget {
 
     return ExpansionTile(
       key: PageStorageKey('wing_$wing'),
-      leading: CircleAvatar(
-        backgroundColor: Colors.blue.shade50,
-        radius: 18,
-        child: Text(
-          wing[0].toUpperCase(),
-          style: TextStyle(
-              color: Colors.blue.shade700, fontWeight: FontWeight.bold),
-        ),
-      ),
-      title: Text('$wing Wing',
-          style: const TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: blocks.isEmpty
-          ? const Text('No blocks — tap to expand',
-              style: TextStyle(fontSize: 12, color: Colors.orange))
-          : Text(
-              '${blocks.length} block${blocks.length == 1 ? '' : 's'} · $totalFlats flat${totalFlats == 1 ? '' : 's'}',
-              style: const TextStyle(fontSize: 12)),
-      trailing: _TileTrailing(
-        actions: [
-          _IconBtn(Icons.edit_outlined, Colors.blue, onRename, 'Rename'),
-          _IconBtn(Icons.delete_outline, Colors.red, onDelete, 'Delete'),
+      controlAffinity: ListTileControlAffinity.leading,
+      title: Row(
+        children: [
+          CircleAvatar(
+            backgroundColor: Colors.blue.shade50,
+            radius: 18,
+            child: Text(wing[0].toUpperCase(),
+                style: TextStyle(
+                    color: Colors.blue.shade700,
+                    fontWeight: FontWeight.bold)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('$wing Wing',
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                blocks.isEmpty
+                    ? const Text('No blocks yet',
+                        style: TextStyle(fontSize: 12, color: Colors.orange))
+                    : Text(
+                        '${blocks.length} block${blocks.length == 1 ? '' : 's'} · $totalFlats flat${totalFlats == 1 ? '' : 's'}',
+                        style: const TextStyle(fontSize: 12, color: Colors.grey)),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: Icon(Icons.add_circle_outline,
+                color: Colors.purple.shade600, size: 20),
+            tooltip: 'Add Block',
+            onPressed: onAddBlock,
+            padding: const EdgeInsets.all(4),
+            constraints: const BoxConstraints(),
+            visualDensity: VisualDensity.compact,
+          ),
+          IconButton(
+            icon: Icon(Icons.edit_outlined,
+                color: Colors.blue.shade400, size: 20),
+            tooltip: 'Rename Wing',
+            onPressed: onRename,
+            padding: const EdgeInsets.all(4),
+            constraints: const BoxConstraints(),
+            visualDensity: VisualDensity.compact,
+          ),
+          IconButton(
+            icon: Icon(Icons.delete_outline,
+                color: Colors.red.shade400, size: 20),
+            tooltip: 'Delete Wing',
+            onPressed: onDelete,
+            padding: const EdgeInsets.all(4),
+            constraints: const BoxConstraints(),
+            visualDensity: VisualDensity.compact,
+          ),
         ],
       ),
       children: [
@@ -646,119 +711,77 @@ class _WingTile extends StatelessWidget {
                       key: PageStorageKey('block_${wing}_$block'),
                       tilePadding:
                           const EdgeInsets.symmetric(horizontal: 12),
-                      leading: Container(
-                        width: 32,
-                        height: 32,
-                        decoration: BoxDecoration(
-                          color: Colors.purple.shade100,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Center(
-                          child: Text(block,
-                              style: TextStyle(
-                                  color: Colors.purple.shade800,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13)),
-                        ),
-                      ),
-                      title: Text('Block $block',
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w600, fontSize: 14)),
-                      subtitle: Text(
-                        flats.isEmpty
-                            ? 'No flats yet'
-                            : '${flats.length} flat${flats.length == 1 ? '' : 's'}',
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: flats.isEmpty
-                                ? Colors.orange
-                                : Colors.grey.shade600),
-                      ),
-                      trailing: _TileTrailing(
-                        actions: [
-                          _IconBtn(Icons.delete_outline, Colors.red,
-                              () => onDeleteBlock(block), 'Delete Block'),
+                      controlAffinity: ListTileControlAffinity.leading,
+                      title: Row(
+                        children: [
+                          Container(
+                            width: 30,
+                            height: 30,
+                            decoration: BoxDecoration(
+                              color: Colors.purple.shade100,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Center(
+                              child: Text(block,
+                                  style: TextStyle(
+                                      color: Colors.purple.shade800,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13)),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Block $block',
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14)),
+                                Text(
+                                  flats.isEmpty
+                                      ? 'No flats yet'
+                                      : '${flats.length} flat${flats.length == 1 ? '' : 's'}',
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      color: flats.isEmpty
+                                          ? Colors.orange
+                                          : Colors.grey.shade600),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: Icon(Icons.add_circle_outline,
+                                color: Colors.teal.shade600, size: 20),
+                            tooltip: 'Add Flat',
+                            onPressed: () => onAddFlat(block),
+                            padding: const EdgeInsets.all(4),
+                            constraints: const BoxConstraints(),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          IconButton(
+                            icon: Icon(Icons.delete_outline,
+                                color: Colors.red.shade400, size: 20),
+                            tooltip: 'Delete Block',
+                            onPressed: () => onDeleteBlock(block),
+                            padding: const EdgeInsets.all(4),
+                            constraints: const BoxConstraints(),
+                            visualDensity: VisualDensity.compact,
+                          ),
                         ],
                       ),
                       children: [
                         Padding(
                           padding:
                               const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (flats.isEmpty)
-                                Padding(
-                                  padding:
-                                      const EdgeInsets.only(bottom: 8),
-                                  child: Text('No flats added yet.',
-                                      style: TextStyle(
-                                          color: Colors.grey.shade500,
-                                          fontSize: 12)),
-                                )
-                              else
-                                Wrap(
-                                  spacing: 4,
-                                  runSpacing: 4,
-                                  children: flats.map((flat) {
-                                    return Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 8, vertical: 5),
-                                      decoration: BoxDecoration(
-                                        color: Colors.teal.shade50,
-                                        borderRadius:
-                                            BorderRadius.circular(6),
-                                        border: Border.all(
-                                            color: Colors.teal.shade200),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Text(
-                                            flat,
-                                            style: TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.w600,
-                                                color:
-                                                    Colors.teal.shade700),
-                                          ),
-                                          const SizedBox(width: 3),
-                                          GestureDetector(
-                                            onTap: () =>
-                                                onDeleteFlat(block, flat),
-                                            child: Icon(
-                                              Icons.close,
-                                              size: 11,
-                                              color: Colors.red.shade400,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    );
-                                  }).toList(),
-                                ),
-                              const SizedBox(height: 8),
-                              SizedBox(
-                                width: double.infinity,
-                                child: OutlinedButton.icon(
-                                  onPressed: () => onAddFlat(block),
-                                  icon: Icon(Icons.add,
-                                      color: Colors.teal.shade600,
-                                      size: 16),
-                                  label: Text('Add Flat to Block $block',
-                                      style: TextStyle(
-                                          color: Colors.teal.shade600,
-                                          fontSize: 13)),
-                                  style: OutlinedButton.styleFrom(
-                                    side: BorderSide(
-                                        color: Colors.teal.shade200),
-                                    shape: RoundedRectangleBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(8)),
-                                  ),
-                                ),
-                              ),
-                            ],
+                          child: _FlatGrid(
+                            flats: flats,
+                            onDeleteFlats: (selected) =>
+                                onDeleteFlats(block, selected),
+                            onRenameFlat: (flat) =>
+                                onRenameFlat(block, flat),
+                            onAddFlat: () => onAddFlat(block),
                           ),
                         ),
                       ],
@@ -766,22 +789,6 @@ class _WingTile extends StatelessWidget {
                   );
                 }),
 
-              const SizedBox(height: 4),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: onAddBlock,
-                  icon: Icon(Icons.add,
-                      color: Colors.purple.shade600, size: 18),
-                  label: Text('Add Block to $wing Wing',
-                      style: TextStyle(color: Colors.purple.shade600)),
-                  style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: Colors.purple.shade200),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-              ),
             ],
           ),
         ),
@@ -791,6 +798,151 @@ class _WingTile extends StatelessWidget {
 }
 
 // ── Section card (collapsible wrapper) ────────────────────────────────────────
+
+// ── Flat grid with multi-select ───────────────────────────────────────────────
+
+class _FlatGrid extends StatefulWidget {
+  final List<String> flats;
+  final void Function(List<String> selected) onDeleteFlats;
+  final void Function(String flat) onRenameFlat;
+  final VoidCallback onAddFlat;
+
+  const _FlatGrid({
+    required this.flats,
+    required this.onDeleteFlats,
+    required this.onRenameFlat,
+    required this.onAddFlat,
+  });
+
+  @override
+  State<_FlatGrid> createState() => _FlatGridState();
+}
+
+class _FlatGridState extends State<_FlatGrid> {
+  final Set<String> _selected = {};
+
+  void _toggle(String flat) {
+    setState(() {
+      if (_selected.contains(flat)) {
+        _selected.remove(flat);
+      } else {
+        _selected.add(flat);
+      }
+    });
+  }
+
+  void _clearSelection() => setState(() => _selected.clear());
+
+  @override
+  Widget build(BuildContext context) {
+    final selecting = _selected.isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (widget.flats.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text('No flats added yet.',
+                style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
+          )
+        else
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: widget.flats.map((flat) {
+              final isSel = _selected.contains(flat);
+              return GestureDetector(
+                onTap: () => _toggle(flat),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: isSel
+                        ? Colors.teal.shade600
+                        : Colors.teal.shade50,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                        color: isSel
+                            ? Colors.teal.shade700
+                            : Colors.teal.shade200),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (isSel) ...[
+                        const Icon(Icons.check,
+                            size: 11, color: Colors.white),
+                        const SizedBox(width: 4),
+                      ],
+                      Text(
+                        flat,
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: isSel
+                                ? Colors.white
+                                : Colors.teal.shade700),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        const SizedBox(height: 8),
+        // Action bar — only shown in selection mode
+        if (selecting)
+          Row(
+            children: [
+              Text('${_selected.length} selected',
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.teal.shade700,
+                      fontWeight: FontWeight.w600)),
+              const Spacer(),
+              TextButton(
+                onPressed: _clearSelection,
+                style: TextButton.styleFrom(
+                    foregroundColor: Colors.grey.shade600,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8)),
+                child: const Text('Cancel', style: TextStyle(fontSize: 12)),
+              ),
+              if (_selected.length == 1)
+                TextButton.icon(
+                  onPressed: () {
+                    final flat = _selected.first;
+                    _clearSelection();
+                    widget.onRenameFlat(flat);
+                  },
+                  style: TextButton.styleFrom(
+                      foregroundColor: Colors.blue.shade700,
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 8)),
+                  icon: const Icon(Icons.edit_outlined, size: 14),
+                  label: const Text('Rename', style: TextStyle(fontSize: 12)),
+                ),
+              TextButton.icon(
+                onPressed: () {
+                  final toDelete = _selected.toList();
+                  _clearSelection();
+                  widget.onDeleteFlats(toDelete);
+                },
+                style: TextButton.styleFrom(
+                    foregroundColor: Colors.red.shade700,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8)),
+                icon: const Icon(Icons.delete_outline, size: 14),
+                label: const Text('Delete', style: TextStyle(fontSize: 12)),
+              ),
+            ],
+          ),
+      ],
+    );
+  }
+}
 
 class _SectionCard extends StatelessWidget {
   final IconData icon;
@@ -869,15 +1021,10 @@ class _TileTrailing extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // We wrap with GestureDetector to stop taps on our action buttons
-    // from propagating to the ExpansionTile's own tap handler.
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         ...actions,
-        // Use a Builder trick: the ExpansionTile's animated icon is rendered
-        // separately, we just put a static chevron here. Tapping the title
-        // area (not the actions) will still toggle the tile.
         const Icon(Icons.expand_more, color: Colors.grey),
       ],
     );
@@ -893,16 +1040,14 @@ class _IconBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
-        child: Padding(
-          padding: const EdgeInsets.all(6),
-          child: Icon(icon, color: color.shade400, size: 20),
-        ),
-      ),
+    return IconButton(
+      tooltip: tooltip,
+      icon: Icon(icon, color: color.shade600, size: 20),
+      onPressed: onTap,
+      padding: const EdgeInsets.all(4),
+      constraints: const BoxConstraints(),
+      splashRadius: 20,
+      visualDensity: VisualDensity.compact,
     );
   }
 }

@@ -4,6 +4,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../auth/login_screen.dart';
 import '../events/event_dashboard_screen.dart';
 
+// Payment modes shown to residents
+const _kPaymentModes = ['PhonePe', 'Google Pay', 'NEFT / RTGS', 'Cash', 'Other'];
+
 class ResidentEventsScreen extends StatefulWidget {
   const ResidentEventsScreen({super.key});
 
@@ -14,6 +17,7 @@ class ResidentEventsScreen extends StatefulWidget {
 class _ResidentEventsScreenState extends State<ResidentEventsScreen>
     with SingleTickerProviderStateMixin {
   String _flatNumber = '';
+  String _residentName = '';
   late TabController _tabController;
 
   @override
@@ -31,7 +35,10 @@ class _ResidentEventsScreenState extends State<ResidentEventsScreen>
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
-    setState(() => _flatNumber = prefs.getString('session_flat') ?? '');
+    setState(() {
+      _flatNumber = prefs.getString('session_flat') ?? '';
+      _residentName = prefs.getString('session_name') ?? '';
+    });
   }
 
   @override
@@ -96,10 +103,8 @@ class _ResidentEventsScreenState extends State<ResidentEventsScreen>
             : TabBarView(
                 controller: _tabController,
                 children: [
-                  _EventsTab(
-                      flatNumber: _flatNumber, status: 'active'),
-                  _EventsTab(
-                      flatNumber: _flatNumber, status: 'closed'),
+                  _EventsTab(flatNumber: _flatNumber, residentName: _residentName, status: 'active'),
+                  _EventsTab(flatNumber: _flatNumber, residentName: _residentName, status: 'closed'),
                 ],
               ),
       ),
@@ -111,8 +116,9 @@ class _ResidentEventsScreenState extends State<ResidentEventsScreen>
 
 class _EventsTab extends StatelessWidget {
   final String flatNumber;
+  final String residentName;
   final String status;
-  const _EventsTab({required this.flatNumber, required this.status});
+  const _EventsTab({required this.flatNumber, required this.residentName, required this.status});
 
   @override
   Widget build(BuildContext context) {
@@ -156,6 +162,7 @@ class _EventsTab extends StatelessWidget {
           itemBuilder: (context, i) => _EventContributionCard(
             eventDoc: events[i],
             flatNumber: flatNumber,
+            residentName: residentName,
             isActive: status == 'active',
           ),
         );
@@ -169,10 +176,12 @@ class _EventsTab extends StatelessWidget {
 class _EventContributionCard extends StatefulWidget {
   final QueryDocumentSnapshot eventDoc;
   final String flatNumber;
+  final String residentName;
   final bool isActive;
   const _EventContributionCard({
     required this.eventDoc,
     required this.flatNumber,
+    required this.residentName,
     required this.isActive,
   });
 
@@ -203,6 +212,21 @@ class _EventContributionCardState extends State<_EventContributionCard> {
         _loaded = true;
       });
     }
+  }
+
+  Future<void> _selfReport(BuildContext context, String eventName) async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _SelfReportSheet(
+        eventId: widget.eventDoc.id,
+        eventName: eventName,
+        flatNumber: widget.flatNumber,
+        residentName: widget.residentName,
+        onSubmitted: _load,
+      ),
+    );
   }
 
   void _openDashboard(BuildContext context, String eventName) {
@@ -432,22 +456,362 @@ class _EventContributionCardState extends State<_EventContributionCard> {
                 );
               })),
 
-            // Tap hint
+            // Action row
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
               child: Row(
                 children: [
-                  Icon(Icons.touch_app,
-                      size: 14, color: Colors.deepPurple.shade300),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Tap to view $eventName dashboard',
-                    style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.deepPurple.shade300,
-                        fontStyle: FontStyle.italic),
+                  // I've Paid button — show for active events when not fully paid
+                  if (widget.isActive && !hasPaid)
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => _selfReport(context, eventName),
+                        icon: const Icon(Icons.payments_rounded, size: 16),
+                        label: Text(
+                          hasPending ? 'Report Another Payment' : "I've Paid",
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green.shade600,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                        ),
+                      ),
+                    ),
+                  if (widget.isActive && !hasPaid) const SizedBox(width: 10),
+                  // View dashboard hint
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _openDashboard(context, eventName),
+                      icon: Icon(Icons.open_in_new,
+                          size: 14, color: Colors.deepPurple.shade400),
+                      label: Text('Dashboard',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.deepPurple.shade400)),
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: Colors.deepPurple.shade200),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
                   ),
                 ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Self-Report Payment Bottom Sheet ─────────────────────────────────────────
+
+class _SelfReportSheet extends StatefulWidget {
+  final String eventId;
+  final String eventName;
+  final String flatNumber;
+  final String residentName;
+  final VoidCallback onSubmitted;
+
+  const _SelfReportSheet({
+    required this.eventId,
+    required this.eventName,
+    required this.flatNumber,
+    required this.residentName,
+    required this.onSubmitted,
+  });
+
+  @override
+  State<_SelfReportSheet> createState() => _SelfReportSheetState();
+}
+
+class _SelfReportSheetState extends State<_SelfReportSheet> {
+  final _amountCtrl = TextEditingController();
+  final _refCtrl = TextEditingController();
+  String _mode = 'PhonePe';
+  DateTime _date = DateTime.now();
+  bool _submitting = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _amountCtrl.dispose();
+    _refCtrl.dispose();
+    super.dispose();
+  }
+
+  String _fmtDate(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _date,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null) setState(() => _date = picked);
+  }
+
+  Future<void> _submit() async {
+    final amtStr = _amountCtrl.text.trim();
+    final amount = double.tryParse(amtStr);
+    if (amount == null || amount <= 0) {
+      setState(() => _error = 'Please enter a valid amount');
+      return;
+    }
+
+    setState(() { _submitting = true; _error = null; });
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final wing = prefs.getString('session_wing') ?? '';
+      final block = prefs.getString('session_block') ?? '';
+
+      await FirebaseFirestore.instance
+          .collection('events')
+          .doc(widget.eventId)
+          .collection('contributions')
+          .add({
+        'flatNumber': widget.flatNumber,
+        'residentName': widget.residentName,
+        'wing': wing,
+        'block': block,
+        'amount': amount,
+        'contributionType': 'Regular',
+        'paymentMode': _mode,
+        'referenceId': _refCtrl.text.trim(),
+        'note': '',
+        'amountReceived': false,
+        'selfReported': true,
+        'paidAt': _date.toIso8601String(),
+        'paidDate': _fmtDate(_date),
+        'reportedAt': DateTime.now().toIso8601String(),
+      });
+
+      widget.onSubmitted();
+
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text(
+              'Payment reported! The admin will verify and confirm it shortly.'),
+          backgroundColor: Colors.green.shade700,
+          duration: const Duration(seconds: 4),
+        ));
+      }
+    } catch (e) {
+      setState(() { _error = 'Failed to submit: $e'; _submitting = false; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      padding: EdgeInsets.fromLTRB(20, 16, 20, 20 + bottom),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Handle
+            Center(
+              child: Container(
+                width: 36, height: 4,
+                decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            // Title
+            Row(children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(10)),
+                child: Icon(Icons.payments_rounded,
+                    color: Colors.green.shade700, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Report Your Payment',
+                        style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold)),
+                    Text(widget.eventName,
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.grey.shade500)),
+                  ],
+                ),
+              ),
+            ]),
+            const SizedBox(height: 20),
+
+            // Amount
+            TextField(
+              controller: _amountCtrl,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: 'Amount Paid (₹) *',
+                prefixText: '₹ ',
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10)),
+                filled: true,
+                fillColor: Colors.grey.shade50,
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            // Payment mode chips
+            const Text('Payment Mode',
+                style:
+                    TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: _kPaymentModes.map((m) {
+                final sel = _mode == m;
+                return GestureDetector(
+                  onTap: () => setState(() => _mode = m),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: sel
+                          ? Colors.green.shade600
+                          : Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                          color: sel
+                              ? Colors.green.shade600
+                              : Colors.grey.shade300),
+                    ),
+                    child: Text(m,
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: sel
+                                ? Colors.white
+                                : Colors.grey.shade700)),
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 14),
+
+            // Transaction reference
+            TextField(
+              controller: _refCtrl,
+              decoration: InputDecoration(
+                labelText: _mode == 'Cash'
+                    ? 'Note (optional)'
+                    : 'Transaction Ref / UTR No.',
+                hintText: _mode == 'Cash'
+                    ? 'e.g. Given to treasurer'
+                    : 'e.g. T2410151234567',
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10)),
+                filled: true,
+                fillColor: Colors.grey.shade50,
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            // Date
+            GestureDetector(
+              onTap: _pickDate,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 14),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.grey.shade400),
+                ),
+                child: Row(children: [
+                  Icon(Icons.calendar_today,
+                      size: 18, color: Colors.grey.shade600),
+                  const SizedBox(width: 10),
+                  Text('Date of Payment: ${_fmtDate(_date)}',
+                      style: const TextStyle(fontSize: 14)),
+                  const Spacer(),
+                  Icon(Icons.edit, size: 16, color: Colors.grey.shade400),
+                ]),
+              ),
+            ),
+
+            if (_error != null) ...[
+              const SizedBox(height: 10),
+              Text(_error!,
+                  style: TextStyle(
+                      color: Colors.red.shade600, fontSize: 13)),
+            ],
+
+            const SizedBox(height: 20),
+
+            // Info note
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline,
+                      size: 16, color: Colors.blue.shade700),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Your payment will be marked as Pending Verification. '
+                      'The admin will confirm it after checking records.',
+                      style: TextStyle(
+                          fontSize: 12, color: Colors.blue.shade800),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Submit button
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _submitting ? null : _submit,
+                icon: _submitting
+                    ? const SizedBox(
+                        width: 18, height: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.send_rounded),
+                label: Text(_submitting ? 'Submitting…' : 'Submit Payment Report'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green.shade600,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  textStyle: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.bold),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
               ),
             ),
           ],
