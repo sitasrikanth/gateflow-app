@@ -603,7 +603,7 @@ class _ResidentsTabState extends State<_ResidentsTab> {
 
     await showDialog(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         title: Row(children: [
           Icon(Icons.cancel_outlined, color: Colors.red.shade600),
           const SizedBox(width: 8),
@@ -616,7 +616,7 @@ class _ResidentsTabState extends State<_ResidentsTab> {
             Text('$name has been rejected.'),
             if (phone.isNotEmpty) ...[
               const SizedBox(height: 12),
-              Text('Notify them via WhatsApp?',
+              Text('Notify via WhatsApp: $phone',
                   style: TextStyle(
                       color: Colors.grey.shade700, fontSize: 13)),
             ],
@@ -624,7 +624,7 @@ class _ResidentsTabState extends State<_ResidentsTab> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.pop(ctx),
               child: const Text('Skip')),
           if (phone.isNotEmpty)
             ElevatedButton.icon(
@@ -634,9 +634,13 @@ class _ResidentsTabState extends State<_ResidentsTab> {
               icon: const Icon(Icons.chat, size: 16),
               label: const Text('Open WhatsApp'),
               onPressed: () async {
-                Navigator.pop(context);
-                await launchUrl(waUrl,
-                    mode: LaunchMode.externalApplication);
+                Navigator.pop(ctx);
+                final canLaunch = await canLaunchUrl(waUrl);
+                if (canLaunch) {
+                  await launchUrl(waUrl, mode: LaunchMode.externalApplication);
+                } else {
+                  await launchUrl(waUrl, mode: LaunchMode.platformDefault);
+                }
               },
             ),
         ],
@@ -1164,6 +1168,10 @@ class _ResidentsTabState extends State<_ResidentsTab> {
                       List<String>.from(settings['wings'] ?? [])..sort();
                   final wingBlocks = Map<String, dynamic>.from(
                       settings['wingBlocks'] ?? {});
+                  final flatsPerFloor = Map<String, int>.from(
+                    (settings['flatsPerFloor'] as Map<String, dynamic>? ?? {})
+                        .map((k, v) => MapEntry(k, (v as num).toInt())),
+                  );
 
                   if (wings.isEmpty) {
                     return const _EmptyState(
@@ -1185,7 +1193,7 @@ class _ResidentsTabState extends State<_ResidentsTab> {
                       // Wing expansion tiles
                       for (final wing in wings)
                         _buildWingTile(
-                            context, wing, wingBlocks, flatResidents),
+                            context, wing, wingBlocks, flatResidents, flatsPerFloor),
                       // Admins section
                       if (admins.isNotEmpty) ...[
                         const SizedBox(height: 8),
@@ -1207,6 +1215,7 @@ class _ResidentsTabState extends State<_ResidentsTab> {
     String wing,
     Map<String, dynamic> wingBlocks,
     Map<String, List<Map<String, dynamic>>> flatResidents,
+    Map<String, int> flatsPerFloor,
   ) {
     final raw = wingBlocks[wing];
     final Map<String, dynamic> wingData =
@@ -1262,7 +1271,7 @@ class _ResidentsTabState extends State<_ResidentsTab> {
               ]
             : blocks
                 .map((block) => _buildBlockTile(
-                    context, wing, block, wingData, flatResidents))
+                    context, wing, block, wingData, flatResidents, flatsPerFloor))
                 .toList(),
       ),
     );
@@ -1274,10 +1283,12 @@ class _ResidentsTabState extends State<_ResidentsTab> {
     String block,
     Map<String, dynamic> wingData,
     Map<String, List<Map<String, dynamic>>> flatResidents,
+    Map<String, int> flatsPerFloor,
   ) {
     final flats = List<String>.from(
         wingData[block] is List ? wingData[block] : [])
       ..sort();
+    final fpf = flatsPerFloor['${wing}_$block'];
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
@@ -1319,64 +1330,114 @@ class _ResidentsTabState extends State<_ResidentsTab> {
                   ? Text('No flats added.',
                       style: TextStyle(
                           color: Colors.grey.shade500, fontSize: 12))
-                  : Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: flats.map((flat) {
-                        final residents = flatResidents[flat] ?? [];
-                        // Determine chip color by resident statuses
-                        Color chipColor;
-                        Color textColor;
-                        Color borderColor;
-                        if (residents.isEmpty) {
-                          chipColor = Colors.grey.shade100;
-                          textColor = Colors.grey.shade500;
-                          borderColor = Colors.grey.shade300;
-                        } else if (residents.any(
-                            (r) => r['status'] == 'active')) {
-                          chipColor = Colors.green.shade50;
-                          textColor = Colors.green.shade700;
-                          borderColor = Colors.green.shade300;
-                        } else if (residents.any(
-                            (r) => r['status'] == 'pending')) {
-                          chipColor = Colors.orange.shade50;
-                          textColor = Colors.orange.shade700;
-                          borderColor = Colors.orange.shade300;
-                        } else {
-                          chipColor = Colors.red.shade50;
-                          textColor = Colors.red.shade700;
-                          borderColor = Colors.red.shade200;
-                        }
-
-                        final location =
-                            '$wing › Block $block › $flat';
-
-                        return GestureDetector(
-                          onTap: () => _showFlatResidents(
-                              context, location, residents),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: chipColor,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: borderColor),
-                            ),
-                            child: Text(
-                              flat,
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: textColor),
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
+                  : _buildFlatChips(
+                      context, wing, block, flats, flatResidents, fpf),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _flatChip(
+    BuildContext context,
+    String wing,
+    String block,
+    String flat,
+    Map<String, List<Map<String, dynamic>>> flatResidents,
+  ) {
+    final residents = flatResidents[flat] ?? [];
+    Color chipColor;
+    Color textColor;
+    Color borderColor;
+    if (residents.isEmpty) {
+      chipColor = Colors.grey.shade100;
+      textColor = Colors.grey.shade500;
+      borderColor = Colors.grey.shade300;
+    } else if (residents.any((r) => r['status'] == 'active')) {
+      chipColor = Colors.green.shade50;
+      textColor = Colors.green.shade700;
+      borderColor = Colors.green.shade300;
+    } else if (residents.any((r) => r['status'] == 'pending')) {
+      chipColor = Colors.orange.shade50;
+      textColor = Colors.orange.shade700;
+      borderColor = Colors.orange.shade300;
+    } else {
+      chipColor = Colors.red.shade50;
+      textColor = Colors.red.shade700;
+      borderColor = Colors.red.shade200;
+    }
+    return GestureDetector(
+      onTap: () => _showFlatResidents(
+          context, '$wing › Block $block › $flat', residents),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: chipColor,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: borderColor),
+        ),
+        child: Text(flat,
+            style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: textColor)),
+      ),
+    );
+  }
+
+  Widget _buildFlatChips(
+    BuildContext context,
+    String wing,
+    String block,
+    List<String> flats,
+    Map<String, List<Map<String, dynamic>>> flatResidents,
+    int? fpf,
+  ) {
+    if (fpf == null || fpf <= 0) {
+      return Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        children: flats
+            .map((f) => _flatChip(context, wing, block, f, flatResidents))
+            .toList(),
+      );
+    }
+    final floors = (flats.length / fpf).ceil();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (int floor = 0; floor < floors; floor++) ...[
+          Padding(
+            padding: const EdgeInsets.only(top: 6, bottom: 4),
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: Colors.blue.shade100),
+              ),
+              child: Text(
+                'Floor ${floor + 1}',
+                style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.blue.shade700),
+              ),
+            ),
+          ),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: flats
+                .skip(floor * fpf)
+                .take(fpf)
+                .map((f) => _flatChip(context, wing, block, f, flatResidents))
+                .toList(),
+          ),
+        ],
+      ],
     );
   }
 

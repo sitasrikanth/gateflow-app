@@ -152,9 +152,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _renameBlock(
+      Map<String, dynamic> wingBlocks, String wing, String block) async {
+    final newName = await _inputDialog('Rename Block', block);
+    if (newName == null || newName.trim().isEmpty || newName.trim() == block) {
+      return;
+    }
+    final trimmed = newName.trim().toUpperCase();
+    final wingMap = _wingData(wingBlocks, wing);
+    if (wingMap.containsKey(trimmed)) {
+      _snack('Block $trimmed already exists in $wing Wing', Colors.orange);
+      return;
+    }
+    try {
+      final updated = Map<String, dynamic>.from(wingBlocks);
+      final updatedWing = Map<String, dynamic>.from(wingMap);
+      updatedWing[trimmed] = updatedWing.remove(block);
+      updated[wing] = updatedWing;
+      await _ref.update({'wingBlocks': updated});
+      _snack('Block renamed to $trimmed', Colors.green);
+    } catch (e) {
+      _snack('Error: $e', Colors.red);
+    }
+  }
+
   Future<void> _deleteBlock(
       Map<String, dynamic> wingBlocks, String wing, String block) async {
-    _snack('Tap registered — confirm to delete block $block', Colors.blue);
     final ok = await _confirmDialog(
         'Remove block "$block" from $wing Wing?',
         'All flats in this block will also be removed. Existing records are not affected.');
@@ -169,6 +192,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
       } catch (e) {
         _snack('Error: $e', Colors.red);
       }
+    }
+  }
+
+  Future<void> _setFlatsPerFloor(String wing, String block, int n) async {
+    final key = '${wing}_$block';
+    try {
+      await _ref.update({'flatsPerFloor.$key': n});
+    } catch (e) {
+      _snack('Error: $e', Colors.red);
     }
   }
 
@@ -192,8 +224,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16)),
             insetPadding: const EdgeInsets.symmetric(
-                horizontal: 24, vertical: 24),
-            title: Text('Add Flats to $wing – Block $block'),
+                horizontal: 16, vertical: 16),
+            contentPadding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+            title: Text('Add Flats — $wing Wing, Block $block',
+                style: const TextStyle(fontSize: 16)),
             content: SingleChildScrollView(
               child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -504,6 +538,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           final data = snapshot.data?.data() as Map<String, dynamic>? ?? {};
           final wings = List<String>.from(data['wings'] ?? []);
           final wingBlocks = Map<String, dynamic>.from(data['wingBlocks'] ?? {});
+          final flatsPerFloor = Map<String, int>.from(
+            (data['flatsPerFloor'] as Map<String, dynamic>? ?? {})
+                .map((k, v) => MapEntry(k, (v as num).toInt())),
+          );
           final rawCats = data['expenseCategories'];
           final List<Map<String, dynamic>> categories = rawCats != null
               ? List<Map<String, dynamic>>.from(
@@ -541,10 +579,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'Each wing has its own set of blocks and flats. '
-                            'When recording a contribution, selecting a wing will '
-                            'only show that wing\'s blocks. Deleting a wing or block '
-                            'does not affect existing records.',
+                            'Define your community\'s physical layout here. '
+                            'Each wing contains blocks, and each block contains flats. '
+                            'Residents are assigned to a flat when their registration is approved. '
+                            'Deleting a wing, block, or flat does not remove existing resident records.',
                             style: TextStyle(
                                 fontSize: 12, color: Colors.amber.shade900),
                           ),
@@ -567,11 +605,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         onDelete: () => _deleteWing(wings, wingBlocks, wing),
                         onAddBlock: () => _addBlock(wingBlocks, wing),
                         onDeleteBlock: (b) => _deleteBlock(wingBlocks, wing, b),
+                        onRenameBlock: (b) => _renameBlock(wingBlocks, wing, b),
                         onAddFlat: (b) => _addFlat(wingBlocks, wing, b),
                         onDeleteFlats: (b, flats) =>
                             _deleteFlats(wingBlocks, wing, b, flats),
                         onRenameFlat: (b, f) =>
                             _renameFlat(wingBlocks, wing, b, f),
+                        flatsPerFloor: flatsPerFloor,
+                        onSetFlatsPerFloor: (b, n) => _setFlatsPerFloor(wing, b, n),
                       ),
                 ],
               ),
@@ -601,9 +642,12 @@ class _WingTile extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback onAddBlock;
   final void Function(String block) onDeleteBlock;
+  final void Function(String block) onRenameBlock;
   final void Function(String block) onAddFlat;
   final void Function(String block, List<String> flats) onDeleteFlats;
   final void Function(String block, String flat) onRenameFlat;
+  final Map<String, int> flatsPerFloor;
+  final void Function(String block, int n) onSetFlatsPerFloor;
 
   const _WingTile({
     required this.wing,
@@ -612,9 +656,12 @@ class _WingTile extends StatelessWidget {
     required this.onDelete,
     required this.onAddBlock,
     required this.onDeleteBlock,
+    required this.onRenameBlock,
     required this.onAddFlat,
     required this.onDeleteFlats,
     required this.onRenameFlat,
+    required this.flatsPerFloor,
+    required this.onSetFlatsPerFloor,
   });
 
   @override
@@ -761,6 +808,15 @@ class _WingTile extends StatelessWidget {
                             visualDensity: VisualDensity.compact,
                           ),
                           IconButton(
+                            icon: Icon(Icons.edit_outlined,
+                                color: Colors.blue.shade400, size: 20),
+                            tooltip: 'Rename Block',
+                            onPressed: () => onRenameBlock(block),
+                            padding: const EdgeInsets.all(4),
+                            constraints: const BoxConstraints(),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          IconButton(
                             icon: Icon(Icons.delete_outline,
                                 color: Colors.red.shade400, size: 20),
                             tooltip: 'Delete Block',
@@ -777,11 +833,14 @@ class _WingTile extends StatelessWidget {
                               const EdgeInsets.fromLTRB(12, 0, 12, 12),
                           child: _FlatGrid(
                             flats: flats,
+                            flatsPerFloor: flatsPerFloor['${wing}_$block'],
                             onDeleteFlats: (selected) =>
                                 onDeleteFlats(block, selected),
                             onRenameFlat: (flat) =>
                                 onRenameFlat(block, flat),
                             onAddFlat: () => onAddFlat(block),
+                            onSetFlatsPerFloor: (n) =>
+                                onSetFlatsPerFloor(block, n),
                           ),
                         ),
                       ],
@@ -803,15 +862,19 @@ class _WingTile extends StatelessWidget {
 
 class _FlatGrid extends StatefulWidget {
   final List<String> flats;
+  final int? flatsPerFloor;
   final void Function(List<String> selected) onDeleteFlats;
   final void Function(String flat) onRenameFlat;
   final VoidCallback onAddFlat;
+  final void Function(int n) onSetFlatsPerFloor;
 
   const _FlatGrid({
     required this.flats,
+    required this.flatsPerFloor,
     required this.onDeleteFlats,
     required this.onRenameFlat,
     required this.onAddFlat,
+    required this.onSetFlatsPerFloor,
   });
 
   @override
@@ -833,64 +896,164 @@ class _FlatGridState extends State<_FlatGrid> {
 
   void _clearSelection() => setState(() => _selected.clear());
 
+  void _showSetFloorSizeDialog(BuildContext context) async {
+    final ctrl = TextEditingController(
+        text: widget.flatsPerFloor?.toString() ?? '');
+    final result = await showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: const Text('Flats per Floor'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(
+            labelText: 'Number of flats per floor',
+            hintText: 'e.g. 12',
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.teal.shade600,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8))),
+            onPressed: () {
+              final n = int.tryParse(ctrl.text.trim());
+              if (n != null && n > 0) Navigator.pop(ctx, n);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) => ctrl.dispose());
+    if (result != null) widget.onSetFlatsPerFloor(result);
+  }
+
+  Widget _buildFlatChip(String flat) {
+    final isSel = _selected.contains(flat);
+    return GestureDetector(
+      onTap: () => _toggle(flat),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSel ? Colors.teal.shade600 : Colors.teal.shade50,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+              color: isSel ? Colors.teal.shade700 : Colors.teal.shade200),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isSel) ...[
+              const Icon(Icons.check, size: 11, color: Colors.white),
+              const SizedBox(width: 4),
+            ],
+            Text(
+              flat,
+              style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: isSel ? Colors.white : Colors.teal.shade700),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final selecting = _selected.isNotEmpty;
+    final fpf = widget.flatsPerFloor;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Floor size header
+        Row(
+          children: [
+            Icon(Icons.layers_outlined, size: 13, color: Colors.grey.shade500),
+            const SizedBox(width: 4),
+            Text(
+              fpf != null ? '$fpf flats / floor' : 'Floor size not set',
+              style: TextStyle(
+                  fontSize: 11,
+                  color:
+                      fpf != null ? Colors.grey.shade600 : Colors.orange.shade700),
+            ),
+            const SizedBox(width: 6),
+            GestureDetector(
+              onTap: () => _showSetFloorSizeDialog(context),
+              child: Text(
+                fpf != null ? 'Change' : 'Set',
+                style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.teal.shade700,
+                    decoration: TextDecoration.underline),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
         if (widget.flats.isEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Text('No flats added yet.',
                 style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
           )
-        else
+        else if (fpf == null || fpf <= 0)
+          // No floor grouping — plain wrap
           Wrap(
             spacing: 6,
             runSpacing: 6,
-            children: widget.flats.map((flat) {
-              final isSel = _selected.contains(flat);
-              return GestureDetector(
-                onTap: () => _toggle(flat),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            children: widget.flats.map(_buildFlatChip).toList(),
+          )
+        else ...[
+          // Grouped by floor
+          for (int floor = 0;
+              floor < (widget.flats.length / fpf).ceil();
+              floor++) ...[
+            Row(
+              children: [
+                Container(
+                  margin: const EdgeInsets.only(top: 6, bottom: 4),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
-                    color: isSel
-                        ? Colors.teal.shade600
-                        : Colors.teal.shade50,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                        color: isSel
-                            ? Colors.teal.shade700
-                            : Colors.teal.shade200),
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.blue.shade100),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (isSel) ...[
-                        const Icon(Icons.check,
-                            size: 11, color: Colors.white),
-                        const SizedBox(width: 4),
-                      ],
-                      Text(
-                        flat,
-                        style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: isSel
-                                ? Colors.white
-                                : Colors.teal.shade700),
-                      ),
-                    ],
+                  child: Text(
+                    'Floor ${floor + 1}',
+                    style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.blue.shade700),
                   ),
                 ),
-              );
-            }).toList(),
-          ),
+              ],
+            ),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: widget.flats
+                  .skip(floor * fpf)
+                  .take(fpf)
+                  .map(_buildFlatChip)
+                  .toList(),
+            ),
+          ],
+        ],
         const SizedBox(height: 8),
         // Action bar — only shown in selection mode
         if (selecting)

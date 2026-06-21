@@ -11,12 +11,18 @@ class AddContributionScreen extends StatefulWidget {
   final String eventId;
   final String? existingDocId;
   final Map<String, dynamic>? existingData;
+  final String? prefillFlat;
+  final String? prefillWing;
+  final String? prefillBlock;
 
   const AddContributionScreen({
     super.key,
     required this.eventId,
     this.existingDocId,
     this.existingData,
+    this.prefillFlat,
+    this.prefillWing,
+    this.prefillBlock,
   });
 
   @override
@@ -67,6 +73,12 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
       _wing = d['wing'] ?? '';
       _block = d['block'] ?? '';
       _flatController.text = d['flatNumber'] ?? '';
+    } else {
+      _wing = widget.prefillWing ?? '';
+      _block = widget.prefillBlock ?? '';
+      _flatController.text = widget.prefillFlat ?? '';
+    }
+    if (d != null) {
       _nameController.text = d['residentName'] ?? '';
       _amountController.text = (d['amount'] ?? 0).toStringAsFixed(0);
       _contributionType = d['contributionType'] ?? kTypeRegular;
