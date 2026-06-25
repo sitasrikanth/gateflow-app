@@ -3305,9 +3305,17 @@ class _FollowUpFlatCard extends StatelessWidget {
 
 // ── Activity Tab ───────────────────────────────────────────────────────────────
 
-class _ActivityTab extends StatelessWidget {
+class _ActivityTab extends StatefulWidget {
   final String eventId;
   const _ActivityTab({required this.eventId});
+
+  @override
+  State<_ActivityTab> createState() => _ActivityTabState();
+}
+
+class _ActivityTabState extends State<_ActivityTab> {
+  // Month keys that are currently expanded; empty = all collapsed by default
+  final Set<String> _expanded = {};
 
   static const _months = [
     '', 'January', 'February', 'March', 'April', 'May', 'June',
@@ -3346,7 +3354,7 @@ class _ActivityTab extends StatelessWidget {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('events')
-          .doc(eventId)
+          .doc(widget.eventId)
           .collection('contributions')
           .snapshots(),
       builder: (context, snap) {
@@ -3423,7 +3431,7 @@ class _ActivityTab extends StatelessWidget {
         }
 
         // Group by month key ("2026-06"), then by date key ("2026-06-25")
-        // Result: list of items interleaved with month/date headers
+        // Only emit date headers and entries for expanded months
         final listItems = <_ActivityItem>[];
         String lastMonth = '';
         String lastDate = '';
@@ -3434,11 +3442,21 @@ class _ActivityTab extends StatelessWidget {
           final dateKey  = dt != null ? '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}' : '';
 
           if (monthKey != lastMonth) {
+            // Count entries in this month for the subtitle
+            final count = entries.where((x) {
+              final xdt = x['dt'] as DateTime?;
+              final xkey = xdt != null ? '${xdt.year}-${xdt.month.toString().padLeft(2, '0')}' : '';
+              return xkey == monthKey;
+            }).length;
             listItems.add(_ActivityItem.monthHeader(
-                dt != null ? _monthLabel(dt) : 'Unknown'));
+              dt != null ? _monthLabel(dt) : 'Unknown',
+              monthKey,
+              count,
+            ));
             lastMonth = monthKey;
             lastDate = '';
           }
+          if (!_expanded.contains(lastMonth)) continue;
           if (dateKey != lastDate) {
             listItems.add(_ActivityItem.dateHeader(
                 dt != null ? '${_days[dt.weekday]}, ${_dateLabel(dt)}' : 'Unknown date'));
@@ -3453,27 +3471,50 @@ class _ActivityTab extends StatelessWidget {
           itemBuilder: (_, i) {
             final item = listItems[i];
 
-            // Month header
+            // Month header — tappable to expand/collapse
             if (item.isMonthHeader) {
-              return Padding(
-                padding: EdgeInsets.only(top: i == 0 ? 0 : 16, bottom: 4),
-                child: Row(children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.deepPurple.shade600,
-                      borderRadius: BorderRadius.circular(20),
+              final isExpanded = _expanded.contains(item.monthKey);
+              return GestureDetector(
+                onTap: () => setState(() {
+                  if (isExpanded) {
+                    _expanded.remove(item.monthKey);
+                  } else {
+                    _expanded.add(item.monthKey!);
+                  }
+                }),
+                child: Padding(
+                  padding: EdgeInsets.only(top: i == 0 ? 0 : 16, bottom: 4),
+                  child: Row(children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.deepPurple.shade600,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(item.label!,
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 0.5)),
+                          const SizedBox(width: 4),
+                          Text('(${item.entryCount})',
+                              style: const TextStyle(
+                                  color: Colors.white70, fontSize: 10)),
+                          const SizedBox(width: 4),
+                          Icon(
+                            isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                            color: Colors.white, size: 14),
+                        ],
+                      ),
                     ),
-                    child: Text(item.label!,
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 0.5)),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(child: Divider(color: Colors.deepPurple.shade100)),
-                ]),
+                    const SizedBox(width: 8),
+                    Expanded(child: Divider(color: Colors.deepPurple.shade100)),
+                  ]),
+                ),
               );
             }
 
@@ -3576,6 +3617,8 @@ class _ActivityItem {
   final bool isMonthHeader;
   final bool isDateHeader;
   final String? label;
+  final String? monthKey;
+  final int entryCount;
   final Map<String, dynamic>? entry;
   final DateTime? dt;
 
@@ -3583,12 +3626,16 @@ class _ActivityItem {
     required this.isMonthHeader,
     required this.isDateHeader,
     this.label,
+    this.monthKey,
+    this.entryCount = 0,
     this.entry,
     this.dt,
   });
 
-  factory _ActivityItem.monthHeader(String label) =>
-      _ActivityItem._(isMonthHeader: true, isDateHeader: false, label: label);
+  factory _ActivityItem.monthHeader(String label, String monthKey, int count) =>
+      _ActivityItem._(
+          isMonthHeader: true, isDateHeader: false,
+          label: label, monthKey: monthKey, entryCount: count);
 
   factory _ActivityItem.dateHeader(String label) =>
       _ActivityItem._(isMonthHeader: false, isDateHeader: true, label: label);
