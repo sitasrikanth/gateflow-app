@@ -3309,25 +3309,36 @@ class _ActivityTab extends StatelessWidget {
   final String eventId;
   const _ActivityTab({required this.eventId});
 
+  static const _months = [
+    '', 'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ];
+
+  static const _days = [
+    '', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun',
+  ];
+
   String _fmt(double v) {
     if (v >= 100000) return '${(v / 100000).toStringAsFixed(1)}L';
     if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
     return v.toStringAsFixed(0);
   }
 
-  String _fmtTime(String? iso) {
-    if (iso == null || iso.isEmpty) return '';
-    try {
-      final dt = DateTime.parse(iso).toLocal();
-      final d = '${dt.day.toString().padLeft(2, '0')}/'
-          '${dt.month.toString().padLeft(2, '0')}/'
-          '${dt.year}';
-      final h = dt.hour.toString().padLeft(2, '0');
-      final m = dt.minute.toString().padLeft(2, '0');
-      return '$d $h:$m';
-    } catch (_) {
-      return iso.length >= 10 ? iso.substring(0, 10) : iso;
-    }
+  // Returns just HH:mm for the inline time on each row
+  String _fmtTime(DateTime dt) {
+    return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+
+  // "25 June 2026"
+  String _dateLabel(DateTime dt) =>
+      '${dt.day} ${_months[dt.month]} ${dt.year}';
+
+  // "June 2026"
+  String _monthLabel(DateTime dt) => '${_months[dt.month]} ${dt.year}';
+
+  DateTime? _parse(String? iso) {
+    if (iso == null || iso.isEmpty) return null;
+    try { return DateTime.parse(iso).toLocal(); } catch (_) { return null; }
   }
 
   @override
@@ -3355,53 +3366,47 @@ class _ActivityTab extends StatelessWidget {
           final status = d['status'] ?? '';
 
           if (selfReported) {
-            // Resident submitted self-report
             entries.add({
               'type': 'submitted',
-              'flat': flat,
-              'name': name,
-              'amt': amt,
-              'mode': mode,
+              'flat': flat, 'name': name, 'amt': amt, 'mode': mode,
               'ts': d['reportedAt'] ?? d['paidAt'] ?? '',
             });
-            // Admin confirmed
             if (status == 'confirmed' && (d['confirmedAt'] ?? '').isNotEmpty) {
               entries.add({
                 'type': 'confirmed',
-                'flat': flat,
-                'name': name,
-                'amt': amt,
-                'mode': mode,
+                'flat': flat, 'name': name, 'amt': amt, 'mode': mode,
                 'ts': d['confirmedAt'],
               });
             }
-            // Admin rejected
             if (status == 'rejected' && (d['rejectedAt'] ?? '').isNotEmpty) {
               entries.add({
                 'type': 'rejected',
-                'flat': flat,
-                'name': name,
-                'amt': amt,
+                'flat': flat, 'name': name, 'amt': amt,
                 'reason': d['rejectionReason'] ?? '',
                 'ts': d['rejectedAt'],
               });
             }
           } else {
-            // Admin manually added
             entries.add({
               'type': 'added',
-              'flat': flat,
-              'name': name,
-              'amt': amt,
-              'mode': mode,
+              'flat': flat, 'name': name, 'amt': amt, 'mode': mode,
               'ts': d['paidAt'] ?? '',
             });
           }
         }
 
-        // Sort newest first
-        entries.sort((a, b) =>
-            (b['ts'] as String).compareTo(a['ts'] as String));
+        // Attach parsed DateTime and sort newest first
+        for (final e in entries) {
+          e['dt'] = _parse(e['ts'] as String?);
+        }
+        entries.sort((a, b) {
+          final dtA = a['dt'] as DateTime?;
+          final dtB = b['dt'] as DateTime?;
+          if (dtA == null && dtB == null) return 0;
+          if (dtA == null) return 1;
+          if (dtB == null) return -1;
+          return dtB.compareTo(dtA);
+        });
 
         if (entries.isEmpty) {
           return Center(
@@ -3411,96 +3416,153 @@ class _ActivityTab extends StatelessWidget {
                 Icon(Icons.history, size: 48, color: Colors.grey.shade300),
                 const SizedBox(height: 12),
                 Text('No activity yet',
-                    style: TextStyle(
-                        color: Colors.grey.shade400, fontSize: 15)),
+                    style: TextStyle(color: Colors.grey.shade400, fontSize: 15)),
               ],
             ),
           );
         }
 
-        return ListView.separated(
+        // Group by month key ("2026-06"), then by date key ("2026-06-25")
+        // Result: list of items interleaved with month/date headers
+        final listItems = <_ActivityItem>[];
+        String lastMonth = '';
+        String lastDate = '';
+
+        for (final e in entries) {
+          final dt = e['dt'] as DateTime?;
+          final monthKey = dt != null ? '${dt.year}-${dt.month.toString().padLeft(2, '0')}' : '';
+          final dateKey  = dt != null ? '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}' : '';
+
+          if (monthKey != lastMonth) {
+            listItems.add(_ActivityItem.monthHeader(
+                dt != null ? _monthLabel(dt) : 'Unknown'));
+            lastMonth = monthKey;
+            lastDate = '';
+          }
+          if (dateKey != lastDate) {
+            listItems.add(_ActivityItem.dateHeader(
+                dt != null ? '${_days[dt.weekday]}, ${_dateLabel(dt)}' : 'Unknown date'));
+            lastDate = dateKey;
+          }
+          listItems.add(_ActivityItem.entry(e, dt));
+        }
+
+        return ListView.builder(
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 80),
-          itemCount: entries.length,
-          separatorBuilder: (_, _2) => const SizedBox(height: 6),
+          itemCount: listItems.length,
           itemBuilder: (_, i) {
-            final e = entries[i];
+            final item = listItems[i];
+
+            // Month header
+            if (item.isMonthHeader) {
+              return Padding(
+                padding: EdgeInsets.only(top: i == 0 ? 0 : 16, bottom: 4),
+                child: Row(children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.deepPurple.shade600,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(item.label!,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5)),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(child: Divider(color: Colors.deepPurple.shade100)),
+                ]),
+              );
+            }
+
+            // Date header
+            if (item.isDateHeader) {
+              return Padding(
+                padding: const EdgeInsets.only(top: 10, bottom: 6, left: 2),
+                child: Text(item.label!,
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey.shade600)),
+              );
+            }
+
+            // Entry row
+            final e = item.entry!;
+            final dt = item.dt;
             final type = e['type'] as String;
 
-            Color iconBg;
-            Color iconColor;
-            IconData icon;
-            String title;
-            String subtitle;
+            Color iconBg; Color iconColor; IconData icon;
+            String title; String subtitle;
 
             switch (type) {
               case 'confirmed':
-                iconBg = Colors.green.shade50;
-                iconColor = Colors.green.shade700;
+                iconBg = Colors.green.shade50; iconColor = Colors.green.shade700;
                 icon = Icons.check_circle_outline;
                 title = 'Confirmed ₹${_fmt(e['amt'] as double)} from ${e['flat']}';
                 subtitle = '${e['name']}  ·  ${e['mode']}';
               case 'rejected':
-                iconBg = Colors.red.shade50;
-                iconColor = Colors.red.shade600;
+                iconBg = Colors.red.shade50; iconColor = Colors.red.shade600;
                 icon = Icons.cancel_outlined;
                 title = 'Rejected payment from ${e['flat']}';
                 subtitle = '${e['name']}  ·  Reason: ${e['reason']}';
               case 'submitted':
-                iconBg = Colors.orange.shade50;
-                iconColor = Colors.orange.shade700;
+                iconBg = Colors.orange.shade50; iconColor = Colors.orange.shade700;
                 icon = Icons.upload_outlined;
                 title = 'Resident submitted ₹${_fmt(e['amt'] as double)} from ${e['flat']}';
                 subtitle = '${e['name']}  ·  ${e['mode']}';
-              default: // added
-                iconBg = Colors.blue.shade50;
-                iconColor = Colors.blue.shade700;
+              default:
+                iconBg = Colors.blue.shade50; iconColor = Colors.blue.shade700;
                 icon = Icons.add_circle_outline;
                 title = 'Admin recorded ₹${_fmt(e['amt'] as double)} for ${e['flat']}';
                 subtitle = (e['name'] as String).isNotEmpty
-                    ? '${e['name']}  ·  ${e['mode']}'
-                    : e['mode'] as String;
+                    ? '${e['name']}  ·  ${e['mode']}' : e['mode'] as String;
             }
 
-            return Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.grey.shade100),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                        color: iconBg,
-                        borderRadius: BorderRadius.circular(8)),
-                    child: Icon(icon, size: 18, color: iconColor),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(title,
-                            style: const TextStyle(
-                                fontSize: 13, fontWeight: FontWeight.w600)),
-                        if (subtitle.isNotEmpty) ...[
-                          const SizedBox(height: 2),
-                          Text(subtitle,
-                              style: TextStyle(
-                                  fontSize: 11, color: Colors.grey.shade600)),
-                        ],
-                      ],
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.grey.shade100),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 34, height: 34,
+                      decoration: BoxDecoration(
+                          color: iconBg, borderRadius: BorderRadius.circular(8)),
+                      child: Icon(icon, size: 18, color: iconColor),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(_fmtTime(e['ts'] as String?),
-                      style: TextStyle(
-                          fontSize: 10, color: Colors.grey.shade400)),
-                ],
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(title,
+                              style: const TextStyle(
+                                  fontSize: 13, fontWeight: FontWeight.w600)),
+                          if (subtitle.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(subtitle,
+                                style: TextStyle(
+                                    fontSize: 11, color: Colors.grey.shade600)),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    if (dt != null)
+                      Text(_fmtTime(dt),
+                          style: TextStyle(
+                              fontSize: 10, color: Colors.grey.shade400)),
+                  ],
+                ),
               ),
             );
           },
@@ -3508,4 +3570,29 @@ class _ActivityTab extends StatelessWidget {
       },
     );
   }
+}
+
+class _ActivityItem {
+  final bool isMonthHeader;
+  final bool isDateHeader;
+  final String? label;
+  final Map<String, dynamic>? entry;
+  final DateTime? dt;
+
+  const _ActivityItem._({
+    required this.isMonthHeader,
+    required this.isDateHeader,
+    this.label,
+    this.entry,
+    this.dt,
+  });
+
+  factory _ActivityItem.monthHeader(String label) =>
+      _ActivityItem._(isMonthHeader: true, isDateHeader: false, label: label);
+
+  factory _ActivityItem.dateHeader(String label) =>
+      _ActivityItem._(isMonthHeader: false, isDateHeader: true, label: label);
+
+  factory _ActivityItem.entry(Map<String, dynamic> e, DateTime? dt) =>
+      _ActivityItem._(isMonthHeader: false, isDateHeader: false, entry: e, dt: dt);
 }
