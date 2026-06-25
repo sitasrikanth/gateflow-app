@@ -2081,11 +2081,39 @@ class _ContributionsTabState extends State<_ContributionsTab> {
     );
     if (confirmed != true || !context.mounted) return;
 
+    // Resolve flat number against community structure in case self-report
+    // was saved with a short form (e.g. "404" instead of "DA404")
+    String resolvedFlat = flat;
+    final settingsDoc = await FirebaseFirestore.instance
+        .collection('community_settings')
+        .doc('address')
+        .get();
+    if (settingsDoc.exists) {
+      final wingBlocks = (settingsDoc.data()?['wingBlocks'] as Map?)
+              ?.cast<String, dynamic>() ??
+          {};
+      outer:
+      for (final wingData in wingBlocks.values) {
+        if (wingData is! Map) continue;
+        for (final flats in wingData.values) {
+          if (flats is! List) continue;
+          for (final f in flats.cast<String>()) {
+            if (f == flat) { resolvedFlat = f; break outer; }
+            if (f.endsWith(flat) || flat.endsWith(f)) {
+              resolvedFlat = f;
+              break outer;
+            }
+          }
+        }
+      }
+    }
+
     final batch = FirebaseFirestore.instance.batch();
     batch.update(doc.reference, {
       'amountReceived': true,
       'status': 'confirmed',
       'confirmedAt': DateTime.now().toIso8601String(),
+      if (resolvedFlat != flat) 'flatNumber': resolvedFlat,
     });
     final eventRef = FirebaseFirestore.instance
         .collection('events')
