@@ -1472,6 +1472,48 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                       .toList();
                   if (unassigned.isEmpty) return const SizedBox.shrink();
 
+                  // Try to suffix-match each unassigned flat to a known flat
+                  String? resolveFlat(String orphan) {
+                    for (final known in knownFlats) {
+                      if (known.endsWith(orphan) || orphan.endsWith(known)) {
+                        return known;
+                      }
+                    }
+                    return null;
+                  }
+
+                  Future<void> fixOrphan(
+                      String orphanFlat,
+                      String resolvedFlat,
+                      List<QueryDocumentSnapshot> docs) async {
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Fix Flat Number'),
+                        content: Text(
+                          'Re-assign ${docs.length} contribution${docs.length == 1 ? '' : 's'} '
+                          'from "$orphanFlat" → "$resolvedFlat"?\n\n'
+                          'This will update the flat number in Firestore so the '
+                          'amounts appear in the correct wing/block.',
+                        ),
+                        actions: [
+                          TextButton(
+                              onPressed: () => Navigator.pop(ctx, false),
+                              child: const Text('Cancel')),
+                          ElevatedButton(
+                              onPressed: () => Navigator.pop(ctx, true),
+                              child: const Text('Fix')),
+                        ],
+                      ),
+                    );
+                    if (confirmed != true) return;
+                    final batch = FirebaseFirestore.instance.batch();
+                    for (final doc in docs) {
+                      batch.update(doc.reference, {'flatNumber': resolvedFlat});
+                    }
+                    await batch.commit();
+                  }
+
                   return Container(
                     margin: const EdgeInsets.only(bottom: 10),
                     decoration: BoxDecoration(
@@ -1508,6 +1550,7 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                                     ? s + (data['amount'] as num? ?? 0).toDouble()
                                     : s;
                               });
+                              final resolved = resolveFlat(flat);
                               return ListTile(
                                 dense: true,
                                 contentPadding: EdgeInsets.zero,
@@ -1523,10 +1566,24 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                                         fontSize: 11,
                                         color: Colors.grey.shade500)),
                                 trailing: widget.isAdmin
-                                    ? TextButton(
-                                        onPressed: () => _showFlatContribution(
-                                            context, '', '', flat, docs),
-                                        child: const Text('View / Delete'),
+                                    ? Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (resolved != null)
+                                            TextButton.icon(
+                                              icon: const Icon(Icons.auto_fix_high, size: 14),
+                                              label: Text('Fix → $resolved'),
+                                              style: TextButton.styleFrom(
+                                                  foregroundColor: Colors.green.shade700,
+                                                  textStyle: const TextStyle(fontSize: 12)),
+                                              onPressed: () => fixOrphan(flat, resolved, docs),
+                                            ),
+                                          TextButton(
+                                            onPressed: () => _showFlatContribution(
+                                                context, '', '', flat, docs),
+                                            child: const Text('View'),
+                                          ),
+                                        ],
                                       )
                                     : null,
                               );
@@ -1832,29 +1889,65 @@ class _ContributionsTabState extends State<_ContributionsTab> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         for (int floor = 0; floor < floors; floor++) ...[
-          Padding(
-            padding: const EdgeInsets.only(top: 6, bottom: 4),
-            child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade50,
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: Colors.blue.shade100),
-              ),
-              child: Text('Floor ${floor + 1}',
-                  style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.blue.shade700)),
-            ),
-          ),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children:
-                flats.skip(floor * fpf).take(fpf).map(chip).toList(),
-          ),
+          Builder(builder: (_) {
+            final floorFlats = flats.skip(floor * fpf).take(fpf).toList();
+            final floorTotal = floorFlats.fold<double>(0, (s, f) {
+              return s + (flatDocs[f] ?? []).fold<double>(0, (s2, d) {
+                final data = d.data() as Map<String, dynamic>;
+                return data['amountReceived'] != false
+                    ? s2 + (data['amount'] as num? ?? 0).toDouble()
+                    : s2;
+              });
+            });
+            final paidOnFloor = floorFlats.where((f) {
+              final docs = flatDocs[f] ?? [];
+              return docs.any((d) =>
+                  (d.data() as Map<String, dynamic>)['amountReceived'] != false);
+            }).length;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 6, bottom: 4),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: Colors.blue.shade100),
+                        ),
+                        child: Text('Floor ${floor + 1}',
+                            style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.blue.shade700)),
+                      ),
+                      const SizedBox(width: 6),
+                      Text('$paidOnFloor/${floorFlats.length} paid',
+                          style: TextStyle(
+                              fontSize: 10, color: Colors.grey.shade500)),
+                      if (floorTotal > 0) ...[
+                        const SizedBox(width: 6),
+                        Text('· ₹${_fmt(floorTotal)}',
+                            style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.blue.shade700)),
+                      ],
+                    ],
+                  ),
+                ),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: floorFlats.map(chip).toList(),
+                ),
+              ],
+            );
+          }),
         ],
       ],
     );
