@@ -259,7 +259,10 @@ class _EventContributionCardState extends State<_EventContributionCard> {
         .listen((snap) {
       if (mounted) {
         setState(() {
-          _contributions = snap.docs.map((d) => d.data()).toList();
+          _contributions = snap.docs
+              .map((d) => d.data())
+              .where((d) => d['status'] != 'deleted')
+              .toList();
           _loaded = true;
         });
         _loadBlockStats();
@@ -289,7 +292,7 @@ class _EventContributionCardState extends State<_EventContributionCard> {
     final paidFlats = <String>{};
     for (final d in allSnap.docs) {
       final data = d.data() as Map<String, dynamic>;
-      if (data['amountReceived'] != false && data['status'] != 'rejected') {
+      if (data['amountReceived'] != false && data['status'] != 'rejected' && data['status'] != 'deleted') {
         paidFlats.add(data['flatNumber'] as String? ?? '');
       }
     }

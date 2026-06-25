@@ -1241,7 +1241,8 @@ class _ContributionsTabState extends State<_ContributionsTab> {
           final data = d.data() as Map<String, dynamic>;
           return data['selfReported'] == true &&
               data['amountReceived'] == false &&
-              data['status'] != 'rejected';
+              data['status'] != 'rejected' &&
+              data['status'] != 'deleted';
         }).toList();
 
         // All confirmed contributions for summary totals
@@ -1251,7 +1252,8 @@ class _ContributionsTabState extends State<_ContributionsTab> {
         final Map<String, List<QueryDocumentSnapshot>> flatDocs = {};
         for (final doc in docs) {
           final d = doc.data() as Map<String, dynamic>;
-          // Skip self-reports that haven't been confirmed by admin yet
+          // Skip deleted and unconfirmed self-reports
+          if (d['status'] == 'deleted') continue;
           if (d['selfReported'] == true && d['amountReceived'] != true) continue;
           final flat = (d['flatNumber'] ?? '').toString().trim();
           if (flat.isNotEmpty) {
@@ -2023,7 +2025,13 @@ class _ContributionsTabState extends State<_ContributionsTab> {
     );
     if (confirmed != true) return;
     final batch = FirebaseFirestore.instance.batch();
-    batch.delete(doc.reference);
+    // Soft-delete: keep doc for Activity log history & restore capability
+    batch.update(doc.reference, {
+      'status': 'deleted',
+      'deletedAt': DateTime.now().toIso8601String(),
+      'preDeleteStatus': d['status'] ?? '',
+      'preDeleteAmountReceived': d['amountReceived'],
+    });
     if (d['amountReceived'] != false) {
       final eventRef = FirebaseFirestore.instance
           .collection('events')
@@ -3314,9 +3322,97 @@ class _ActivityTab extends StatefulWidget {
 }
 
 class _ActivityTabState extends State<_ActivityTab> {
-  // Month keys that are currently expanded; empty = all collapsed by default
   final Set<String> _expandedMonths = {};
   final Set<String> _expandedDates = {};
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _flatFilter = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _searchCtrl.addListener(() {
+      setState(() => _flatFilter = _searchCtrl.text.trim().toLowerCase());
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _restore(DocumentReference ref, Map<String, dynamic> e) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Restore Contribution'),
+        content: Text(
+            'Restore ₹${(e['amt'] as double).toStringAsFixed(0)} for ${e['flat']}?\n\n'
+            'The contribution will be marked as pending for admin review.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade600, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Restore'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final update = <String, dynamic>{
+      'status': 'pending',
+      'amountReceived': false,
+      'deletedAt': FieldValue.delete(),
+      'preDeleteStatus': FieldValue.delete(),
+      'preDeleteAmountReceived': FieldValue.delete(),
+    };
+    // If it was previously confirmed, restore totalCollected
+    final wasConfirmed = e['preDeleteAmountReceived'] == true;
+    if (wasConfirmed) {
+      final eventId = ref.parent.parent!.id;
+      final eventRef = FirebaseFirestore.instance.collection('events').doc(eventId);
+      final batch = FirebaseFirestore.instance.batch();
+      batch.update(ref, update);
+      batch.update(eventRef, {'totalCollected': FieldValue.increment(e['amt'] as double)});
+      await batch.commit();
+    } else {
+      await ref.update(update);
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Contribution restored to pending')));
+    }
+  }
+
+  Future<void> _restoreRejected(DocumentReference ref, Map<String, dynamic> e) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Revert Rejection'),
+        content: Text('Move ₹${(e['amt'] as double).toStringAsFixed(0)} for ${e['flat']} back to pending so it can be reviewed again?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange.shade600, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Revert'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await ref.update({
+      'status': 'pending',
+      'amountReceived': false,
+      'rejectionReason': FieldValue.delete(),
+      'rejectedAt': FieldValue.delete(),
+    });
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Rejection reverted — contribution is pending again')));
+    }
+  }
 
   static const _months = [
     '', 'January', 'February', 'March', 'April', 'May', 'June',
@@ -3374,7 +3470,16 @@ class _ActivityTabState extends State<_ActivityTab> {
           final selfReported = d['selfReported'] == true;
           final status = d['status'] ?? '';
 
-          if (selfReported) {
+          if (status == 'deleted') {
+            entries.add({
+              'type': 'deleted',
+              'flat': flat, 'name': name, 'amt': amt,
+              'ref': doc.reference,
+              'preDeleteStatus': d['preDeleteStatus'] ?? '',
+              'preDeleteAmountReceived': d['preDeleteAmountReceived'],
+              'ts': d['deletedAt'] ?? d['paidAt'] ?? '',
+            });
+          } else if (selfReported) {
             entries.add({
               'type': 'submitted',
               'flat': flat, 'name': name, 'amt': amt, 'mode': mode,
@@ -3392,6 +3497,7 @@ class _ActivityTabState extends State<_ActivityTab> {
                 'type': 'rejected',
                 'flat': flat, 'name': name, 'amt': amt,
                 'reason': d['rejectionReason'] ?? '',
+                'ref': doc.reference,
                 'ts': d['rejectedAt'],
               });
             }
@@ -3404,10 +3510,17 @@ class _ActivityTabState extends State<_ActivityTab> {
           }
         }
 
-        // Attach parsed DateTime and sort newest first
+        // Attach parsed DateTime, apply flat filter, sort newest first
         for (final e in entries) {
           e['dt'] = _parse(e['ts'] as String?);
         }
+        final filtered = _flatFilter.isEmpty
+            ? entries
+            : entries.where((e) =>
+                (e['flat'] as String).toLowerCase().contains(_flatFilter)).toList();
+        entries
+          ..clear()
+          ..addAll(filtered);
         entries.sort((a, b) {
           final dtA = a['dt'] as DateTime?;
           final dtB = b['dt'] as DateTime?;
@@ -3487,9 +3600,34 @@ class _ActivityTabState extends State<_ActivityTab> {
 
         return Column(
           children: [
-            // Expand All / Collapse All toolbar
+            // Flat search bar
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+              child: TextField(
+                controller: _searchCtrl,
+                decoration: InputDecoration(
+                  hintText: 'Search by flat (e.g. DA404)',
+                  hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade400),
+                  prefixIcon: Icon(Icons.search, size: 18, color: Colors.grey.shade400),
+                  suffixIcon: _flatFilter.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 16),
+                          onPressed: () => _searchCtrl.clear())
+                      : null,
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.grey.shade300)),
+                  enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.grey.shade200)),
+                ),
+              ),
+            ),
+            // Expand All / Collapse All toolbar
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
@@ -3612,6 +3750,9 @@ class _ActivityTabState extends State<_ActivityTab> {
             Color iconBg; Color iconColor; IconData icon;
             String title; String subtitle;
 
+            DocumentReference? actionRef;
+            VoidCallback? onRestore;
+
             switch (type) {
               case 'confirmed':
                 iconBg = Colors.green.shade50; iconColor = Colors.green.shade700;
@@ -3623,6 +3764,15 @@ class _ActivityTabState extends State<_ActivityTab> {
                 icon = Icons.cancel_outlined;
                 title = 'Rejected payment from ${e['flat']}';
                 subtitle = '${e['name']}  ·  Reason: ${e['reason']}';
+                actionRef = e['ref'] as DocumentReference?;
+                if (actionRef != null) onRestore = () => _restoreRejected(actionRef!, e);
+              case 'deleted':
+                iconBg = Colors.grey.shade100; iconColor = Colors.grey.shade600;
+                icon = Icons.delete_outline;
+                title = 'Deleted ₹${_fmt(e['amt'] as double)} from ${e['flat']}';
+                subtitle = e['name'] as String;
+                actionRef = e['ref'] as DocumentReference?;
+                if (actionRef != null) onRestore = () => _restore(actionRef!, e);
               case 'submitted':
                 iconBg = Colors.orange.shade50; iconColor = Colors.orange.shade700;
                 icon = Icons.upload_outlined;
@@ -3641,9 +3791,10 @@ class _ActivityTabState extends State<_ActivityTab> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: type == 'deleted' ? Colors.grey.shade50 : Colors.white,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.grey.shade100),
+                  border: Border.all(color: type == 'deleted'
+                      ? Colors.grey.shade200 : Colors.grey.shade100),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -3660,8 +3811,13 @@ class _ActivityTabState extends State<_ActivityTab> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(title,
-                              style: const TextStyle(
-                                  fontSize: 13, fontWeight: FontWeight.w600)),
+                              style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: type == 'deleted'
+                                      ? Colors.grey.shade500 : null,
+                                  decoration: type == 'deleted'
+                                      ? TextDecoration.lineThrough : null)),
                           if (subtitle.isNotEmpty) ...[
                             const SizedBox(height: 2),
                             Text(subtitle,
@@ -3672,10 +3828,44 @@ class _ActivityTabState extends State<_ActivityTab> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    if (dt != null)
-                      Text(_fmtTime(dt),
-                          style: TextStyle(
-                              fontSize: 10, color: Colors.grey.shade400)),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        if (dt != null)
+                          Text(_fmtTime(dt),
+                              style: TextStyle(
+                                  fontSize: 10, color: Colors.grey.shade400)),
+                        if (onRestore != null) ...[
+                          const SizedBox(height: 4),
+                          GestureDetector(
+                            onTap: onRestore,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: type == 'deleted'
+                                    ? Colors.blue.shade50
+                                    : Colors.orange.shade50,
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                    color: type == 'deleted'
+                                        ? Colors.blue.shade200
+                                        : Colors.orange.shade200),
+                              ),
+                              child: Text(
+                                type == 'deleted' ? 'Restore' : 'Revert',
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                    color: type == 'deleted'
+                                        ? Colors.blue.shade700
+                                        : Colors.orange.shade700),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ],
                 ),
               ),
