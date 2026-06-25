@@ -191,6 +191,8 @@ class _EventContributionCard extends StatefulWidget {
 
 class _EventContributionCardState extends State<_EventContributionCard> {
   List<Map<String, dynamic>> _contributions = [];
+  // block label → {total, paid}
+  List<({String label, int total, int paid})> _blockStats = [];
   bool _loaded = false;
 
   @override
@@ -200,15 +202,60 @@ class _EventContributionCardState extends State<_EventContributionCard> {
   }
 
   Future<void> _load() async {
-    final snap = await FirebaseFirestore.instance
-        .collection('events')
-        .doc(widget.eventDoc.id)
-        .collection('contributions')
-        .where('flatNumber', isEqualTo: widget.flatNumber)
-        .get();
+    final eventId = widget.eventDoc.id;
+
+    // own contributions + all contributions + community structure in parallel
+    final results = await Future.wait([
+      FirebaseFirestore.instance
+          .collection('events')
+          .doc(eventId)
+          .collection('contributions')
+          .where('flatNumber', isEqualTo: widget.flatNumber)
+          .get(),
+      FirebaseFirestore.instance
+          .collection('events')
+          .doc(eventId)
+          .collection('contributions')
+          .get(),
+      FirebaseFirestore.instance
+          .collection('community_settings')
+          .doc('address')
+          .get(),
+    ]);
+
+    final ownSnap = results[0] as QuerySnapshot;
+    final allSnap = results[1] as QuerySnapshot;
+    final settingsDoc = results[2] as DocumentSnapshot;
+
+    // Build paid-flat set (exclude rejected self-reports)
+    final paidFlats = <String>{};
+    for (final d in allSnap.docs) {
+      final data = d.data() as Map<String, dynamic>;
+      if (data['amountReceived'] != false && data['status'] != 'rejected') {
+        paidFlats.add(data['flatNumber'] as String? ?? '');
+      }
+    }
+
+    // Build block stats from community structure
+    final blockStatsList = <({String label, int total, int paid})>[];
+    if (settingsDoc.exists) {
+      final data = settingsDoc.data() as Map<String, dynamic>;
+      final wingBlocks = (data['wingBlocks'] as Map<String, dynamic>? ?? {});
+      for (final wing in wingBlocks.keys) {
+        final blocks = wingBlocks[wing] as Map<String, dynamic>? ?? {};
+        for (final block in blocks.keys) {
+          final flats = (blocks[block] as List?)?.cast<String>() ?? [];
+          if (flats.isEmpty) continue;
+          final paid = flats.where((f) => paidFlats.contains(f)).length;
+          blockStatsList.add((label: '$wing $block', total: flats.length, paid: paid));
+        }
+      }
+    }
+
     if (mounted) {
       setState(() {
-        _contributions = snap.docs.map((d) => d.data()).toList();
+        _contributions = ownSnap.docs.map((d) => d.data() as Map<String, dynamic>).toList();
+        _blockStats = blockStatsList;
         _loaded = true;
       });
     }
@@ -251,22 +298,39 @@ class _EventContributionCardState extends State<_EventContributionCard> {
     final double progress =
         target > 0 ? ((collected / target).clamp(0.0, 1.0) as num).toDouble() : 0.0;
 
-    final hasPaid = _contributions.isNotEmpty &&
-        _contributions.any((c) => c['amountReceived'] != false);
-    final hasPending = _contributions.isNotEmpty &&
-        _contributions.any((c) => c['amountReceived'] == false);
-    final notRecorded = _contributions.isEmpty;
+    final confirmedContribs = _contributions
+        .where((c) => c['amountReceived'] != false && c['status'] != 'rejected')
+        .toList();
+    final pendingContribs = _contributions
+        .where((c) => c['amountReceived'] == false && c['status'] != 'rejected')
+        .toList();
+    final rejectedContribs = _contributions
+        .where((c) => c['status'] == 'rejected')
+        .toList();
 
-    final statusLabel = notRecorded
-        ? 'Not Recorded'
-        : hasPending
-            ? 'Pending'
-            : 'Paid ✓';
-    final statusColor = notRecorded
+    final hasPaid = confirmedContribs.isNotEmpty;
+    final hasPending = pendingContribs.isNotEmpty;
+    final hasRejected = rejectedContribs.isNotEmpty;
+    final notRecorded = _contributions.isEmpty || (!hasPaid && !hasPending && hasRejected);
+
+    final statusLabel = !_loaded
+        ? '...'
+        : hasPaid
+            ? 'Paid ✓'
+            : hasPending
+                ? 'Pending'
+                : hasRejected
+                    ? 'Action Required'
+                    : 'Not Recorded';
+    final statusColor = !_loaded
         ? Colors.white60
-        : hasPending
-            ? Colors.orange.shade200
-            : Colors.greenAccent;
+        : hasPaid
+            ? Colors.greenAccent
+            : hasPending
+                ? Colors.orange.shade200
+                : hasRejected
+                    ? Colors.red.shade200
+                    : Colors.white60;
 
     return GestureDetector(
       onTap: () => _openDashboard(context, eventName),
@@ -369,6 +433,66 @@ class _EventContributionCardState extends State<_EventContributionCard> {
                 ),
               ),
 
+            // Block-level collection summary
+            if (_loaded && _blockStats.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: Text('Collection Status by Block',
+                    style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey.shade500,
+                        letterSpacing: 0.3)),
+              ),
+              const SizedBox(height: 6),
+              SizedBox(
+                height: 36,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: _blockStats.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (_, i) {
+                    final s = _blockStats[i];
+                    final allPaid = s.paid == s.total;
+                    final nonePaid = s.paid == 0;
+                    final bgColor = allPaid
+                        ? Colors.green.shade50
+                        : nonePaid
+                            ? Colors.grey.shade100
+                            : Colors.orange.shade50;
+                    final borderColor = allPaid
+                        ? Colors.green.shade300
+                        : nonePaid
+                            ? Colors.grey.shade300
+                            : Colors.orange.shade300;
+                    final textColor = allPaid
+                        ? Colors.green.shade700
+                        : nonePaid
+                            ? Colors.grey.shade600
+                            : Colors.orange.shade700;
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: bgColor,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: borderColor),
+                      ),
+                      child: Text(
+                        '${s.label}  ${s.paid}/${s.total}',
+                        style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: textColor),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 4),
+            ],
+
             const Divider(height: 20, indent: 16, endIndent: 16),
 
             // Contribution details
@@ -382,7 +506,7 @@ class _EventContributionCardState extends State<_EventContributionCard> {
                         child:
                             CircularProgressIndicator(strokeWidth: 2))),
               )
-            else if (notRecorded)
+            else if (notRecorded && !hasRejected)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
                 child: Row(
@@ -396,8 +520,9 @@ class _EventContributionCardState extends State<_EventContributionCard> {
                   ],
                 ),
               )
-            else
-              ...(_contributions.map((c) {
+            else ...[
+              // Confirmed & pending entries
+              ...[...confirmedContribs, ...pendingContribs].map((c) {
                 final isPending = c['amountReceived'] == false;
                 final amount = (c['amount'] ?? 0).toStringAsFixed(0);
                 final type = c['contributionType'] ?? 'Regular';
@@ -442,7 +567,7 @@ class _EventContributionCardState extends State<_EventContributionCard> {
                                   : Colors.green.shade200),
                         ),
                         child: Text(
-                          isPending ? 'Pending' : 'Paid',
+                          isPending ? 'Pending Verification' : 'Paid',
                           style: TextStyle(
                               color: isPending
                                   ? Colors.orange.shade700
@@ -454,7 +579,60 @@ class _EventContributionCardState extends State<_EventContributionCard> {
                     ],
                   ),
                 );
-              })),
+              }),
+              // Rejected entries with reason
+              ...rejectedContribs.map((c) {
+                final amount = (c['amount'] ?? 0).toStringAsFixed(0);
+                final mode = c['paymentMode'] ?? '';
+                final reason = c['rejectionReason'] ?? 'Payment not verified';
+                return Container(
+                  margin: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red.shade200),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        Icon(Icons.cancel_outlined,
+                            color: Colors.red.shade600, size: 16),
+                        const SizedBox(width: 6),
+                        Text('₹$amount${mode.isNotEmpty ? ' · $mode' : ''}',
+                            style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.red.shade700)),
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade100,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text('Rejected',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.red.shade700)),
+                        ),
+                      ]),
+                      const SizedBox(height: 4),
+                      Text('Reason: $reason',
+                          style: TextStyle(
+                              fontSize: 12, color: Colors.red.shade600)),
+                      const SizedBox(height: 2),
+                      Text('Please re-submit with correct details.',
+                          style: TextStyle(
+                              fontSize: 11, color: Colors.red.shade400)),
+                    ],
+                  ),
+                );
+              }),
+            ],
 
             // Action row
             Padding(
@@ -468,7 +646,7 @@ class _EventContributionCardState extends State<_EventContributionCard> {
                         onPressed: () => _selfReport(context, eventName),
                         icon: const Icon(Icons.payments_rounded, size: 16),
                         label: Text(
-                          hasPending ? 'Report Another Payment' : "I've Paid",
+                          hasRejected ? 'Re-submit Payment' : hasPending ? 'Report Another Payment' : "I've Paid",
                           style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                         ),
                         style: ElevatedButton.styleFrom(
@@ -572,6 +750,16 @@ class _SelfReportSheetState extends State<_SelfReportSheet> {
       final prefs = await SharedPreferences.getInstance();
       final wing = prefs.getString('session_wing') ?? '';
       final block = prefs.getString('session_block') ?? '';
+      final userId = prefs.getString('session_user_id') ?? '';
+
+      // Fetch phone number from Firestore user doc
+      String phone = '';
+      if (userId.isNotEmpty) {
+        final userDoc = await FirebaseFirestore.instance.collection('users').doc(userId).get();
+        phone = (userDoc.data()?['phone'] ?? '').toString();
+        // Strip +91 prefix so admin WhatsApp URL uses bare 10-digit number
+        if (phone.startsWith('+91')) phone = phone.substring(3);
+      }
 
       await FirebaseFirestore.instance
           .collection('events')
@@ -580,6 +768,7 @@ class _SelfReportSheetState extends State<_SelfReportSheet> {
           .add({
         'flatNumber': widget.flatNumber,
         'residentName': widget.residentName,
+        'phone': phone,
         'wing': wing,
         'block': block,
         'amount': amount,
@@ -589,6 +778,8 @@ class _SelfReportSheetState extends State<_SelfReportSheet> {
         'note': '',
         'amountReceived': false,
         'selfReported': true,
+        'status': 'pending',
+        'eventName': widget.eventName,
         'paidAt': _date.toIso8601String(),
         'paidDate': _fmtDate(_date),
         'reportedAt': DateTime.now().toIso8601String(),

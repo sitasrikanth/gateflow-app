@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../auth/login_screen.dart';
 import '../admin/admin_home_screen.dart';
 import '../resident/resident_home_screen.dart';
@@ -1231,10 +1232,12 @@ class _ContributionsTabState extends State<_ContributionsTab> {
           );
         }
 
-        // Pending verification cards (self-reported, not yet confirmed)
+        // Pending verification cards (self-reported, awaiting admin action)
         final pendingVerification = docs.where((d) {
           final data = d.data() as Map<String, dynamic>;
-          return data['selfReported'] == true && data['amountReceived'] == false;
+          return data['selfReported'] == true &&
+              data['amountReceived'] == false &&
+              data['status'] != 'rejected';
         }).toList();
 
         // All confirmed contributions for summary totals
@@ -1244,7 +1247,9 @@ class _ContributionsTabState extends State<_ContributionsTab> {
         final Map<String, List<QueryDocumentSnapshot>> flatDocs = {};
         for (final doc in docs) {
           final d = doc.data() as Map<String, dynamic>;
-          if (d['selfReported'] == true && d['amountReceived'] == false) continue;
+          if (d['selfReported'] == true &&
+              d['amountReceived'] == false &&
+              d['status'] != 'rejected') continue;
           final flat = (d['flatNumber'] ?? '').toString().trim();
           if (flat.isNotEmpty) {
             flatDocs.putIfAbsent(flat, () => []);
@@ -1938,65 +1943,227 @@ class _ContributionsTabState extends State<_ContributionsTab> {
 
   static Future<void> _confirmSelfReport(
       BuildContext context, DocumentSnapshot doc, double amt) async {
+    final d = doc.data() as Map<String, dynamic>;
+    final flat = d['flatNumber'] ?? '';
+    final name = d['residentName'] ?? '';
+    final phone = d['phone'] ?? '';
+    final mode = d['paymentMode'] ?? '';
+    final ref = (d['referenceId'] ?? '').toString().trim();
+    final eventName = d['eventName'] ?? 'the event';
+
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Confirm Payment'),
-        content: Text(
-            'Mark ₹${amt.toStringAsFixed(0)} as received and add to total collected?'),
+      builder: (ctx) => AlertDialog(
+        title: Row(children: [
+          Icon(Icons.check_circle, color: Colors.green.shade600),
+          const SizedBox(width: 8),
+          const Text('Confirm Payment'),
+        ]),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Mark ₹${amt.toStringAsFixed(0)} from Flat $flat as received?'),
+            const SizedBox(height: 6),
+            if (mode.isNotEmpty)
+              Text('Mode: $mode${ref.isNotEmpty ? '  ·  Ref: $ref' : ''}',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+          ],
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
+              onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Cancel')),
           ElevatedButton(
               style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.green.shade600,
                   foregroundColor: Colors.white),
-              onPressed: () => Navigator.pop(context, true),
+              onPressed: () => Navigator.pop(ctx, true),
               child: const Text('Confirm')),
         ],
       ),
     );
-    if (confirmed != true) return;
+    if (confirmed != true || !context.mounted) return;
+
     final batch = FirebaseFirestore.instance.batch();
-    batch.update(doc.reference, {'amountReceived': true});
-    final eventRef =
-        FirebaseFirestore.instance.collection('events').doc(doc.reference.parent.parent!.id);
+    batch.update(doc.reference, {'amountReceived': true, 'status': 'confirmed'});
+    final eventRef = FirebaseFirestore.instance
+        .collection('events')
+        .doc(doc.reference.parent.parent!.id);
     batch.update(eventRef, {'totalCollected': FieldValue.increment(amt)});
     await batch.commit();
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Payment confirmed ✅')));
-    }
+
+    if (!context.mounted) return;
+
+    // WhatsApp option for admin
+    final waMsg = Uri.encodeComponent(
+      'Hi $name, your payment of ₹${amt.toStringAsFixed(0)} for $eventName has been confirmed by the admin. Thank you!',
+    );
+    final waUrl = Uri.parse('https://wa.me/91$phone?text=$waMsg');
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(children: [
+          Icon(Icons.check_circle, color: Colors.green.shade600),
+          const SizedBox(width: 8),
+          const Text('Payment Confirmed'),
+        ]),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('₹${amt.toStringAsFixed(0)} from Flat $flat has been added to total collected.'),
+            if (phone.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text('Notify $name via WhatsApp?',
+                  style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Skip')),
+          if (phone.isNotEmpty)
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF25D366),
+                  foregroundColor: Colors.white),
+              icon: const Icon(Icons.chat, size: 16),
+              label: const Text('WhatsApp'),
+              onPressed: () async {
+                Navigator.pop(ctx);
+                final canLaunch = await canLaunchUrl(waUrl);
+                await launchUrl(waUrl,
+                    mode: canLaunch
+                        ? LaunchMode.externalApplication
+                        : LaunchMode.platformDefault);
+              },
+            ),
+        ],
+      ),
+    );
   }
 
   static Future<void> _rejectSelfReport(
       BuildContext context, DocumentSnapshot doc) async {
+    final d = doc.data() as Map<String, dynamic>;
+    final flat = d['flatNumber'] ?? '';
+    final name = d['residentName'] ?? '';
+    final phone = d['phone'] ?? '';
+    final amt = (d['amount'] as num?)?.toDouble() ?? 0;
+
+    final reasonCtrl = TextEditingController();
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Reject Report'),
-        content: const Text(
-            'Remove this self-reported payment? The resident will need to re-submit.'),
+      builder: (ctx) => AlertDialog(
+        title: Row(children: [
+          Icon(Icons.cancel_outlined, color: Colors.red.shade600),
+          const SizedBox(width: 8),
+          const Text('Reject Payment Report'),
+        ]),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Flat $flat — ₹${amt.toStringAsFixed(0)}'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: reasonCtrl,
+              decoration: InputDecoration(
+                labelText: 'Reason for rejection',
+                hintText: 'e.g. Payment not found in bank records',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              maxLines: 2,
+            ),
+            const SizedBox(height: 8),
+            Text('The resident will see this reason and can re-submit.',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+          ],
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
+              onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Cancel')),
           ElevatedButton(
               style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red.shade600,
                   foregroundColor: Colors.white),
-              onPressed: () => Navigator.pop(context, true),
+              onPressed: () => Navigator.pop(ctx, true),
               child: const Text('Reject')),
         ],
       ),
     );
-    if (confirmed != true) return;
-    await doc.reference.delete();
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Payment report rejected ❌')));
-    }
+
+    final reason = reasonCtrl.text.trim();
+    WidgetsBinding.instance.addPostFrameCallback((_) => reasonCtrl.dispose());
+
+    if (confirmed != true || !context.mounted) return;
+
+    // Mark as rejected (don't delete — resident needs to see the reason)
+    await doc.reference.update({
+      'status': 'rejected',
+      'rejectionReason': reason.isEmpty ? 'Payment not verified' : reason,
+      'rejectedAt': DateTime.now().toIso8601String(),
+    });
+
+    if (!context.mounted) return;
+
+    // WhatsApp option for admin
+    final rejReason = reason.isEmpty ? 'payment could not be verified in bank records' : reason;
+    final waMsg = Uri.encodeComponent(
+      'Hi $name, your payment report of ₹${amt.toStringAsFixed(0)} could not be confirmed. Reason: $rejReason. Please contact the admin or re-submit with correct details.',
+    );
+    final waUrl = Uri.parse('https://wa.me/91$phone?text=$waMsg');
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(children: [
+          Icon(Icons.cancel_outlined, color: Colors.red.shade600),
+          const SizedBox(width: 8),
+          const Text('Report Rejected'),
+        ]),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Flat $flat\'s report has been rejected.'),
+            const SizedBox(height: 4),
+            Text('They will see the rejection reason in their app.',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+            if (phone.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text('Notify $name via WhatsApp?',
+                  style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Skip')),
+          if (phone.isNotEmpty)
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF25D366),
+                  foregroundColor: Colors.white),
+              icon: const Icon(Icons.chat, size: 16),
+              label: const Text('WhatsApp'),
+              onPressed: () async {
+                Navigator.pop(ctx);
+                final canLaunch = await canLaunchUrl(waUrl);
+                await launchUrl(waUrl,
+                    mode: canLaunch
+                        ? LaunchMode.externalApplication
+                        : LaunchMode.platformDefault);
+              },
+            ),
+        ],
+      ),
+    );
   }
 }
 
