@@ -1247,15 +1247,14 @@ class _ContributionsTabState extends State<_ContributionsTab> {
         final Map<String, List<QueryDocumentSnapshot>> flatDocs = {};
         for (final doc in docs) {
           final d = doc.data() as Map<String, dynamic>;
-          if (d['selfReported'] == true &&
-              d['amountReceived'] == false &&
-              d['status'] != 'rejected') continue;
+          // Skip self-reports that haven't been confirmed by admin yet
+          if (d['selfReported'] == true && d['amountReceived'] != true) continue;
           final flat = (d['flatNumber'] ?? '').toString().trim();
           if (flat.isNotEmpty) {
             flatDocs.putIfAbsent(flat, () => []);
             flatDocs[flat]!.add(doc);
           }
-          if (d['amountReceived'] != false) {
+          if (d['amountReceived'] == true) {
             grandTotal += (d['amount'] ?? 0).toDouble();
           }
           totalCount++;
