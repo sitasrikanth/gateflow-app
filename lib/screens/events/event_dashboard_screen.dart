@@ -3315,7 +3315,8 @@ class _ActivityTab extends StatefulWidget {
 
 class _ActivityTabState extends State<_ActivityTab> {
   // Month keys that are currently expanded; empty = all collapsed by default
-  final Set<String> _expanded = {};
+  final Set<String> _expandedMonths = {};
+  final Set<String> _expandedDates = {};
 
   static const _months = [
     '', 'January', 'February', 'March', 'April', 'May', 'June',
@@ -3442,26 +3443,33 @@ class _ActivityTabState extends State<_ActivityTab> {
           final dateKey  = dt != null ? '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}' : '';
 
           if (monthKey != lastMonth) {
-            // Count entries in this month for the subtitle
             final count = entries.where((x) {
               final xdt = x['dt'] as DateTime?;
               final xkey = xdt != null ? '${xdt.year}-${xdt.month.toString().padLeft(2, '0')}' : '';
               return xkey == monthKey;
             }).length;
             listItems.add(_ActivityItem.monthHeader(
-              dt != null ? _monthLabel(dt) : 'Unknown',
-              monthKey,
-              count,
-            ));
+                dt != null ? _monthLabel(dt) : 'Unknown', monthKey, count));
             lastMonth = monthKey;
             lastDate = '';
           }
-          if (!_expanded.contains(lastMonth)) continue;
+          if (!_expandedMonths.contains(lastMonth)) continue;
           if (dateKey != lastDate) {
+            final dayCount = entries.where((x) {
+              final xdt = x['dt'] as DateTime?;
+              final xkey = xdt != null
+                  ? '${xdt.year}-${xdt.month.toString().padLeft(2, '0')}-${xdt.day.toString().padLeft(2, '0')}'
+                  : '';
+              return xkey == dateKey;
+            }).length;
             listItems.add(_ActivityItem.dateHeader(
-                dt != null ? '${_days[dt.weekday]}, ${_dateLabel(dt)}' : 'Unknown date'));
+              dt != null ? '${_days[dt.weekday]}, ${_dateLabel(dt)}' : 'Unknown date',
+              dateKey,
+              dayCount,
+            ));
             lastDate = dateKey;
           }
+          if (!_expandedDates.contains(lastDate)) continue;
           listItems.add(_ActivityItem.entry(e, dt));
         }
 
@@ -3473,13 +3481,13 @@ class _ActivityTabState extends State<_ActivityTab> {
 
             // Month header — tappable to expand/collapse
             if (item.isMonthHeader) {
-              final isExpanded = _expanded.contains(item.monthKey);
+              final isExpanded = _expandedMonths.contains(item.monthKey);
               return GestureDetector(
                 onTap: () => setState(() {
                   if (isExpanded) {
-                    _expanded.remove(item.monthKey);
+                    _expandedMonths.remove(item.monthKey);
                   } else {
-                    _expanded.add(item.monthKey!);
+                    _expandedMonths.add(item.monthKey!);
                   }
                 }),
                 child: Padding(
@@ -3518,15 +3526,37 @@ class _ActivityTabState extends State<_ActivityTab> {
               );
             }
 
-            // Date header
+            // Date header — tappable to expand/collapse
             if (item.isDateHeader) {
-              return Padding(
-                padding: const EdgeInsets.only(top: 10, bottom: 6, left: 2),
-                child: Text(item.label!,
-                    style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey.shade600)),
+              final isExpanded = _expandedDates.contains(item.dateKey);
+              return GestureDetector(
+                onTap: () => setState(() {
+                  if (isExpanded) {
+                    _expandedDates.remove(item.dateKey);
+                  } else {
+                    _expandedDates.add(item.dateKey!);
+                  }
+                }),
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 8, bottom: 4, left: 2),
+                  child: Row(
+                    children: [
+                      Icon(
+                        isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                        size: 16, color: Colors.grey.shade500),
+                      const SizedBox(width: 4),
+                      Text(item.label!,
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey.shade700)),
+                      const SizedBox(width: 6),
+                      Text('(${item.entryCount})',
+                          style: TextStyle(
+                              fontSize: 11, color: Colors.grey.shade400)),
+                    ],
+                  ),
+                ),
               );
             }
 
@@ -3618,6 +3648,7 @@ class _ActivityItem {
   final bool isDateHeader;
   final String? label;
   final String? monthKey;
+  final String? dateKey;
   final int entryCount;
   final Map<String, dynamic>? entry;
   final DateTime? dt;
@@ -3627,6 +3658,7 @@ class _ActivityItem {
     required this.isDateHeader,
     this.label,
     this.monthKey,
+    this.dateKey,
     this.entryCount = 0,
     this.entry,
     this.dt,
@@ -3637,8 +3669,10 @@ class _ActivityItem {
           isMonthHeader: true, isDateHeader: false,
           label: label, monthKey: monthKey, entryCount: count);
 
-  factory _ActivityItem.dateHeader(String label) =>
-      _ActivityItem._(isMonthHeader: false, isDateHeader: true, label: label);
+  factory _ActivityItem.dateHeader(String label, String dateKey, int count) =>
+      _ActivityItem._(
+          isMonthHeader: false, isDateHeader: true,
+          label: label, dateKey: dateKey, entryCount: count);
 
   factory _ActivityItem.entry(Map<String, dynamic> e, DateTime? dt) =>
       _ActivityItem._(isMonthHeader: false, isDateHeader: false, entry: e, dt: dt);
