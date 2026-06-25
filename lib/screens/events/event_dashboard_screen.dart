@@ -3514,14 +3514,11 @@ class _ActivityTabState extends State<_ActivityTab> {
         for (final e in entries) {
           e['dt'] = _parse(e['ts'] as String?);
         }
-        final filtered = _flatFilter.isEmpty
+        final displayEntries = _flatFilter.isEmpty
             ? entries
             : entries.where((e) =>
-                (e['flat'] as String).toLowerCase().contains(_flatFilter)).toList();
-        entries
-          ..clear()
-          ..addAll(filtered);
-        entries.sort((a, b) {
+                (e['flat'] as String? ?? '').toLowerCase().contains(_flatFilter)).toList();
+        displayEntries.sort((a, b) {
           final dtA = a['dt'] as DateTime?;
           final dtB = b['dt'] as DateTime?;
           if (dtA == null && dtB == null) return 0;
@@ -3530,14 +3527,14 @@ class _ActivityTabState extends State<_ActivityTab> {
           return dtB.compareTo(dtA);
         });
 
-        if (entries.isEmpty) {
+        if (displayEntries.isEmpty) {
           return Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(Icons.history, size: 48, color: Colors.grey.shade300),
                 const SizedBox(height: 12),
-                Text('No activity yet',
+                Text(_flatFilter.isEmpty ? 'No activity yet' : 'No activity for "$_flatFilter"',
                     style: TextStyle(color: Colors.grey.shade400, fontSize: 15)),
               ],
             ),
@@ -3547,7 +3544,7 @@ class _ActivityTabState extends State<_ActivityTab> {
         // Collect all unique month and date keys for expand/collapse all
         final allMonthKeys = <String>{};
         final allDateKeys = <String>{};
-        for (final e in entries) {
+        for (final e in displayEntries) {
           final dt = e['dt'] as DateTime?;
           if (dt == null) continue;
           allMonthKeys.add('${dt.year}-${dt.month.toString().padLeft(2, '0')}');
@@ -3557,18 +3554,17 @@ class _ActivityTabState extends State<_ActivityTab> {
             _expandedDates.containsAll(allDateKeys);
 
         // Group by month key ("2026-06"), then by date key ("2026-06-25")
-        // Only emit date headers and entries for expanded months
         final listItems = <_ActivityItem>[];
         String lastMonth = '';
         String lastDate = '';
 
-        for (final e in entries) {
+        for (final e in displayEntries) {
           final dt = e['dt'] as DateTime?;
           final monthKey = dt != null ? '${dt.year}-${dt.month.toString().padLeft(2, '0')}' : '';
           final dateKey  = dt != null ? '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}' : '';
 
           if (monthKey != lastMonth) {
-            final count = entries.where((x) {
+            final count = displayEntries.where((x) {
               final xdt = x['dt'] as DateTime?;
               final xkey = xdt != null ? '${xdt.year}-${xdt.month.toString().padLeft(2, '0')}' : '';
               return xkey == monthKey;
@@ -3580,7 +3576,7 @@ class _ActivityTabState extends State<_ActivityTab> {
           }
           if (!_expandedMonths.contains(lastMonth)) continue;
           if (dateKey != lastDate) {
-            final dayCount = entries.where((x) {
+            final dayCount = displayEntries.where((x) {
               final xdt = x['dt'] as DateTime?;
               final xkey = xdt != null
                   ? '${xdt.year}-${xdt.month.toString().padLeft(2, '0')}-${xdt.day.toString().padLeft(2, '0')}'
