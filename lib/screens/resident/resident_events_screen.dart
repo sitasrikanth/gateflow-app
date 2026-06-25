@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -191,27 +192,46 @@ class _EventContributionCard extends StatefulWidget {
 
 class _EventContributionCardState extends State<_EventContributionCard> {
   List<Map<String, dynamic>> _contributions = [];
-  // block label → {total, paid}
   List<({String label, int total, int paid})> _blockStats = [];
   bool _loaded = false;
+  StreamSubscription<QuerySnapshot>? _contribSub;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _subscribeContributions();
+    _loadBlockStats();
   }
 
-  Future<void> _load() async {
-    final eventId = widget.eventDoc.id;
+  @override
+  void dispose() {
+    _contribSub?.cancel();
+    super.dispose();
+  }
 
-    // own contributions + all contributions + community structure in parallel
+  // Live stream for own flat's contributions — updates instantly when admin confirms/rejects
+  void _subscribeContributions() {
+    _contribSub = FirebaseFirestore.instance
+        .collection('events')
+        .doc(widget.eventDoc.id)
+        .collection('contributions')
+        .where('flatNumber', isEqualTo: widget.flatNumber)
+        .snapshots()
+        .listen((snap) {
+      if (mounted) {
+        setState(() {
+          _contributions = snap.docs.map((d) => d.data()).toList();
+          _loaded = true;
+        });
+        // Refresh block stats whenever contributions change
+        _loadBlockStats();
+      }
+    });
+  }
+
+  Future<void> _loadBlockStats() async {
+    final eventId = widget.eventDoc.id;
     final results = await Future.wait([
-      FirebaseFirestore.instance
-          .collection('events')
-          .doc(eventId)
-          .collection('contributions')
-          .where('flatNumber', isEqualTo: widget.flatNumber)
-          .get(),
       FirebaseFirestore.instance
           .collection('events')
           .doc(eventId)
@@ -223,11 +243,9 @@ class _EventContributionCardState extends State<_EventContributionCard> {
           .get(),
     ]);
 
-    final ownSnap = results[0] as QuerySnapshot;
-    final allSnap = results[1] as QuerySnapshot;
-    final settingsDoc = results[2] as DocumentSnapshot;
+    final allSnap = results[0] as QuerySnapshot;
+    final settingsDoc = results[1] as DocumentSnapshot;
 
-    // Build paid-flat set (exclude rejected self-reports)
     final paidFlats = <String>{};
     for (final d in allSnap.docs) {
       final data = d.data() as Map<String, dynamic>;
@@ -236,11 +254,10 @@ class _EventContributionCardState extends State<_EventContributionCard> {
       }
     }
 
-    // Build block stats from community structure
     final blockStatsList = <({String label, int total, int paid})>[];
     if (settingsDoc.exists) {
       final data = settingsDoc.data() as Map<String, dynamic>;
-      final wingBlocks = (data['wingBlocks'] as Map<String, dynamic>? ?? {});
+      final wingBlocks = data['wingBlocks'] as Map<String, dynamic>? ?? {};
       for (final wing in wingBlocks.keys) {
         final blocks = wingBlocks[wing] as Map<String, dynamic>? ?? {};
         for (final block in blocks.keys) {
@@ -252,13 +269,7 @@ class _EventContributionCardState extends State<_EventContributionCard> {
       }
     }
 
-    if (mounted) {
-      setState(() {
-        _contributions = ownSnap.docs.map((d) => d.data() as Map<String, dynamic>).toList();
-        _blockStats = blockStatsList;
-        _loaded = true;
-      });
-    }
+    if (mounted) setState(() => _blockStats = blockStatsList);
   }
 
   Future<void> _selfReport(BuildContext context, String eventName) async {
@@ -271,7 +282,7 @@ class _EventContributionCardState extends State<_EventContributionCard> {
         eventName: eventName,
         flatNumber: widget.flatNumber,
         residentName: widget.residentName,
-        onSubmitted: _load,
+        onSubmitted: _loadBlockStats,
       ),
     );
   }
