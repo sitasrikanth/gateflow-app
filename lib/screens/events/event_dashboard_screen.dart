@@ -3431,6 +3431,18 @@ class _ActivityTabState extends State<_ActivityTab> {
           );
         }
 
+        // Collect all unique month and date keys for expand/collapse all
+        final allMonthKeys = <String>{};
+        final allDateKeys = <String>{};
+        for (final e in entries) {
+          final dt = e['dt'] as DateTime?;
+          if (dt == null) continue;
+          allMonthKeys.add('${dt.year}-${dt.month.toString().padLeft(2, '0')}');
+          allDateKeys.add('${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}');
+        }
+        final allExpanded = _expandedMonths.containsAll(allMonthKeys) &&
+            _expandedDates.containsAll(allDateKeys);
+
         // Group by month key ("2026-06"), then by date key ("2026-06-25")
         // Only emit date headers and entries for expanded months
         final listItems = <_ActivityItem>[];
@@ -3473,9 +3485,41 @@ class _ActivityTabState extends State<_ActivityTab> {
           listItems.add(_ActivityItem.entry(e, dt));
         }
 
-        return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 80),
-          itemCount: listItems.length,
+        return Column(
+          children: [
+            // Expand All / Collapse All toolbar
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton.icon(
+                    icon: Icon(
+                      allExpanded ? Icons.unfold_less : Icons.unfold_more,
+                      size: 16),
+                    label: Text(allExpanded ? 'Collapse All' : 'Expand All',
+                        style: const TextStyle(fontSize: 12)),
+                    style: TextButton.styleFrom(
+                        foregroundColor: Colors.deepPurple.shade400,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4)),
+                    onPressed: () => setState(() {
+                      if (allExpanded) {
+                        _expandedMonths.clear();
+                        _expandedDates.clear();
+                      } else {
+                        _expandedMonths.addAll(allMonthKeys);
+                        _expandedDates.addAll(allDateKeys);
+                      }
+                    }),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.fromLTRB(12, 4, 12, 80),
+                itemCount: listItems.length,
           itemBuilder: (_, i) {
             final item = listItems[i];
 
@@ -3637,7 +3681,10 @@ class _ActivityTabState extends State<_ActivityTab> {
               ),
             );
           },
-        );
+        ),      // ListView.builder
+        ),      // Expanded
+          ],
+        );     // Column
       },
     );
   }
