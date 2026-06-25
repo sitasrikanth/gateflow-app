@@ -383,8 +383,14 @@ class _EventContributionCardState extends State<_EventContributionCard> {
                     ? Colors.red.shade200
                     : Colors.white60;
 
+    // Don't navigate to dashboard when rejection is shown inline — resident
+    // should read the reason and re-submit, not be taken away from the card.
+    final onCardTap = hasRejected && !hasPaid
+        ? null
+        : () => _openDashboard(context, eventName);
+
     return GestureDetector(
-      onTap: () => _openDashboard(context, eventName),
+      onTap: onCardTap,
       child: Container(
         margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(

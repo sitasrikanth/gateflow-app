@@ -38,7 +38,7 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
   void initState() {
     super.initState();
     _tabController = TabController(
-        length: widget.isAdmin ? 4 : 3, vsync: this);
+        length: widget.isAdmin ? 5 : 3, vsync: this);
     if (!widget.isAdmin) _loadFlat();
   }
 
@@ -386,8 +386,10 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                         const Tab(text: 'Overview'),
                         const Tab(text: 'Contributions'),
                         const Tab(text: 'Expenses'),
-                        if (widget.isAdmin)
+                        if (widget.isAdmin) ...[
                           const Tab(text: 'Follow-up'),
+                          const Tab(text: 'Activity'),
+                        ],
                       ],
                     ),
                   ],
@@ -414,10 +416,12 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                         eventId: widget.eventId,
                         isAdmin: widget.isAdmin,
                         status: status),
-                    if (widget.isAdmin)
+                    if (widget.isAdmin) ...[
                       _FollowUpTab(
                           eventId: widget.eventId,
                           eventName: data['name'] ?? widget.eventName),
+                      _ActivityTab(eventId: widget.eventId),
+                    ],
                   ],
                 ),
               ),
@@ -2078,7 +2082,11 @@ class _ContributionsTabState extends State<_ContributionsTab> {
     if (confirmed != true || !context.mounted) return;
 
     final batch = FirebaseFirestore.instance.batch();
-    batch.update(doc.reference, {'amountReceived': true, 'status': 'confirmed'});
+    batch.update(doc.reference, {
+      'amountReceived': true,
+      'status': 'confirmed',
+      'confirmedAt': DateTime.now().toIso8601String(),
+    });
     final eventRef = FirebaseFirestore.instance
         .collection('events')
         .doc(doc.reference.parent.parent!.id);
@@ -3261,6 +3269,213 @@ class _FollowUpFlatCard extends StatelessWidget {
               ],
             ),
           ),
+        );
+      },
+    );
+  }
+}
+
+// ── Activity Tab ───────────────────────────────────────────────────────────────
+
+class _ActivityTab extends StatelessWidget {
+  final String eventId;
+  const _ActivityTab({required this.eventId});
+
+  String _fmt(double v) {
+    if (v >= 100000) return '${(v / 100000).toStringAsFixed(1)}L';
+    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
+    return v.toStringAsFixed(0);
+  }
+
+  String _fmtTime(String? iso) {
+    if (iso == null || iso.isEmpty) return '';
+    try {
+      final dt = DateTime.parse(iso).toLocal();
+      final d = '${dt.day.toString().padLeft(2, '0')}/'
+          '${dt.month.toString().padLeft(2, '0')}/'
+          '${dt.year}';
+      final h = dt.hour.toString().padLeft(2, '0');
+      final m = dt.minute.toString().padLeft(2, '0');
+      return '$d $h:$m';
+    } catch (_) {
+      return iso.length >= 10 ? iso.substring(0, 10) : iso;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('events')
+          .doc(eventId)
+          .collection('contributions')
+          .snapshots(),
+      builder: (context, snap) {
+        if (!snap.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        // Build a flat list of log entries from contribution docs
+        final entries = <Map<String, dynamic>>[];
+        for (final doc in snap.data!.docs) {
+          final d = doc.data() as Map<String, dynamic>;
+          final flat = d['flatNumber'] ?? '';
+          final name = d['residentName'] ?? '';
+          final amt = (d['amount'] as num?)?.toDouble() ?? 0;
+          final mode = d['paymentMode'] ?? '';
+          final selfReported = d['selfReported'] == true;
+          final status = d['status'] ?? '';
+
+          if (selfReported) {
+            // Resident submitted self-report
+            entries.add({
+              'type': 'submitted',
+              'flat': flat,
+              'name': name,
+              'amt': amt,
+              'mode': mode,
+              'ts': d['reportedAt'] ?? d['paidAt'] ?? '',
+            });
+            // Admin confirmed
+            if (status == 'confirmed' && (d['confirmedAt'] ?? '').isNotEmpty) {
+              entries.add({
+                'type': 'confirmed',
+                'flat': flat,
+                'name': name,
+                'amt': amt,
+                'mode': mode,
+                'ts': d['confirmedAt'],
+              });
+            }
+            // Admin rejected
+            if (status == 'rejected' && (d['rejectedAt'] ?? '').isNotEmpty) {
+              entries.add({
+                'type': 'rejected',
+                'flat': flat,
+                'name': name,
+                'amt': amt,
+                'reason': d['rejectionReason'] ?? '',
+                'ts': d['rejectedAt'],
+              });
+            }
+          } else {
+            // Admin manually added
+            entries.add({
+              'type': 'added',
+              'flat': flat,
+              'name': name,
+              'amt': amt,
+              'mode': mode,
+              'ts': d['paidAt'] ?? '',
+            });
+          }
+        }
+
+        // Sort newest first
+        entries.sort((a, b) =>
+            (b['ts'] as String).compareTo(a['ts'] as String));
+
+        if (entries.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.history, size: 48, color: Colors.grey.shade300),
+                const SizedBox(height: 12),
+                Text('No activity yet',
+                    style: TextStyle(
+                        color: Colors.grey.shade400, fontSize: 15)),
+              ],
+            ),
+          );
+        }
+
+        return ListView.separated(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 80),
+          itemCount: entries.length,
+          separatorBuilder: (_, _2) => const SizedBox(height: 6),
+          itemBuilder: (_, i) {
+            final e = entries[i];
+            final type = e['type'] as String;
+
+            Color iconBg;
+            Color iconColor;
+            IconData icon;
+            String title;
+            String subtitle;
+
+            switch (type) {
+              case 'confirmed':
+                iconBg = Colors.green.shade50;
+                iconColor = Colors.green.shade700;
+                icon = Icons.check_circle_outline;
+                title = 'Confirmed ₹${_fmt(e['amt'] as double)} from ${e['flat']}';
+                subtitle = '${e['name']}  ·  ${e['mode']}';
+              case 'rejected':
+                iconBg = Colors.red.shade50;
+                iconColor = Colors.red.shade600;
+                icon = Icons.cancel_outlined;
+                title = 'Rejected payment from ${e['flat']}';
+                subtitle = '${e['name']}  ·  Reason: ${e['reason']}';
+              case 'submitted':
+                iconBg = Colors.orange.shade50;
+                iconColor = Colors.orange.shade700;
+                icon = Icons.upload_outlined;
+                title = 'Resident submitted ₹${_fmt(e['amt'] as double)} from ${e['flat']}';
+                subtitle = '${e['name']}  ·  ${e['mode']}';
+              default: // added
+                iconBg = Colors.blue.shade50;
+                iconColor = Colors.blue.shade700;
+                icon = Icons.add_circle_outline;
+                title = 'Admin recorded ₹${_fmt(e['amt'] as double)} for ${e['flat']}';
+                subtitle = (e['name'] as String).isNotEmpty
+                    ? '${e['name']}  ·  ${e['mode']}'
+                    : e['mode'] as String;
+            }
+
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.grey.shade100),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                        color: iconBg,
+                        borderRadius: BorderRadius.circular(8)),
+                    child: Icon(icon, size: 18, color: iconColor),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title,
+                            style: const TextStyle(
+                                fontSize: 13, fontWeight: FontWeight.w600)),
+                        if (subtitle.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(subtitle,
+                              style: TextStyle(
+                                  fontSize: 11, color: Colors.grey.shade600)),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(_fmtTime(e['ts'] as String?),
+                      style: TextStyle(
+                          fontSize: 10, color: Colors.grey.shade400)),
+                ],
+              ),
+            );
+          },
         );
       },
     );
