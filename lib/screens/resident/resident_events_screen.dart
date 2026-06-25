@@ -195,12 +195,13 @@ class _EventContributionCardState extends State<_EventContributionCard> {
   List<({String label, int total, int paid})> _blockStats = [];
   bool _loaded = false;
   StreamSubscription<QuerySnapshot>? _contribSub;
+  // Flat number as it appears in community structure (may differ from session_flat)
+  String _resolvedFlat = '';
 
   @override
   void initState() {
     super.initState();
-    _subscribeContributions();
-    _loadBlockStats();
+    _resolveAndSubscribe();
   }
 
   @override
@@ -209,13 +210,51 @@ class _EventContributionCardState extends State<_EventContributionCard> {
     super.dispose();
   }
 
-  // Live stream for own flat's contributions — updates instantly when admin confirms/rejects
-  void _subscribeContributions() {
+  // Resolve the exact flat string from community structure, then start subscription
+  Future<void> _resolveAndSubscribe() async {
+    final prefs = await SharedPreferences.getInstance();
+    final wing = prefs.getString('session_wing') ?? '';
+    final block = prefs.getString('session_block') ?? '';
+    final sessionFlat = widget.flatNumber.trim();
+    String resolvedFlat = sessionFlat;
+
+    if (wing.isNotEmpty && block.isNotEmpty) {
+      try {
+        final settingsDoc = await FirebaseFirestore.instance
+            .collection('community_settings')
+            .doc('address')
+            .get();
+        if (settingsDoc.exists) {
+          final wingBlocks = (settingsDoc.data() as Map<String, dynamic>?)?['wingBlocks']
+              as Map<String, dynamic>? ?? {};
+          final wingData = wingBlocks[wing] as Map<String, dynamic>? ?? {};
+          final flats = (wingData[block] as List?)?.cast<String>() ?? [];
+          if (flats.contains(sessionFlat)) {
+            resolvedFlat = sessionFlat; // exact match
+          } else {
+            // Suffix match: "404" → "DA404"
+            for (final f in flats) {
+              if (f.endsWith(sessionFlat) || sessionFlat.endsWith(f)) {
+                resolvedFlat = f;
+                break;
+              }
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
+    setState(() => _resolvedFlat = resolvedFlat);
+
+    // Query using both session flat and resolved flat to catch old and new data
+    final queryFlats = {sessionFlat, resolvedFlat}.toList();
+
     _contribSub = FirebaseFirestore.instance
         .collection('events')
         .doc(widget.eventDoc.id)
         .collection('contributions')
-        .where('flatNumber', isEqualTo: widget.flatNumber)
+        .where('flatNumber', whereIn: queryFlats)
         .snapshots()
         .listen((snap) {
       if (mounted) {
@@ -223,10 +262,11 @@ class _EventContributionCardState extends State<_EventContributionCard> {
           _contributions = snap.docs.map((d) => d.data()).toList();
           _loaded = true;
         });
-        // Refresh block stats whenever contributions change
         _loadBlockStats();
       }
     });
+
+    _loadBlockStats();
   }
 
   Future<void> _loadBlockStats() async {
@@ -280,7 +320,7 @@ class _EventContributionCardState extends State<_EventContributionCard> {
       builder: (_) => _SelfReportSheet(
         eventId: widget.eventDoc.id,
         eventName: eventName,
-        flatNumber: widget.flatNumber,
+        flatNumber: _resolvedFlat.isNotEmpty ? _resolvedFlat : widget.flatNumber,
         residentName: widget.residentName,
         onSubmitted: _loadBlockStats,
       ),
@@ -763,15 +803,15 @@ class _SelfReportSheetState extends State<_SelfReportSheet> {
       final block = prefs.getString('session_block') ?? '';
       final userId = prefs.getString('session_user_id') ?? '';
 
-      // Fetch phone number from Firestore user doc
+      // Fetch phone from user doc
       String phone = '';
       if (userId.isNotEmpty) {
         final userDoc = await FirebaseFirestore.instance.collection('users').doc(userId).get();
-        phone = (userDoc.data()?['phone'] ?? '').toString();
-        // Strip +91 prefix so admin WhatsApp URL uses bare 10-digit number
+        phone = (userDoc.data() as Map<String, dynamic>?)?['phone']?.toString() ?? '';
         if (phone.startsWith('+91')) phone = phone.substring(3);
       }
 
+      // widget.flatNumber is already resolved to community structure exact string by the caller
       await FirebaseFirestore.instance
           .collection('events')
           .doc(widget.eventId)
