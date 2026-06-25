@@ -38,7 +38,7 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
   void initState() {
     super.initState();
     _tabController = TabController(
-        length: widget.isAdmin ? 5 : 3, vsync: this);
+        length: widget.isAdmin ? 5 : 2, vsync: this);
     if (!widget.isAdmin) _loadFlat();
   }
 
@@ -352,7 +352,7 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('Target: ₹${_fmt(target)}',
+                          Text('Expected: ₹${_fmt(target)}',
                               style: const TextStyle(
                                   color: Colors.white70, fontSize: 12)),
                           Text(
@@ -384,7 +384,7 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                       unselectedLabelColor: Colors.white60,
                       tabs: [
                         const Tab(text: 'Overview'),
-                        const Tab(text: 'Contributions'),
+                        if (widget.isAdmin) const Tab(text: 'Contributions'),
                         const Tab(text: 'Expenses'),
                         if (widget.isAdmin) ...[
                           const Tab(text: 'Follow-up'),
@@ -406,12 +406,14 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                         collected: collected,
                         spent: spent,
                         balance: balance,
-                        data: data),
-                    _ContributionsTab(
-                        eventId: widget.eventId,
-                        isAdmin: widget.isAdmin,
-                        status: status,
-                        residentFlat: _residentFlat),
+                        data: data,
+                        isAdmin: widget.isAdmin),
+                    if (widget.isAdmin)
+                      _ContributionsTab(
+                          eventId: widget.eventId,
+                          isAdmin: true,
+                          status: status,
+                          residentFlat: _residentFlat),
                     _ExpensesTab(
                         eventId: widget.eventId,
                         isAdmin: widget.isAdmin,
@@ -490,6 +492,7 @@ class _OverviewTab extends StatelessWidget {
   final double spent;
   final double balance;
   final Map<String, dynamic> data;
+  final bool isAdmin;
 
   const _OverviewTab({
     required this.eventId,
@@ -497,6 +500,7 @@ class _OverviewTab extends StatelessWidget {
     required this.spent,
     required this.balance,
     required this.data,
+    this.isAdmin = false,
   });
 
   String _fmt(double v) {
@@ -556,10 +560,10 @@ class _OverviewTab extends StatelessWidget {
               ),
               const SizedBox(height: 20),
 
-              // Target row
+              // Expected amount row
               if (target > 0) ...[
                 _BudgetRow(
-                  label: 'Target',
+                  label: 'Expected',
                   value: target,
                   pct: 1.0,
                   color: Colors.grey.shade300,
@@ -666,7 +670,7 @@ class _OverviewTab extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             _StatChip(
-              label: 'Target',
+              label: 'Expected',
               value: target > 0 ? '₹${_fmt(target)}' : '—',
               icon: Icons.flag_outlined,
               color: Colors.blue,
@@ -715,8 +719,220 @@ class _OverviewTab extends StatelessWidget {
           ),
         ),
 
+        // ── Block stats (grouped by wing) — live stream ───────────
+        ...[
+          const SizedBox(height: 16),
+          _BlockStatsWidget(eventId: eventId),
+        ],
+
         const SizedBox(height: 24),
       ],
+    );
+  }
+
+  static String _fmtAmt(double v) {
+    if (v >= 100000) return '${(v / 100000).toStringAsFixed(1)}L';
+    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
+    return v.toStringAsFixed(0);
+  }
+
+}
+
+// ── Block Stats Widget — live StreamBuilder ───────────────────────────────────
+
+class _BlockStatsWidget extends StatefulWidget {
+  final String eventId;
+  const _BlockStatsWidget({required this.eventId});
+  @override
+  State<_BlockStatsWidget> createState() => _BlockStatsWidgetState();
+}
+
+class _BlockStatsWidgetState extends State<_BlockStatsWidget> {
+  Map<String, dynamic> _wingBlocks = {};
+  bool _settingsLoaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchSettings();
+  }
+
+  Future<void> _fetchSettings() async {
+    final doc = await FirebaseFirestore.instance
+        .collection('community_settings')
+        .doc('address')
+        .get();
+    if (!mounted) return;
+    final data = doc.data() as Map<String, dynamic>? ?? {};
+    setState(() {
+      _wingBlocks = Map<String, dynamic>.from(data['wingBlocks'] as Map? ?? {});
+      _settingsLoaded = true;
+    });
+  }
+
+  static String _fmt(double v) {
+    if (v >= 100000) return '${(v / 100000).toStringAsFixed(1)}L';
+    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
+    return v.toStringAsFixed(0);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_settingsLoaded) return const SizedBox();
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('events')
+          .doc(widget.eventId)
+          .collection('contributions')
+          .snapshots(),
+      builder: (context, contribSnap) {
+        if (!contribSnap.hasData) return const SizedBox();
+
+        final contribDocs = contribSnap.data!.docs;
+        final wingBlocks = _wingBlocks;
+
+        // Qualified paid tracking: "wing_block" → set of paid flat numbers
+        final paidFlatsByBlock = <String, Set<String>>{};
+        final paidFlatsUnqualified = <String>{};
+        final wingCollected = <String, double>{};
+
+        for (final doc in contribDocs) {
+          final d = doc.data() as Map<String, dynamic>;
+          if (d['amountReceived'] == true &&
+              d['status'] != 'rejected' &&
+              d['status'] != 'deleted') {
+            final f = (d['flatNumber'] ?? '').toString().trim();
+            final dWing = (d['wing'] ?? '').toString().trim();
+            final dBlock = (d['block'] ?? '').toString().trim();
+            if (f.isNotEmpty) {
+              if (dWing.isNotEmpty && dBlock.isNotEmpty) {
+                paidFlatsByBlock.putIfAbsent('${dWing}_$dBlock', () => {}).add(f);
+              } else {
+                paidFlatsUnqualified.add(f);
+              }
+            }
+            final amt = (d['amount'] as num?)?.toDouble() ?? 0;
+            if (dWing.isNotEmpty && amt > 0) {
+              wingCollected[dWing] = (wingCollected[dWing] ?? 0) + amt;
+            }
+          }
+        }
+
+        final wings = wingBlocks.keys.toList()..sort();
+        final byWing = <String, ({double collected, List<({String block, int total, int paid})> blocks})>{};
+        for (final wing in wings) {
+          final blocks = Map<String, dynamic>.from(wingBlocks[wing] as Map? ?? {});
+          final sortedBlocks = blocks.keys.toList()..sort();
+          final blockList = <({String block, int total, int paid})>[];
+          for (final block in sortedBlocks) {
+            final flats = (blocks[block] as List?)?.cast<String>() ?? [];
+            if (flats.isEmpty) continue;
+            final qualKey = '${wing}_$block';
+            final qualPaid = paidFlatsByBlock[qualKey];
+            int paid;
+            if (qualPaid != null) {
+              paid = flats.where((f) =>
+                qualPaid.contains(f) ||
+                qualPaid.any((p) => f.endsWith(p) || p.endsWith(f))
+              ).length;
+            } else {
+              paid = flats.where((f) =>
+                paidFlatsUnqualified.contains(f) ||
+                paidFlatsUnqualified.any((p) => f.endsWith(p) || p.endsWith(f))
+              ).length;
+            }
+            blockList.add((block: block, total: flats.length, paid: paid));
+          }
+          if (blockList.isNotEmpty) {
+            byWing[wing] = (
+              collected: wingCollected[wing] ?? 0,
+              blocks: blockList,
+            );
+          }
+        }
+
+        if (byWing.isEmpty) return const SizedBox();
+
+        final sortedWings = byWing.keys.toList()..sort();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Collection Status by Block',
+                style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade500,
+                    letterSpacing: 0.3)),
+            const SizedBox(height: 8),
+            ...sortedWings.map((wing) {
+              final entry = byWing[wing]!;
+              final blocks = entry.blocks;
+              final wingAmt = entry.collected;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      Text(wing,
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey.shade700)),
+                      if (wingAmt > 0) ...[
+                        const SizedBox(width: 6),
+                        Text('₹${_fmt(wingAmt)}',
+                            style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.green.shade600)),
+                      ],
+                    ]),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: blocks.map((s) {
+                        final allPaid = s.paid == s.total;
+                        final nonePaid = s.paid == 0;
+                        return Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: allPaid
+                                ? Colors.green.shade50
+                                : nonePaid
+                                    ? Colors.grey.shade100
+                                    : Colors.orange.shade50,
+                            borderRadius: BorderRadius.circular(7),
+                            border: Border.all(
+                                color: allPaid
+                                    ? Colors.green.shade300
+                                    : nonePaid
+                                        ? Colors.grey.shade300
+                                        : Colors.orange.shade300),
+                          ),
+                          child: Text(
+                            '${s.block}  ${s.paid}/${s.total}',
+                            style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: allPaid
+                                    ? Colors.green.shade700
+                                    : nonePaid
+                                        ? Colors.grey.shade600
+                                        : Colors.orange.shade700),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        );
+      },
     );
   }
 }
@@ -1081,14 +1297,26 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                   .toList();
           final myAmount = myDocs.fold<double>(0, (s, d) {
             final data = d.data() as Map<String, dynamic>;
-            return data['amountReceived'] != false
+            return data['amountReceived'] != false &&
+                    data['status'] != 'rejected' &&
+                    data['status'] != 'deleted'
                 ? s + (data['amount'] as num? ?? 0).toDouble()
                 : s;
           });
-          final hasPaid =
-              myDocs.any((d) => (d.data() as Map)['amountReceived'] != false);
-          final hasPending =
-              myDocs.any((d) => (d.data() as Map)['amountReceived'] == false);
+          final hasPaid = myDocs.any((d) {
+            final data = d.data() as Map;
+            return data['amountReceived'] != false &&
+                data['status'] != 'rejected' &&
+                data['status'] != 'deleted';
+          });
+          final hasPending = myDocs.any((d) {
+            final data = d.data() as Map;
+            return data['amountReceived'] == false &&
+                data['status'] != 'rejected' &&
+                data['status'] != 'deleted';
+          });
+          final hasRejected =
+              myDocs.any((d) => (d.data() as Map)['status'] == 'rejected');
 
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -1100,14 +1328,18 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                       ? Colors.green.shade50
                       : hasPending
                           ? Colors.orange.shade50
-                          : Colors.grey.shade100,
+                          : hasRejected
+                              ? Colors.red.shade50
+                              : Colors.grey.shade100,
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
                       color: hasPaid
                           ? Colors.green.shade200
                           : hasPending
                               ? Colors.orange.shade200
-                              : Colors.grey.shade300),
+                              : hasRejected
+                                  ? Colors.red.shade200
+                                  : Colors.grey.shade300),
                 ),
                 child: Row(children: [
                   CircleAvatar(
@@ -1115,18 +1347,24 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                         ? Colors.green.shade100
                         : hasPending
                             ? Colors.orange.shade100
-                            : Colors.grey.shade200,
+                            : hasRejected
+                                ? Colors.red.shade100
+                                : Colors.grey.shade200,
                     child: Icon(
                       hasPaid
                           ? Icons.check_circle
                           : hasPending
                               ? Icons.hourglass_top
-                              : Icons.payments_outlined,
+                              : hasRejected
+                                  ? Icons.cancel_outlined
+                                  : Icons.payments_outlined,
                       color: hasPaid
                           ? Colors.green.shade700
                           : hasPending
                               ? Colors.orange.shade700
-                              : Colors.grey.shade500,
+                              : hasRejected
+                                  ? Colors.red.shade600
+                                  : Colors.grey.shade500,
                     ),
                   ),
                   const SizedBox(width: 14),
@@ -1143,14 +1381,18 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                               ? 'Payment confirmed  •  ₹${myAmount.toStringAsFixed(0)}'
                               : hasPending
                                   ? 'Payment pending verification'
-                                  : 'No contribution recorded yet',
+                                  : hasRejected
+                                      ? 'Payment rejected — please re-submit'
+                                      : 'No contribution recorded yet',
                           style: TextStyle(
                               fontSize: 13,
                               color: hasPaid
                                   ? Colors.green.shade700
                                   : hasPending
                                       ? Colors.orange.shade700
-                                      : Colors.grey.shade500),
+                                      : hasRejected
+                                          ? Colors.red.shade600
+                                          : Colors.grey.shade500),
                         ),
                       ],
                     ),
@@ -1159,22 +1401,32 @@ class _ContributionsTabState extends State<_ContributionsTab> {
               ),
               if (myDocs.isNotEmpty) ...[
                 const SizedBox(height: 16),
-                ...myDocs.map((doc) {
+                ...myDocs.where((doc) {
+                  final s = (doc.data() as Map<String, dynamic>)['status'];
+                  return s != 'deleted';
+                }).map((doc) {
                   final d = doc.data() as Map<String, dynamic>;
-                  final isPending = d['amountReceived'] == false;
+                  final isRejected = d['status'] == 'rejected';
+                  final isPending = d['amountReceived'] == false && !isRejected;
                   final amt = (d['amount'] as num?)?.toDouble() ?? 0;
+                  final rejectionReason =
+                      d['rejectionReason'] ?? 'Payment not verified';
                   return Container(
                     margin: const EdgeInsets.only(bottom: 8),
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: isPending
-                          ? Colors.orange.shade50
-                          : Colors.white,
+                      color: isRejected
+                          ? Colors.red.shade50
+                          : isPending
+                              ? Colors.orange.shade50
+                              : Colors.white,
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
-                          color: isPending
-                              ? Colors.orange.shade200
-                              : Colors.grey.shade200),
+                          color: isRejected
+                              ? Colors.red.shade200
+                              : isPending
+                                  ? Colors.orange.shade200
+                                  : Colors.grey.shade200),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1186,29 +1438,54 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                             style: const TextStyle(
                                 fontWeight: FontWeight.w600, fontSize: 13),
                           )),
-                          if (isPending)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.orange.shade100,
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text('Pending',
-                                  style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.orange.shade800,
-                                      fontWeight: FontWeight.bold)),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: isRejected
+                                  ? Colors.red.shade100
+                                  : isPending
+                                      ? Colors.orange.shade100
+                                      : Colors.green.shade100,
+                              borderRadius: BorderRadius.circular(6),
                             ),
+                            child: Text(
+                              isRejected
+                                  ? 'Rejected'
+                                  : isPending
+                                      ? 'Pending'
+                                      : 'Confirmed',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: isRejected
+                                      ? Colors.red.shade800
+                                      : isPending
+                                          ? Colors.orange.shade800
+                                          : Colors.green.shade800),
+                            ),
+                          ),
                           const SizedBox(width: 8),
                           Text('₹${amt.toStringAsFixed(0)}',
                               style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 16,
-                                  color: isPending
-                                      ? Colors.orange.shade700
-                                      : Colors.green.shade700)),
+                                  color: isRejected
+                                      ? Colors.red.shade700
+                                      : isPending
+                                          ? Colors.orange.shade700
+                                          : Colors.green.shade700)),
                         ]),
+                        if (isRejected) ...[
+                          const SizedBox(height: 6),
+                          Text('Reason: $rejectionReason',
+                              style: TextStyle(
+                                  fontSize: 12, color: Colors.red.shade600)),
+                          const SizedBox(height: 2),
+                          Text('Please re-submit with correct details.',
+                              style: TextStyle(
+                                  fontSize: 11, color: Colors.red.shade400)),
+                        ],
                         if ([
                           d['paymentMode'],
                           d['paidDate'],
@@ -1290,132 +1567,103 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                 if (widget.isAdmin && pendingVerification.isNotEmpty) ...[
                   Container(
                     margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
                     decoration: BoxDecoration(
                       color: Colors.orange.shade50,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.orange.shade300),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.orange.shade200),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(children: [
                           Icon(Icons.pending_actions,
-                              color: Colors.orange.shade700, size: 18),
-                          const SizedBox(width: 8),
+                              color: Colors.orange.shade700, size: 15),
+                          const SizedBox(width: 6),
                           Text(
                             '${pendingVerification.length} Pending Verification',
                             style: TextStyle(
                                 color: Colors.orange.shade800,
                                 fontWeight: FontWeight.bold,
-                                fontSize: 14),
+                                fontSize: 13),
                           ),
                         ]),
-                        const SizedBox(height: 2),
-                        Text(
-                            'Residents reported these payments — confirm or reject each one.',
-                            style: TextStyle(
-                                color: Colors.orange.shade700, fontSize: 12)),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 6),
                         ...pendingVerification.map((doc) {
                           final d = doc.data() as Map<String, dynamic>;
                           final amt = (d['amount'] as num?)?.toDouble() ?? 0;
                           final flat = d['flatNumber'] ?? '';
                           final name = d['residentName'] ?? '';
-                          final wing = d['wing'] ?? '';
-                          final block = d['block'] ?? '';
                           final mode = d['paymentMode'] ?? '';
-                          final ref = d['referenceId'] ?? '';
-                          final date = d['paidDate'] ?? '';
-                          final location = [
-                            if (wing.isNotEmpty) wing,
-                            if (block.isNotEmpty) 'Block $block',
-                            if (flat.isNotEmpty) 'Flat $flat',
-                          ].join(' › ');
+                          final ref = (d['referenceId'] ?? '').toString().trim();
+                          final pWing = (d['wing'] ?? '').toString().trim();
+                          final pBlock = (d['block'] ?? '').toString().trim();
+                          final locationParts = [
+                            if (pWing.isNotEmpty) pWing,
+                            if (pBlock.isNotEmpty) 'Block $pBlock',
+                            'Flat $flat',
+                          ];
+                          final locationStr = locationParts.join(' › ');
                           return Container(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            padding: const EdgeInsets.all(12),
+                            margin: const EdgeInsets.only(bottom: 6),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 8),
                             decoration: BoxDecoration(
                               color: Colors.white,
-                              borderRadius: BorderRadius.circular(10),
-                              border:
-                                  Border.all(color: Colors.orange.shade200),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.orange.shade100),
                             ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            child: Row(
                               children: [
-                                Row(children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          location.isNotEmpty ? location : flat,
-                                          style: const TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 14),
-                                        ),
-                                        if (name.isNotEmpty)
-                                          Text(name,
-                                              style: TextStyle(
-                                                  fontSize: 12,
-                                                  color:
-                                                      Colors.grey.shade700)),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          [
-                                            mode,
-                                            if (ref.isNotEmpty) 'Ref: $ref',
-                                            if (date.isNotEmpty) date,
-                                          ].join('  ·  '),
-                                          style: TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.grey.shade600),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Text('₹${amt.toStringAsFixed(0)}',
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 16)),
-                                ]),
-                                const SizedBox(height: 10),
-                                Row(children: [
-                                  Expanded(
-                                    child: OutlinedButton.icon(
-                                      onPressed: () =>
-                                          _rejectSelfReport(context, doc),
-                                      icon: const Icon(Icons.close, size: 16),
-                                      label: const Text('Reject'),
-                                      style: OutlinedButton.styleFrom(
-                                        foregroundColor: Colors.red.shade700,
-                                        side: BorderSide(
-                                            color: Colors.red.shade300),
-                                        shape: RoundedRectangleBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(8)),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '$locationStr${name.isNotEmpty ? '  ·  $name' : ''}',
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 13),
                                       ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: ElevatedButton.icon(
-                                      onPressed: () => _confirmSelfReport(
-                                          context, doc, amt),
-                                      icon: const Icon(Icons.check, size: 16),
-                                      label: const Text('Confirm'),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.green.shade600,
-                                        foregroundColor: Colors.white,
-                                        shape: RoundedRectangleBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(8)),
+                                      Text(
+                                        '₹${amt.toStringAsFixed(0)}  ·  $mode${ref.isNotEmpty ? '  ·  $ref' : ''}',
+                                        style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.grey.shade600),
                                       ),
-                                    ),
+                                    ],
                                   ),
-                                ]),
+                                ),
+                                const SizedBox(width: 8),
+                                OutlinedButton(
+                                  onPressed: () => _rejectSelfReport(context, doc),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.red.shade700,
+                                    side: BorderSide(color: Colors.red.shade300),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 6),
+                                    minimumSize: Size.zero,
+                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(6)),
+                                  ),
+                                  child: const Text('Reject', style: TextStyle(fontSize: 12)),
+                                ),
+                                const SizedBox(width: 6),
+                                ElevatedButton(
+                                  onPressed: () => _confirmSelfReport(context, doc, amt),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.green.shade600,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 6),
+                                    minimumSize: Size.zero,
+                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(6)),
+                                  ),
+                                  child: const Text('Confirm', style: TextStyle(fontSize: 12)),
+                                ),
                               ],
                             ),
                           );
@@ -2055,6 +2303,15 @@ class _ContributionsTabState extends State<_ContributionsTab> {
     final ref = (d['referenceId'] ?? '').toString().trim();
     final eventName = d['eventName'] ?? 'the event';
 
+    // Build location label from wing/block stored on doc
+    final docWingLabel = (d['wing'] ?? '').toString().trim();
+    final docBlockLabel = (d['block'] ?? '').toString().trim();
+    final locationLabel = [
+      if (docWingLabel.isNotEmpty) '$docWingLabel Wing',
+      if (docBlockLabel.isNotEmpty) 'Block $docBlockLabel',
+      'Flat $flat',
+    ].join(' › ');
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -2067,7 +2324,10 @@ class _ContributionsTabState extends State<_ContributionsTab> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Mark ₹${amt.toStringAsFixed(0)} from Flat $flat as received?'),
+            Text('Mark ₹${amt.toStringAsFixed(0)} as received?'),
+            const SizedBox(height: 4),
+            Text(locationLabel,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
             const SizedBox(height: 6),
             if (mode.isNotEmpty)
               Text('Mode: $mode${ref.isNotEmpty ? '  ·  Ref: $ref' : ''}',
@@ -2089,8 +2349,11 @@ class _ContributionsTabState extends State<_ContributionsTab> {
     );
     if (confirmed != true || !context.mounted) return;
 
-    // Resolve flat number against community structure in case self-report
-    // was saved with a short form (e.g. "404" instead of "DA404")
+    // Resolve flat number against community structure.
+    // Use wing+block from the doc to avoid matching the wrong block
+    // (e.g. "404" in "Diamond B" must not resolve to "Diamond A 404").
+    final docWing = (d['wing'] ?? '').toString().trim();
+    final docBlock = (d['block'] ?? '').toString().trim();
     String resolvedFlat = flat;
     final settingsDoc = await FirebaseFirestore.instance
         .collection('community_settings')
@@ -2100,16 +2363,46 @@ class _ContributionsTabState extends State<_ContributionsTab> {
       final wingBlocks = (settingsDoc.data()?['wingBlocks'] as Map?)
               ?.cast<String, dynamic>() ??
           {};
-      outer:
-      for (final wingData in wingBlocks.values) {
-        if (wingData is! Map) continue;
-        for (final flats in wingData.values) {
-          if (flats is! List) continue;
-          for (final f in flats.cast<String>()) {
-            if (f == flat) { resolvedFlat = f; break outer; }
+      bool _wingMatch(String communityWing) {
+        if (docWing.isEmpty) return true;
+        final cw = communityWing.toLowerCase();
+        final dw = docWing.toLowerCase();
+        return cw == dw || cw.contains(dw) || dw.contains(cw);
+      }
+      bool _blockMatch(String communityBlock) {
+        if (docBlock.isEmpty) return true;
+        final cb = communityBlock.toLowerCase();
+        final db = docBlock.toLowerCase();
+        return cb == db || cb.contains(db) || db.contains(cb);
+      }
+      // Pass 1: try to match within the same wing+block (flexible string match)
+      outer1:
+      for (final wing in wingBlocks.keys) {
+        if (!_wingMatch(wing)) continue;
+        final blocks = wingBlocks[wing] as Map<String, dynamic>? ?? {};
+        for (final block in blocks.keys) {
+          if (!_blockMatch(block)) continue;
+          final flats = (blocks[block] as List?)?.cast<String>() ?? [];
+          for (final f in flats) {
+            if (f == flat) { resolvedFlat = f; break outer1; }
             if (f.endsWith(flat) || flat.endsWith(f)) {
-              resolvedFlat = f;
-              break outer;
+              resolvedFlat = f; break outer1;
+            }
+          }
+        }
+      }
+      // Pass 2: fallback to global search only if not yet resolved
+      if (resolvedFlat == flat) {
+        outer2:
+        for (final wingData in wingBlocks.values) {
+          if (wingData is! Map) continue;
+          for (final flats in wingData.values) {
+            if (flats is! List) continue;
+            for (final f in flats.cast<String>()) {
+              if (f == flat) { resolvedFlat = f; break outer2; }
+              if (f.endsWith(flat) || flat.endsWith(f)) {
+                resolvedFlat = f; break outer2;
+              }
             }
           }
         }
@@ -2191,61 +2484,84 @@ class _ContributionsTabState extends State<_ContributionsTab> {
     final amt = (d['amount'] as num?)?.toDouble() ?? 0;
 
     final reasonCtrl = TextEditingController();
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showModalBottomSheet<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Row(children: [
-          Icon(Icons.cancel_outlined, color: Colors.red.shade600),
-          const SizedBox(width: 8),
-          const Text('Reject Payment Report'),
-        ]),
-        content: Column(
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          left: 20, right: 20, top: 20,
+          bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+        ),
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Flat $flat — ₹${amt.toStringAsFixed(0)}'),
-            const SizedBox(height: 12),
+            Row(children: [
+              Icon(Icons.cancel_outlined, color: Colors.red.shade600, size: 20),
+              const SizedBox(width: 8),
+              const Text('Reject Payment',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            ]),
+            const SizedBox(height: 4),
+            Text('Flat $flat — ₹${amt.toStringAsFixed(0)}',
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
+            const SizedBox(height: 14),
             TextField(
               controller: reasonCtrl,
+              autofocus: true,
               decoration: InputDecoration(
-                labelText: 'Reason for rejection',
+                labelText: 'Reason (optional)',
                 hintText: 'e.g. Payment not found in bank records',
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
               maxLines: 2,
             ),
-            const SizedBox(height: 8),
-            Text('The resident will see this reason and can re-submit.',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+            const SizedBox(height: 6),
+            Text('Resident will see this reason and can re-submit.',
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+            const SizedBox(height: 16),
+            Row(children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Cancel'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red.shade600,
+                      foregroundColor: Colors.white),
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('Reject'),
+                ),
+              ),
+            ]),
           ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
-          ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red.shade600,
-                  foregroundColor: Colors.white),
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Reject')),
-        ],
       ),
     );
 
     final reason = reasonCtrl.text.trim();
-    WidgetsBinding.instance.addPostFrameCallback((_) => reasonCtrl.dispose());
+    reasonCtrl.dispose();
 
     if (confirmed != true || !context.mounted) return;
 
-    // Mark as rejected (don't delete — resident needs to see the reason)
+    // Capture navigator/messenger before async gap — context may go stale
+    // after Firestore update triggers StreamBuilder rebuild
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+
     await doc.reference.update({
       'status': 'rejected',
       'rejectionReason': reason.isEmpty ? 'Payment not verified' : reason,
       'rejectedAt': DateTime.now().toIso8601String(),
     });
-
-    if (!context.mounted) return;
 
     // WhatsApp option for admin
     final rejReason = reason.isEmpty ? 'payment could not be verified in bank records' : reason;
@@ -2254,8 +2570,17 @@ class _ContributionsTabState extends State<_ContributionsTab> {
     );
     final waUrl = Uri.parse('https://wa.me/91$phone?text=$waMsg');
 
+    final ctx2 = navigator.context;
+    // ignore: use_build_context_synchronously
+    if (!ctx2.mounted) {
+      messenger.showSnackBar(
+          SnackBar(content: Text('Payment report for Flat $flat rejected')));
+      return;
+    }
+
+    // ignore: use_build_context_synchronously
     await showDialog(
-      context: context,
+      context: ctx2,
       builder: (ctx) => AlertDialog(
         title: Row(children: [
           Icon(Icons.cancel_outlined, color: Colors.red.shade600),
@@ -3326,6 +3651,8 @@ class _ActivityTabState extends State<_ActivityTab> {
   final Set<String> _expandedDates = {};
   final TextEditingController _searchCtrl = TextEditingController();
   String _flatFilter = '';
+  bool _showSearch = false;
+  bool _autoExpanded = false; // expand current month on first data load
 
   @override
   void initState() {
@@ -3553,6 +3880,16 @@ class _ActivityTabState extends State<_ActivityTab> {
         final allExpanded = _expandedMonths.containsAll(allMonthKeys) &&
             _expandedDates.containsAll(allDateKeys);
 
+        // Auto-expand the most recent month on first data load
+        if (!_autoExpanded && allMonthKeys.isNotEmpty) {
+          _autoExpanded = true;
+          final mostRecent = allMonthKeys.reduce(
+              (a, b) => a.compareTo(b) > 0 ? a : b);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() => _expandedMonths.add(mostRecent));
+          });
+        }
+
         // Group by month key ("2026-06"), then by date key ("2026-06-25")
         final listItems = <_ActivityItem>[];
         String lastMonth = '';
@@ -3594,39 +3931,44 @@ class _ActivityTabState extends State<_ActivityTab> {
           listItems.add(_ActivityItem.entry(e, dt));
         }
 
+        final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
         return Column(
           children: [
-            // Flat search bar
+            // Toolbar: search toggle (left) + expand/collapse (right)
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-              child: TextField(
-                controller: _searchCtrl,
-                decoration: InputDecoration(
-                  hintText: 'Search by flat (e.g. DA404)',
-                  hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade400),
-                  prefixIcon: Icon(Icons.search, size: 18, color: Colors.grey.shade400),
-                  suffixIcon: _flatFilter.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.clear, size: 16),
-                          onPressed: () => _searchCtrl.clear())
-                      : null,
-                  isDense: true,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: Colors.grey.shade300)),
-                  enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: Colors.grey.shade200)),
-                ),
-              ),
-            ),
-            // Expand All / Collapse All toolbar
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+              padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
+                  // Search icon toggles inline field
+                  IconButton(
+                    icon: Icon(
+                      _showSearch ? Icons.search_off : Icons.search,
+                      size: 20,
+                      color: _flatFilter.isNotEmpty
+                          ? Colors.deepPurple.shade600
+                          : Colors.grey.shade500),
+                    tooltip: 'Filter by flat',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () => setState(() {
+                      _showSearch = !_showSearch;
+                      if (!_showSearch) _searchCtrl.clear();
+                    }),
+                  ),
+                  if (_flatFilter.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    Chip(
+                      label: Text(_flatFilter,
+                          style: const TextStyle(fontSize: 11)),
+                      deleteIcon: const Icon(Icons.close, size: 14),
+                      onDeleted: () => _searchCtrl.clear(),
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      backgroundColor: Colors.deepPurple.shade50,
+                      side: BorderSide(color: Colors.deepPurple.shade200),
+                    ),
+                  ],
+                  const Spacer(),
                   TextButton.icon(
                     icon: Icon(
                       allExpanded ? Icons.unfold_less : Icons.unfold_more,
@@ -3635,8 +3977,7 @@ class _ActivityTabState extends State<_ActivityTab> {
                         style: const TextStyle(fontSize: 12)),
                     style: TextButton.styleFrom(
                         foregroundColor: Colors.deepPurple.shade400,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4)),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
                     onPressed: () => setState(() {
                       if (allExpanded) {
                         _expandedMonths.clear();
@@ -3650,9 +3991,36 @@ class _ActivityTabState extends State<_ActivityTab> {
                 ],
               ),
             ),
+            // Inline search field — only visible when toggled
+            if (_showSearch)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+                child: TextField(
+                  controller: _searchCtrl,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: 'Flat number (e.g. DA404)',
+                    hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade400),
+                    prefixIcon: Icon(Icons.search, size: 18, color: Colors.grey.shade400),
+                    suffixIcon: _flatFilter.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, size: 16),
+                            onPressed: () => _searchCtrl.clear())
+                        : null,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: Colors.grey.shade300)),
+                    enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: Colors.grey.shade200)),
+                  ),
+                ),
+              ),
             Expanded(
               child: ListView.builder(
-                padding: const EdgeInsets.fromLTRB(12, 4, 12, 80),
+                padding: EdgeInsets.fromLTRB(12, 4, 12, keyboardHeight + 80),
                 itemCount: listItems.length,
           itemBuilder: (_, i) {
             final item = listItems[i];

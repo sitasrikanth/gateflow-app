@@ -8,6 +8,12 @@ import '../events/event_dashboard_screen.dart';
 // Payment modes shown to residents
 const _kPaymentModes = ['PhonePe', 'Google Pay', 'NEFT / RTGS', 'Cash', 'Other'];
 
+const _kMonthNames = [
+  '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+String _monthName(int m) => _kMonthNames[m.clamp(1, 12)];
+
 class ResidentEventsScreen extends StatefulWidget {
   const ResidentEventsScreen({super.key});
 
@@ -192,7 +198,6 @@ class _EventContributionCard extends StatefulWidget {
 
 class _EventContributionCardState extends State<_EventContributionCard> {
   List<Map<String, dynamic>> _contributions = [];
-  List<({String label, int total, int paid})> _blockStats = [];
   bool _loaded = false;
   StreamSubscription<QuerySnapshot>? _contribSub;
   // Flat number as it appears in community structure (may differ from session_flat)
@@ -265,54 +270,8 @@ class _EventContributionCardState extends State<_EventContributionCard> {
               .toList();
           _loaded = true;
         });
-        _loadBlockStats();
       }
     });
-
-    _loadBlockStats();
-  }
-
-  Future<void> _loadBlockStats() async {
-    final eventId = widget.eventDoc.id;
-    final results = await Future.wait([
-      FirebaseFirestore.instance
-          .collection('events')
-          .doc(eventId)
-          .collection('contributions')
-          .get(),
-      FirebaseFirestore.instance
-          .collection('community_settings')
-          .doc('address')
-          .get(),
-    ]);
-
-    final allSnap = results[0] as QuerySnapshot;
-    final settingsDoc = results[1] as DocumentSnapshot;
-
-    final paidFlats = <String>{};
-    for (final d in allSnap.docs) {
-      final data = d.data() as Map<String, dynamic>;
-      if (data['amountReceived'] != false && data['status'] != 'rejected' && data['status'] != 'deleted') {
-        paidFlats.add(data['flatNumber'] as String? ?? '');
-      }
-    }
-
-    final blockStatsList = <({String label, int total, int paid})>[];
-    if (settingsDoc.exists) {
-      final data = settingsDoc.data() as Map<String, dynamic>;
-      final wingBlocks = data['wingBlocks'] as Map<String, dynamic>? ?? {};
-      for (final wing in wingBlocks.keys) {
-        final blocks = wingBlocks[wing] as Map<String, dynamic>? ?? {};
-        for (final block in blocks.keys) {
-          final flats = (blocks[block] as List?)?.cast<String>() ?? [];
-          if (flats.isEmpty) continue;
-          final paid = flats.where((f) => paidFlats.contains(f)).length;
-          blockStatsList.add((label: '$wing $block', total: flats.length, paid: paid));
-        }
-      }
-    }
-
-    if (mounted) setState(() => _blockStats = blockStatsList);
   }
 
   Future<void> _selfReport(BuildContext context, String eventName) async {
@@ -325,7 +284,7 @@ class _EventContributionCardState extends State<_EventContributionCard> {
         eventName: eventName,
         flatNumber: _resolvedFlat.isNotEmpty ? _resolvedFlat : widget.flatNumber,
         residentName: widget.residentName,
-        onSubmitted: _loadBlockStats,
+        onSubmitted: () {},
       ),
     );
   }
@@ -367,28 +326,12 @@ class _EventContributionCardState extends State<_EventContributionCard> {
     final hasRejected = rejectedContribs.isNotEmpty;
     final notRecorded = _contributions.isEmpty || (!hasPaid && !hasPending && hasRejected);
 
-    final statusLabel = !_loaded
-        ? '...'
-        : hasPaid
-            ? 'Paid ✓'
-            : hasPending
-                ? 'Pending'
-                : hasRejected
-                    ? 'Action Required'
-                    : 'Not Recorded';
-    final statusColor = !_loaded
-        ? Colors.white60
-        : hasPaid
-            ? Colors.greenAccent
-            : hasPending
-                ? Colors.orange.shade200
-                : hasRejected
-                    ? Colors.red.shade200
-                    : Colors.white60;
+    final statusLabel = widget.isActive ? '🟢 Active' : '🔴 Closed';
+    const statusColor = Colors.white70;
 
-    // Don't navigate to dashboard when rejection is shown inline — resident
-    // should read the reason and re-submit, not be taken away from the card.
-    final onCardTap = hasRejected && !hasPaid
+    // Only allow card tap when no action has been taken yet (pending/not recorded).
+    // Rejected and confirmed states are shown inline; user can use the Dashboard button explicitly.
+    final onCardTap = (hasPaid || hasRejected)
         ? null
         : () => _openDashboard(context, eventName);
 
@@ -471,7 +414,7 @@ class _EventContributionCardState extends State<_EventContributionCard> {
                             style: TextStyle(
                                 fontSize: 12, color: Colors.grey.shade500)),
                         Text(
-                            '₹${collected.toStringAsFixed(0)} / ₹${target.toStringAsFixed(0)}',
+                            '₹${collected.toStringAsFixed(0)} collected',
                             style: const TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
@@ -492,66 +435,6 @@ class _EventContributionCardState extends State<_EventContributionCard> {
                   ],
                 ),
               ),
-
-            // Block-level collection summary
-            if (_loaded && _blockStats.isNotEmpty) ...[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: Text('Collection Status by Block',
-                    style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey.shade500,
-                        letterSpacing: 0.3)),
-              ),
-              const SizedBox(height: 6),
-              SizedBox(
-                height: 36,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: _blockStats.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (_, i) {
-                    final s = _blockStats[i];
-                    final allPaid = s.paid == s.total;
-                    final nonePaid = s.paid == 0;
-                    final bgColor = allPaid
-                        ? Colors.green.shade50
-                        : nonePaid
-                            ? Colors.grey.shade100
-                            : Colors.orange.shade50;
-                    final borderColor = allPaid
-                        ? Colors.green.shade300
-                        : nonePaid
-                            ? Colors.grey.shade300
-                            : Colors.orange.shade300;
-                    final textColor = allPaid
-                        ? Colors.green.shade700
-                        : nonePaid
-                            ? Colors.grey.shade600
-                            : Colors.orange.shade700;
-                    return Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: bgColor,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: borderColor),
-                      ),
-                      child: Text(
-                        '${s.label}  ${s.paid}/${s.total}',
-                        style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: textColor),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 4),
-            ],
 
             const Divider(height: 20, indent: 16, endIndent: 16),
 
@@ -587,55 +470,98 @@ class _EventContributionCardState extends State<_EventContributionCard> {
                 final amount = (c['amount'] ?? 0).toStringAsFixed(0);
                 final type = c['contributionType'] ?? 'Regular';
                 final mode = c['paymentMode'] ?? '';
-                return Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-                  child: Row(
-                    children: [
-                      Icon(
-                        isPending
-                            ? Icons.hourglass_top_rounded
-                            : Icons.check_circle_rounded,
+                // Format confirmed date if available
+                String confirmedOn = '';
+                if (!isPending) {
+                  final raw = c['confirmedAt'] as String?;
+                  if (raw != null && raw.isNotEmpty) {
+                    try {
+                      final dt = DateTime.parse(raw).toLocal();
+                      confirmedOn =
+                          '${dt.day} ${_monthName(dt.month)} ${dt.year}';
+                    } catch (_) {}
+                  }
+                }
+                return Container(
+                  margin: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: isPending
+                        ? Colors.orange.shade50
+                        : Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
                         color: isPending
-                            ? Colors.orange.shade600
-                            : Colors.green.shade600,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          [type, if (mode.isNotEmpty) mode].join(' • '),
-                          style: TextStyle(
-                              fontSize: 13, color: Colors.grey.shade600),
-                        ),
-                      ),
-                      Text('₹$amount',
-                          style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold)),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
+                            ? Colors.orange.shade200
+                            : Colors.green.shade200),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        Icon(
+                          isPending
+                              ? Icons.hourglass_top_rounded
+                              : Icons.check_circle_rounded,
                           color: isPending
-                              ? Colors.orange.shade50
-                              : Colors.green.shade50,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                              color: isPending
-                                  ? Colors.orange.shade200
-                                  : Colors.green.shade200),
+                              ? Colors.orange.shade600
+                              : Colors.green.shade600,
+                          size: 16,
                         ),
-                        child: Text(
-                          isPending ? 'Pending Verification' : 'Paid',
+                        const SizedBox(width: 6),
+                        Text(
+                          '₹$amount${mode.isNotEmpty ? ' · $mode' : ''}',
                           style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
                               color: isPending
                                   ? Colors.orange.shade700
-                                  : Colors.green.shade700,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600),
+                                  : Colors.green.shade700),
                         ),
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: isPending
+                                ? Colors.orange.shade100
+                                : Colors.green.shade100,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            isPending ? 'Pending Verification' : 'Confirmed',
+                            style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: isPending
+                                    ? Colors.orange.shade700
+                                    : Colors.green.shade700),
+                          ),
+                        ),
+                      ]),
+                      const SizedBox(height: 4),
+                      Text(
+                        [type, if (mode.isNotEmpty) mode].join(' · '),
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: isPending
+                                ? Colors.orange.shade600
+                                : Colors.green.shade600),
                       ),
+                      const SizedBox(height: 2),
+                      if (isPending)
+                        Text('Admin will verify and confirm your payment.',
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.orange.shade400))
+                      else
+                        Text(
+                          confirmedOn.isNotEmpty
+                              ? 'Payment confirmed by admin on $confirmedOn.'
+                              : 'Payment confirmed by admin.',
+                          style: TextStyle(
+                              fontSize: 11, color: Colors.green.shade500),
+                        ),
                     ],
                   ),
                 );
@@ -785,6 +711,7 @@ class _SelfReportSheetState extends State<_SelfReportSheet> {
 
   String _fmtDate(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+
 
   Future<void> _pickDate() async {
     final picked = await showDatePicker(

@@ -264,7 +264,7 @@ class EventListScreen extends StatelessWidget {
                                                 .spaceBetween,
                                         children: [
                                           Text(
-                                              'Target: ₹${_fmt(target)}',
+                                              'Expected: ₹${_fmt(target)}',
                                               style: TextStyle(
                                                   color:
                                                       Colors.grey.shade500,
