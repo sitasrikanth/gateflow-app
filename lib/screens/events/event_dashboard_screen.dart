@@ -2024,7 +2024,7 @@ class _ContributionsTabState extends State<_ContributionsTab> {
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('Skip')),
+              child: const Text('OK')),
           if (phone.isNotEmpty)
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
@@ -2144,7 +2144,7 @@ class _ContributionsTabState extends State<_ContributionsTab> {
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('Skip')),
+              child: const Text('OK')),
           if (phone.isNotEmpty)
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(

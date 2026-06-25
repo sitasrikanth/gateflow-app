@@ -625,7 +625,7 @@ class _ResidentsTabState extends State<_ResidentsTab> {
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('Skip')),
+              child: const Text('OK')),
           if (phone.isNotEmpty)
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
