@@ -2263,6 +2263,29 @@ class _EventsTabState extends State<_EventsTab>
   void initState() {
     super.initState();
     _innerTab = TabController(length: 2, vsync: this);
+    _migrateEventTypes();
+  }
+
+  // One-time migration: set eventTypeId on events that were created before
+  // the event type system was added, by matching event name to type catalog.
+  Future<void> _migrateEventTypes() async {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('events')
+          .get();
+      final batch = FirebaseFirestore.instance.batch();
+      bool hasUpdates = false;
+      for (final doc in snap.docs) {
+        final data = doc.data();
+        if ((data['eventTypeId'] as String?)?.isNotEmpty == true) continue;
+        final matched = eventTypeByName(data['name'] as String?);
+        if (matched != null) {
+          batch.update(doc.reference, {'eventTypeId': matched.id});
+          hasUpdates = true;
+        }
+      }
+      if (hasUpdates) await batch.commit();
+    } catch (_) {}
   }
 
   @override
@@ -2497,36 +2520,6 @@ class _AdminEventPageViewState extends State<_AdminEventPageView> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          '${_currentIndex + 1} / ${widget.events.length}',
-          style: const TextStyle(color: Colors.white70, fontSize: 14),
-        ),
-        centerTitle: true,
-        actions: [
-          if (widget.events.length > 1)
-            Padding(
-              padding: const EdgeInsets.only(right: 16),
-              child: Row(
-                children: List.generate(widget.events.length, (i) => Container(
-                  width: 6,
-                  height: 6,
-                  margin: const EdgeInsets.symmetric(horizontal: 2),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: i == _currentIndex ? Colors.white : Colors.white30,
-                  ),
-                )),
-              ),
-            ),
-        ],
-      ),
       body: PageView.builder(
         controller: _pageController,
         itemCount: widget.events.length,

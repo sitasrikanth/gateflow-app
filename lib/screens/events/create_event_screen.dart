@@ -38,7 +38,6 @@ class _CreateEventScreenState extends State<CreateEventScreen>
 
   // ── Type selection ───────────────────────────────────────────────────────
   EventTypeData? _selectedType;
-  EventCategory _activeCategory = EventCategory.festive;
   late final TabController _tabCtrl;
 
   // ── Details form ─────────────────────────────────────────────────────────
@@ -59,12 +58,7 @@ class _CreateEventScreenState extends State<CreateEventScreen>
     _pageCtrl = PageController();
     _tabCtrl = TabController(
         length: EventCategory.values.length, vsync: this);
-    _tabCtrl.addListener(() {
-      if (!_tabCtrl.indexIsChanging) {
-        setState(() =>
-            _activeCategory = EventCategory.values[_tabCtrl.index]);
-      }
-    });
+    _tabCtrl.addListener(() => setState(() {}));
 
     if (widget.isEdit) {
       _step = 1; // skip picker in edit mode
@@ -333,31 +327,35 @@ class _CreateEventScreenState extends State<CreateEventScreen>
   // ── Step 0: Type Picker ──────────────────────────────────────────────────
 
   Widget _buildTypePicker() {
-    final types = eventTypesByCategory(_activeCategory);
-
     return StreamBuilder<DocumentSnapshot>(
       stream: _eventTypeImagesRef.snapshots(),
       builder: (context, snap) {
         final customImages =
             (snap.data?.data() as Map<String, dynamic>?) ?? {};
 
-        return GridView.builder(
-          padding: const EdgeInsets.all(16),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            mainAxisSpacing: 14,
-            crossAxisSpacing: 14,
-            childAspectRatio: 0.82,
-          ),
-          itemCount: types.length,
-          itemBuilder: (ctx, i) => _EventTypeCard(
-            type: types[i],
-            selected: _selectedType?.id == types[i].id,
-            customImageUrl: customImages[types[i].id] as String?,
-            isAdmin: widget.isAdmin,
-            onTap: () => _selectType(types[i]),
-            onUploadImage: () => _uploadCustomImage(types[i]),
-          ),
+        return TabBarView(
+          controller: _tabCtrl,
+          children: EventCategory.values.map((category) {
+            final types = eventTypesByCategory(category);
+            return GridView.builder(
+              padding: const EdgeInsets.all(16),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                mainAxisSpacing: 14,
+                crossAxisSpacing: 14,
+                childAspectRatio: 0.82,
+              ),
+              itemCount: types.length,
+              itemBuilder: (ctx, i) => _EventTypeCard(
+                type: types[i],
+                selected: _selectedType?.id == types[i].id,
+                customImageUrl: customImages[types[i].id] as String?,
+                isAdmin: widget.isAdmin,
+                onTap: () => _selectType(types[i]),
+                onUploadImage: () => _uploadCustomImage(types[i]),
+              ),
+            );
+          }).toList(),
         );
       },
     );

@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 // Contribution types
 const String kTypeRegular = 'Regular Contribution';
+const String kTypeSpecial = 'Special Contribution';
+// Legacy types (kept for backward-compat read; no longer shown in UI)
 const String kTypeCarryForward = 'Carry Forward (Previous Year)';
 const String kTypeGaneshLaddu = 'Ganesh Laddu (Previous Year)';
 
@@ -14,6 +17,7 @@ class AddContributionScreen extends StatefulWidget {
   final String? prefillFlat;
   final String? prefillWing;
   final String? prefillBlock;
+  final String? prefillContributionType;
 
   const AddContributionScreen({
     super.key,
@@ -23,6 +27,7 @@ class AddContributionScreen extends StatefulWidget {
     this.prefillFlat,
     this.prefillWing,
     this.prefillBlock,
+    this.prefillContributionType,
   });
 
   @override
@@ -36,6 +41,7 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
   final _amountController = TextEditingController();
   final _referenceController = TextEditingController();
   final _noteController = TextEditingController();
+  final _specialDescController = TextEditingController();
 
   String _wing = '';
   String _block = '';
@@ -46,23 +52,23 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
   DateTime _paidDate = DateTime.now();
   bool _saving = false;
   String _error = '';
+  StreamSubscription<DocumentSnapshot>? _settingsSub;
+  List<String> _paymentModes = ['Cash', 'UPI', 'Bank Transfer', 'Cheque'];
 
   bool get _isEditing => widget.existingDocId != null;
   bool get _isSpecialType =>
+      _contributionType == kTypeSpecial ||
       _contributionType == kTypeCarryForward ||
       _contributionType == kTypeGaneshLaddu;
 
-  final List<String> _paymentModes = ['Cash', 'UPI', 'Bank Transfer', 'Cheque'];
-  final Set<String> _requiresReference = {'UPI', 'Bank Transfer', 'Cheque'};
+  static const _kDefaultPaymentModes = ['Cash', 'UPI', 'PhonePe', 'Google Pay', 'Bank Transfer', 'NEFT / RTGS', 'Cheque', 'Other'];
+  final Set<String> _requiresReference = {'UPI', 'PhonePe', 'Google Pay', 'Bank Transfer', 'NEFT / RTGS', 'Cheque'};
   bool get _needsReference => _requiresReference.contains(_paymentMode);
 
   String get _referenceLabel {
-    switch (_paymentMode) {
-      case 'UPI': return 'UPI Reference / Transaction ID (Optional)';
-      case 'Bank Transfer': return 'Bank Transfer Reference (Optional)';
-      case 'Cheque': return 'Cheque Number (Optional)';
-      default: return 'Reference ID';
-    }
+    if (_paymentMode == 'Cheque') return 'Cheque Number (Optional)';
+    if (_paymentMode == 'Cash' || _paymentMode == 'Other') return 'Reference ID (Optional)';
+    return '$_paymentMode Reference / Transaction ID (Optional)';
   }
 
   @override
@@ -77,19 +83,62 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
       _wing = widget.prefillWing ?? '';
       _block = widget.prefillBlock ?? '';
       _flatController.text = widget.prefillFlat ?? '';
+      if (widget.prefillContributionType != null) {
+        _contributionType = widget.prefillContributionType!;
+      }
     }
     if (d != null) {
       _nameController.text = d['residentName'] ?? '';
       _amountController.text = (d['amount'] ?? 0).toStringAsFixed(0);
-      _contributionType = d['contributionType'] ?? kTypeRegular;
+      // Normalize legacy types
+      final rawType = d['contributionType'] as String? ?? kTypeRegular;
+      if (rawType == 'Regular') {
+        _contributionType = kTypeRegular;
+      } else if (rawType == kTypeCarryForward || rawType == kTypeGaneshLaddu) {
+        _contributionType = kTypeSpecial;
+      } else {
+        _contributionType = rawType;
+      }
       _amountReceived = d['amountReceived'] ?? true;
       _paymentMode = d['paymentMode'] ?? 'Cash';
       _referenceController.text = d['referenceId'] ?? '';
       _noteController.text = d['note'] ?? '';
+      _specialDescController.text = d['specialDescription'] ?? '';
       if ((d['paidAt'] ?? '').isNotEmpty) {
         _paidDate = DateTime.tryParse(d['paidAt']) ?? DateTime.now();
       }
     }
+    _settingsSub = FirebaseFirestore.instance
+        .collection('community_settings')
+        .doc('address')
+        .snapshots()
+        .listen((snap) {
+      if (!mounted) return;
+      final d = snap.data() as Map<String, dynamic>? ?? {};
+      final modes = d['paymentModes'] is List
+          ? List<String>.from(d['paymentModes'] as List)
+          : List<String>.from(_kDefaultPaymentModes);
+      final note = d['defaultContributionNote'] as String? ?? '';
+      setState(() {
+        _paymentModes = modes;
+        if (!modes.contains(_paymentMode)) _paymentMode = modes.first;
+        if (widget.existingData == null && note.isNotEmpty && _noteController.text.isEmpty) {
+          _noteController.text = note;
+        }
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _settingsSub?.cancel();
+    _flatController.dispose();
+    _nameController.dispose();
+    _amountController.dispose();
+    _referenceController.dispose();
+    _noteController.dispose();
+    _specialDescController.dispose();
+    super.dispose();
   }
 
   Future<void> _pickDate() async {
@@ -158,6 +207,7 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
         'paymentMode': _isSpecialType && !_amountReceived ? 'Pending' : _paymentMode,
         'referenceId': _referenceController.text.trim(),
         'note': _noteController.text.trim(),
+        'specialDescription': _isSpecialType ? _specialDescController.text.trim() : '',
         'paidAt': _paidDate.toIso8601String(),
         'paidDate': _formatDate(_paidDate),
       };
@@ -287,6 +337,22 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
                 if (_isSpecialType) ...[
                   _specialStatusCard(),
                   const SizedBox(height: 16),
+                  _label('Special Contribution Description *'),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _specialDescController,
+                    maxLines: 2,
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: InputDecoration(
+                      hintText: 'e.g. Carry Forward from last year, Ganesh Laddu donation…',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Colors.purple, width: 2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                 ],
 
                 // ── Wing ─────────────────────────────────────────
@@ -327,7 +393,32 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
                 // ── Flat number ───────────────────────────────────
                 _label('Flat Number *'),
                 const SizedBox(height: 8),
-                if (_block.isEmpty)
+                if (_isEditing)
+                  // Read-only when editing — flat cannot be changed
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.teal.shade400, width: 2),
+                    ),
+                    child: Row(children: [
+                      Icon(Icons.home_outlined,
+                          color: Colors.teal.shade600, size: 18),
+                      const SizedBox(width: 8),
+                      Text(_flatController.text,
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.teal.shade700,
+                              fontSize: 14)),
+                      const Spacer(),
+                      Text('(locked)',
+                          style: TextStyle(
+                              fontSize: 11, color: Colors.grey.shade500)),
+                    ]),
+                  )
+                else if (_block.isEmpty)
                   _hint('Select a block first to see its flats')
                 else if (flatsForBlock.isEmpty)
                   // No flats configured — fall back to free text
@@ -338,12 +429,30 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
                     decoration: _dec('e.g. 101', Icons.home_outlined),
                   )
                 else
-                  _chips(
-                    items: flatsForBlock,
-                    selected: _flatController.text,
-                    activeColor: Colors.teal.shade600,
-                    onTap: (flat) =>
-                        setState(() => _flatController.text = flat),
+                  StreamBuilder<DocumentSnapshot>(
+                    stream: FirebaseFirestore.instance
+                        .collection('community_settings')
+                        .doc('address')
+                        .snapshots(),
+                    builder: (ctx, snap) {
+                      final sd = snap.data?.data()
+                              as Map<String, dynamic>? ??
+                          {};
+                      final rowsRaw = sd['flatGridRows'] is Map
+                          ? sd['flatGridRows'] as Map<String, dynamic>
+                          : <String, dynamic>{};
+                      final rows = ((rowsRaw['${_wing}_${_block}']
+                                  as num?)
+                              ?.toInt() ??
+                          1).clamp(1, 3);
+                      return _flatGrid(
+                        flats: flatsForBlock,
+                        selected: _flatController.text,
+                        rowsPerFloor: rows,
+                        onTap: (flat) =>
+                            setState(() => _flatController.text = flat),
+                      );
+                    },
                   ),
                 const SizedBox(height: 20),
 
@@ -557,15 +666,17 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
 
   Widget _typeSelector() {
     final types = [
-      {'type': kTypeRegular, 'icon': Icons.payments_outlined, 'color': Colors.green},
-      {'type': kTypeCarryForward, 'icon': Icons.history, 'color': Colors.blue},
-      {'type': kTypeGaneshLaddu, 'icon': Icons.cookie_outlined, 'color': Colors.orange},
+      {'type': kTypeRegular, 'icon': Icons.payments_outlined, 'color': Colors.green,
+       'desc': 'Standard contribution for this event'},
+      {'type': kTypeSpecial, 'icon': Icons.star_outline, 'color': Colors.purple,
+       'desc': 'Carry forward, Ganesh Laddu, or other special amount'},
     ];
     return Column(
       children: types.map((t) {
         final type = t['type'] as String;
         final icon = t['icon'] as IconData;
         final color = t['color'] as Color;
+        final desc = t['desc'] as String;
         final sel = _contributionType == type;
         return GestureDetector(
           onTap: () => setState(() {
@@ -587,10 +698,18 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
                 Icon(icon, color: sel ? color : Colors.grey, size: 22),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text(type,
-                      style: TextStyle(
-                          fontWeight: sel ? FontWeight.bold : FontWeight.normal,
-                          color: sel ? color : Colors.grey.shade700)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(type,
+                          style: TextStyle(
+                              fontWeight: sel ? FontWeight.bold : FontWeight.normal,
+                              color: sel ? color : Colors.grey.shade700)),
+                      Text(desc,
+                          style: TextStyle(
+                              fontSize: 11, color: Colors.grey.shade500)),
+                    ],
+                  ),
                 ),
                 if (sel)
                   Icon(Icons.check_circle, color: color, size: 20),
@@ -605,13 +724,8 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
   // ── Special type received/pending status card ──────────────────────────────
 
   Widget _specialStatusCard() {
-    final isCarryForward = _contributionType == kTypeCarryForward;
-    final label = isCarryForward
-        ? 'Carry Forward Amount Status'
-        : 'Ganesh Laddu Amount Status';
-    final desc = isCarryForward
-        ? 'Has this flat paid their carry forward amount from last year?'
-        : 'Has this flat paid their Ganesh Laddu amount from last year?';
+    const label = 'Special Contribution Status';
+    const desc = 'Has this flat already paid this special amount?';
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -727,6 +841,96 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
             style:
                 TextStyle(color: Colors.orange.shade700, fontSize: 12)),
       );
+
+  Widget _flatGrid({
+    required List<String> flats,
+    required String selected,
+    required int rowsPerFloor,
+    required void Function(String) onTap,
+  }) {
+    final color = Colors.teal.shade600;
+
+    // Group flats by floor (hundreds digit: 101-112 → floor 1)
+    final Map<int, List<String>> byFloor = {};
+    for (final flat in flats) {
+      final n = int.tryParse(flat.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      final floor = n > 0 ? n ~/ 100 : 0;
+      byFloor.putIfAbsent(floor, () => []).add(flat);
+    }
+    final floors = byFloor.keys.toList()..sort();
+
+    Widget flatTile(String flat) {
+      final isSel = selected == flat;
+      return GestureDetector(
+        onTap: () => onTap(flat),
+        child: Container(
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: isSel ? color : Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: isSel ? color : Colors.grey.shade300),
+          ),
+          child: Text(
+            flat,
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 15,
+              color: isSel ? Colors.white : Colors.grey.shade800,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: floors.map((floor) {
+        final floorFlats = byFloor[floor]!;
+        final cols = (floorFlats.length / rowsPerFloor).ceil().clamp(1, floorFlats.length);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 8, bottom: 6),
+              child: Row(children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.teal.shade50,
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.teal.shade200),
+                  ),
+                  child: Text(
+                    'Floor $floor',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.teal.shade700,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(child: Divider(color: Colors.teal.shade100, height: 1)),
+              ]),
+            ),
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: cols,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                childAspectRatio: 1.6,
+              ),
+              itemCount: floorFlats.length,
+              itemBuilder: (_, i) => flatTile(floorFlats[i]),
+            ),
+            const SizedBox(height: 4),
+          ],
+        );
+      }).toList(),
+    );
+  }
 
   Widget _chips({
     required List<String> items,

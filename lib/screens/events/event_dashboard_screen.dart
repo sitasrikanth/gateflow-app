@@ -68,12 +68,15 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
           .get();
 
       double total = 0;
+      final paidFlats = <String>{};
       for (final doc in contribs.docs) {
         final d = doc.data();
         if (d['status'] == 'deleted') continue;
         if (d['selfReported'] == true && d['amountReceived'] != true) continue;
         if (d['amountReceived'] == true) {
           total += (d['amount'] as num? ?? 0).toDouble();
+          final flat = (d['flatNumber'] as String? ?? '').trim();
+          if (flat.isNotEmpty) paidFlats.add(flat);
         }
       }
 
@@ -85,7 +88,7 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(
-              'Total recalculated: ₹${total.toStringAsFixed(0)} from ${contribs.docs.length} contributions'),
+              'Total recalculated: ₹${total.toStringAsFixed(0)} from ${paidFlats.length} flats'),
           backgroundColor: Colors.teal,
         ));
       }
@@ -187,21 +190,6 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold)),
                         ),
-                        if (!widget.isAdmin)
-                          IconButton(
-                            icon: const Icon(Icons.picture_as_pdf,
-                                color: Colors.white70),
-                            tooltip: 'Export PDF Report',
-                            onPressed: () => exportEventPdfReport(
-                              context: context,
-                              eventId: widget.eventId,
-                              eventData: data,
-                              collected: collected,
-                              spent: spent,
-                              balance: balance,
-                              target: target,
-                            ),
-                          ),
                         // Logout always visible
                         IconButton(
                           icon: const Icon(Icons.logout, color: Colors.white70),
@@ -221,8 +209,9 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                         ),
                         if (widget.isAdmin)
                           PopupMenuButton<String>(
-                            icon: const Icon(Icons.more_vert,
+                            icon: const Icon(Icons.settings_outlined,
                                 color: Colors.white),
+                            tooltip: 'Event Tools',
                             onSelected: (val) {
                               if (val == 'import') {
                                 Navigator.push(
@@ -270,6 +259,19 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                                   ),
                                 );
                               }
+                              if (val == 'cf' || val == 'laddu') {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => AddContributionScreen(
+                                      eventId: widget.eventId,
+                                      prefillContributionType: val == 'cf'
+                                          ? kTypeCarryForward
+                                          : kTypeGaneshLaddu,
+                                    ),
+                                  ),
+                                );
+                              }
                             },
                             itemBuilder: (_) => [
                               const PopupMenuItem(
@@ -289,14 +291,6 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                                     Text('Export PDF Report'),
                                   ])),
                               const PopupMenuItem(
-                                  value: 'edit',
-                                  child: Row(children: [
-                                    Icon(Icons.edit_outlined,
-                                        color: Colors.deepPurple),
-                                    SizedBox(width: 8),
-                                    Text('Edit Event'),
-                                  ])),
-                              const PopupMenuItem(
                                   value: 'recalculate',
                                   child: Row(children: [
                                     Icon(Icons.sync, color: Colors.teal),
@@ -311,6 +305,33 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                                       SizedBox(width: 8),
                                       Text('Send Notification')
                                     ])),
+                              ],
+                              const PopupMenuDivider(),
+                              const PopupMenuItem(
+                                  value: 'cf',
+                                  child: Row(children: [
+                                    Icon(Icons.history, color: Colors.blue),
+                                    SizedBox(width: 8),
+                                    Text('Add Carry Forward'),
+                                  ])),
+                              const PopupMenuItem(
+                                  value: 'laddu',
+                                  child: Row(children: [
+                                    Icon(Icons.cookie_outlined,
+                                        color: Colors.orange),
+                                    SizedBox(width: 8),
+                                    Text('Add Ganesh Laddu'),
+                                  ])),
+                              const PopupMenuDivider(),
+                              const PopupMenuItem(
+                                  value: 'edit',
+                                  child: Row(children: [
+                                    Icon(Icons.edit_outlined,
+                                        color: Colors.deepPurple),
+                                    SizedBox(width: 8),
+                                    Text('Edit Event'),
+                                  ])),
+                              if (status == 'active')
                                 const PopupMenuItem(
                                     value: 'close',
                                     child: Row(children: [
@@ -320,7 +341,6 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                                       Text('Close Event',
                                           style: TextStyle(color: Colors.red))
                                     ])),
-                              ],
                             ],
                           ),
                       ],
@@ -381,25 +401,38 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                       ),
                     ],
 
-                    const SizedBox(height: 12),
-                    TabBar(
-                      controller: _tabController,
-                      indicatorColor: Colors.white,
-                      labelColor: Colors.white,
-                      unselectedLabelColor: Colors.white60,
-                      tabs: [
-                        const Tab(text: 'Overview'),
-                        if (widget.isAdmin) const Tab(text: 'Contributions'),
-                        const Tab(text: 'Expenses'),
-                        if (widget.isAdmin) ...[
-                          const Tab(text: 'Follow-up'),
-                          const Tab(text: 'Activity'),
-                        ],
-                      ],
-                    ),
                   ],
                 ),
               ),
+
+              // ── Tab bar: grocery-style for admin, classic for resident ──
+              if (widget.isAdmin)
+                _CustomTabBar(
+                  controller: _tabController,
+                  tabs: const [
+                    _TabItem(icon: Icons.dashboard_outlined, label: 'Overview'),
+                    _TabItem(icon: Icons.volunteer_activism_outlined, label: 'Contributions'),
+                    _TabItem(icon: Icons.receipt_long_outlined, label: 'Expenses'),
+                    _TabItem(icon: Icons.pending_actions_outlined, label: 'Follow-up'),
+                    _TabItem(icon: Icons.history_outlined, label: 'Activity'),
+                  ],
+                )
+              else
+                Container(
+                  color: Colors.deepPurple,
+                  child: TabBar(
+                    controller: _tabController,
+                    indicatorColor: Colors.white,
+                    indicatorWeight: 3,
+                    labelColor: Colors.white,
+                    unselectedLabelColor: Colors.white60,
+                    labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                    tabs: const [
+                      Tab(text: 'Overview'),
+                      Tab(text: 'Expenses'),
+                    ],
+                  ),
+                ),
 
               // Tab content
               Expanded(
@@ -486,6 +519,112 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
     if (v >= 100000) return '${(v / 100000).toStringAsFixed(1)}L';
     if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
     return v.toStringAsFixed(0);
+  }
+}
+
+// ── Custom Tab Bar ────────────────────────────────────────────────────────────
+
+class _TabItem {
+  final IconData icon;
+  final String label;
+  const _TabItem({required this.icon, required this.label});
+}
+
+class _CustomTabBar extends StatefulWidget {
+  final TabController controller;
+  final List<_TabItem> tabs;
+  const _CustomTabBar({required this.controller, required this.tabs});
+
+  @override
+  State<_CustomTabBar> createState() => _CustomTabBarState();
+}
+
+class _CustomTabBarState extends State<_CustomTabBar> {
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_onTabChange);
+  }
+
+  void _onTabChange() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onTabChange);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = widget.controller.index;
+    return Container(
+      color: Colors.white,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Row(
+          children: List.generate(widget.tabs.length, (i) {
+            final tab = widget.tabs[i];
+            final isSel = selected == i;
+            return GestureDetector(
+              onTap: () => widget.controller.animateTo(i),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: isSel
+                                ? Colors.deepPurple.shade50
+                                : Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(
+                            tab.icon,
+                            size: 22,
+                            color: isSel
+                                ? Colors.deepPurple
+                                : Colors.grey.shade500,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          tab.label,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: isSel ? FontWeight.w700 : FontWeight.w500,
+                            color: isSel
+                                ? Colors.deepPurple
+                                : Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    height: 3,
+                    width: isSel ? 48 : 0,
+                    decoration: BoxDecoration(
+                      color: Colors.deepPurple,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ),
+      ),
+    );
   }
 }
 
@@ -657,30 +796,67 @@ class _OverviewTab extends StatelessWidget {
 
         const SizedBox(height: 16),
 
-        // ── 3 stat chips ──────────────────────────────────────────
-        Row(
-          children: [
-            _StatChip(
-              label: 'Collected',
-              value: '₹${_fmt(collected)}',
-              icon: Icons.arrow_downward_rounded,
-              color: Colors.green,
-            ),
-            const SizedBox(width: 8),
-            _StatChip(
-              label: 'Spent',
-              value: '₹${_fmt(spent)}',
-              icon: Icons.arrow_upward_rounded,
-              color: Colors.red,
-            ),
-            const SizedBox(width: 8),
-            _StatChip(
-              label: 'Expected',
-              value: target > 0 ? '₹${_fmt(target)}' : '—',
-              icon: Icons.flag_outlined,
-              color: Colors.blue,
-            ),
-          ],
+        // ── Stat chips ────────────────────────────────────────────
+        StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('events').doc(eventId)
+              .collection('contributions').snapshots(),
+          builder: (context, snap) {
+            double cash = 0, online = 0;
+            for (final doc in snap.data?.docs ?? []) {
+              final d = doc.data() as Map<String, dynamic>;
+              if (d['status'] == 'deleted') continue;
+              if (d['selfReported'] == true && d['amountReceived'] != true) continue;
+              if (d['amountReceived'] != true) continue;
+              final amt = (d['amount'] as num? ?? 0).toDouble();
+              final mode = (d['paymentMode'] as String? ?? '').toLowerCase();
+              if (mode == 'cash') cash += amt; else online += amt;
+            }
+            final hasBoth = cash > 0 && online > 0;
+            return Column(
+              children: [
+                if (hasBoth) ...[
+                  Row(children: [
+                    _StatChip(label: 'Cash', value: '₹${_fmt(cash)}',
+                        icon: Icons.arrow_downward_rounded, color: Colors.amber.shade700),
+                    const SizedBox(width: 8),
+                    _StatChip(label: 'Online', value: '₹${_fmt(online)}',
+                        icon: Icons.arrow_downward_rounded, color: Colors.blue),
+                    const SizedBox(width: 8),
+                    _StatChip(label: 'Total', value: '₹${_fmt(collected)}',
+                        icon: Icons.arrow_downward_rounded, color: Colors.green),
+                  ]),
+                  const SizedBox(height: 8),
+                  Row(children: [
+                    _StatChip(label: 'Spent', value: '₹${_fmt(spent)}',
+                        icon: Icons.arrow_upward_rounded, color: Colors.red),
+                    const SizedBox(width: 8),
+                    _StatChip(label: 'Expected',
+                        value: target > 0 ? '₹${_fmt(target)}' : '—',
+                        icon: Icons.flag_outlined, color: Colors.blue.shade800),
+                    const SizedBox(width: 8),
+                    _StatChip(label: 'Balance',
+                        value: '₹${_fmt(balance.abs())}',
+                        icon: balance >= 0
+                            ? Icons.account_balance_wallet
+                            : Icons.warning_rounded,
+                        color: balance >= 0 ? Colors.teal : Colors.red),
+                  ]),
+                ] else
+                  Row(children: [
+                    _StatChip(label: 'Collected', value: '₹${_fmt(collected)}',
+                        icon: Icons.arrow_downward_rounded, color: Colors.green),
+                    const SizedBox(width: 8),
+                    _StatChip(label: 'Spent', value: '₹${_fmt(spent)}',
+                        icon: Icons.arrow_upward_rounded, color: Colors.red),
+                    const SizedBox(width: 8),
+                    _StatChip(label: 'Expected',
+                        value: target > 0 ? '₹${_fmt(target)}' : '—',
+                        icon: Icons.flag_outlined, color: Colors.blue),
+                  ]),
+              ],
+            );
+          },
         ),
 
         const SizedBox(height: 16),
@@ -1009,6 +1185,27 @@ class _BudgetRow extends StatelessWidget {
 
 // ── Stat Chip ─────────────────────────────────────────────────────────────────
 
+class _ChipLegend extends StatelessWidget {
+  final Color color, border, textColor;
+  final String text;
+  const _ChipLegend({required this.color, required this.border,
+      required this.text, required this.textColor});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: border),
+      ),
+      child: Text(text,
+          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: textColor)),
+    );
+  }
+}
+
 class _StatChip extends StatelessWidget {
   final String label;
   final String value;
@@ -1082,7 +1279,7 @@ class _ContributionsTabState extends State<_ContributionsTab> {
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => DraggableScrollableSheet(
+      builder: (sheetCtx) => DraggableScrollableSheet(
         expand: false,
         initialChildSize: 0.5,
         minChildSize: 0.3,
@@ -1103,15 +1300,51 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                 Icon(Icons.home_outlined,
                     color: Colors.blue.shade700, size: 20),
                 const SizedBox(width: 8),
-                Text('$wing › Block $block › $flat',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 15)),
+                Expanded(
+                  child: Text('$wing › Block $block › $flat',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 15)),
+                ),
+                if (widget.isAdmin && widget.status == 'active')
+                  TextButton.icon(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => AddContributionScreen(
+                          eventId: widget.eventId,
+                          prefillFlat: flat,
+                          prefillWing: wing,
+                          prefillBlock: block,
+                        ),
+                      ),
+                    ),
+                    icon: Icon(Icons.add, size: 16, color: Colors.green.shade600),
+                    label: Text('Add',
+                        style: TextStyle(
+                            color: Colors.green.shade600, fontSize: 13)),
+                    style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4)),
+                  ),
               ]),
             ),
             const Divider(height: 1),
             Expanded(
-              child: contribs.isEmpty
-                  ? Column(
+              child: StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('events')
+                    .doc(widget.eventId)
+                    .collection('contributions')
+                    .where('flatNumber', isEqualTo: flat)
+                    .snapshots(),
+                builder: (context, snap) {
+                  final liveDocs = (snap.data?.docs ?? [])
+                      .where((d) =>
+                          (d.data() as Map<String, dynamic>)['status'] != 'deleted')
+                      .toList();
+
+                  if (liveDocs.isEmpty) {
+                    return Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Icon(Icons.payments_outlined,
@@ -1130,132 +1363,179 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                                     borderRadius: BorderRadius.circular(8))),
                             icon: const Icon(Icons.add, size: 16),
                             label: const Text('Record Contribution'),
-                            onPressed: () {
-                              Navigator.pop(ctx);
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => AddContributionScreen(
-                                    eventId: widget.eventId,
-                                    prefillFlat: flat,
-                                    prefillWing: wing,
-                                    prefillBlock: block,
-                                  ),
+                            onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => AddContributionScreen(
+                                  eventId: widget.eventId,
+                                  prefillFlat: flat,
+                                  prefillWing: wing,
+                                  prefillBlock: block,
                                 ),
-                              );
-                            },
+                              ),
+                            ),
                           ),
                         ],
                       ],
-                    )
-                  : ListView(
-                      controller: ctrl,
-                      padding: const EdgeInsets.all(12),
-                      children: contribs.map((doc) {
-                        final d = doc.data() as Map<String, dynamic>;
-                        final isPending = d['amountReceived'] == false;
-                        final cType = d['contributionType'] ?? kTypeRegular;
-                        final amt =
-                            (d['amount'] as num?)?.toDouble() ?? 0;
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          decoration: BoxDecoration(
-                            color: isPending
-                                ? Colors.orange.shade50
-                                : Colors.white,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                                color: isPending
-                                    ? Colors.orange.shade200
-                                    : Colors.grey.shade200),
-                          ),
-                          child: ListTile(
-                            dense: true,
-                            leading: CircleAvatar(
-                              radius: 16,
-                              backgroundColor: isPending
-                                  ? Colors.orange.shade100
-                                  : Colors.green.shade50,
-                              child: Icon(Icons.home,
+                    );
+                  }
+
+                  return ListView(
+                    controller: ctrl,
+                    padding: const EdgeInsets.all(12),
+                    children: liveDocs.map((doc) {
+                      final d = doc.data() as Map<String, dynamic>;
+                      final isRejected = d['status'] == 'rejected';
+                      final isPending = d['amountReceived'] == false && !isRejected;
+                      final cType = d['contributionType'] ?? kTypeRegular;
+                      final amt = (d['amount'] as num?)?.toDouble() ?? 0;
+                      final rejReason = (d['rejectionReason'] ?? '').toString().trim();
+
+                      Color cardColor, borderColor, amtColor, iconColor, avatarBg;
+                      if (isRejected) {
+                        cardColor = Colors.red.shade50;
+                        borderColor = Colors.red.shade200;
+                        amtColor = Colors.red.shade700;
+                        iconColor = Colors.red.shade700;
+                        avatarBg = Colors.red.shade100;
+                      } else if (isPending) {
+                        cardColor = Colors.orange.shade50;
+                        borderColor = Colors.orange.shade200;
+                        amtColor = Colors.orange.shade700;
+                        iconColor = Colors.orange.shade700;
+                        avatarBg = Colors.orange.shade100;
+                      } else {
+                        cardColor = Colors.white;
+                        borderColor = Colors.grey.shade200;
+                        amtColor = Colors.green.shade700;
+                        iconColor = Colors.green.shade700;
+                        avatarBg = Colors.green.shade50;
+                      }
+
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        decoration: BoxDecoration(
+                          color: cardColor,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: borderColor),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            ListTile(
+                              dense: true,
+                              leading: CircleAvatar(
+                                radius: 16,
+                                backgroundColor: avatarBg,
+                                child: Icon(
+                                  isRejected ? Icons.cancel_outlined : Icons.home,
                                   size: 16,
-                                  color: isPending
-                                      ? Colors.orange.shade700
-                                      : Colors.green.shade700),
-                            ),
-                            title: Row(children: [
-                              Expanded(
-                                  child: Text('Flat ${d['flatNumber'] ?? ''}',
+                                  color: iconColor,
+                                ),
+                              ),
+                              title: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text('Flat ${d['flatNumber'] ?? ''}',
                                       style: const TextStyle(
                                           fontWeight: FontWeight.w600,
-                                          fontSize: 13))),
-                              if (cType != kTypeRegular) _typeBadge(cType),
-                              if (isPending) _pendingBadge(),
-                            ]),
-                            subtitle: Text(
-                              [
-                                if ((d['residentName'] ?? '').isNotEmpty)
-                                  d['residentName'],
-                                d['paymentMode'] ?? 'Cash',
-                                if ((d['paidDate'] ?? '').isNotEmpty)
-                                  d['paidDate'],
-                                if ((d['note'] ?? '').isNotEmpty) d['note'],
-                              ].join(' • '),
-                              style: TextStyle(
-                                  fontSize: 11, color: Colors.grey.shade600),
-                            ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text('₹${amt.toStringAsFixed(0)}',
-                                    style: TextStyle(
-                                        color: isPending
-                                            ? Colors.orange.shade700
-                                            : Colors.green.shade700,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 14)),
-                                if (widget.isAdmin) ...[
-                                  const SizedBox(width: 2),
-                                  IconButton(
-                                    icon: Icon(Icons.edit_outlined,
-                                        color: Colors.green.shade400,
-                                        size: 17),
-                                    onPressed: () {
-                                      Navigator.pop(ctx);
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) =>
-                                              AddContributionScreen(
-                                            eventId: widget.eventId,
-                                            existingDocId: doc.id,
-                                            existingData: d,
+                                          fontSize: 13)),
+                                  Row(children: [
+                                    if (cType != kTypeRegular) ...[
+                                      _typeBadge(cType),
+                                      const SizedBox(width: 4),
+                                    ],
+                                    if (isRejected)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: Colors.red.shade100,
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text('Rejected',
+                                            style: TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.red.shade800)),
+                                      )
+                                    else if (isPending)
+                                      _pendingBadge(),
+                                  ]),
+                                ],
+                              ),
+                              subtitle: Text(
+                                [
+                                  if ((d['residentName'] ?? '').isNotEmpty)
+                                    d['residentName'],
+                                  d['paymentMode'] ?? 'Cash',
+                                  if ((d['paidDate'] ?? '').isNotEmpty)
+                                    d['paidDate'],
+                                  if ((d['note'] ?? '').toString().trim().isNotEmpty)
+                                    'Note: ${d['note']}',
+                                ].join(' • '),
+                                style: TextStyle(
+                                    fontSize: 11, color: Colors.grey.shade600),
+                              ),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text('₹${amt.toStringAsFixed(0)}',
+                                      style: TextStyle(
+                                          color: amtColor,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14)),
+                                  if (widget.isAdmin) ...[
+                                    const SizedBox(width: 2),
+                                    if (!isRejected)
+                                      IconButton(
+                                        icon: Icon(Icons.edit_outlined,
+                                            color: Colors.green.shade400,
+                                            size: 17),
+                                        onPressed: () => Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) => AddContributionScreen(
+                                              eventId: widget.eventId,
+                                              existingDocId: doc.id,
+                                              existingData: d,
+                                            ),
                                           ),
                                         ),
-                                      );
-                                    },
-                                    tooltip: 'Edit',
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                  ),
-                                  IconButton(
-                                    icon: Icon(Icons.delete_outline,
-                                        color: Colors.red.shade300,
-                                        size: 17),
-                                    onPressed: () {
-                                      Navigator.pop(ctx);
-                                      _deleteContribution(context, doc, d);
-                                    },
-                                    tooltip: 'Delete',
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                  ),
+                                        tooltip: 'Edit',
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                      ),
+                                    IconButton(
+                                      icon: Icon(Icons.delete_outline,
+                                          color: Colors.red.shade300,
+                                          size: 17),
+                                      onPressed: () =>
+                                          _deleteContribution(context, doc, d),
+                                      tooltip: 'Delete',
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                    ),
+                                  ],
                                 ],
-                              ],
+                              ),
                             ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
+                            if (isRejected && rejReason.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                                child: Text('Reason: $rejReason',
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.red.shade600)),
+                              ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  );
+                },
+              ),
             ),
           ],
         ),
@@ -1569,6 +1849,12 @@ class _ContributionsTabState extends State<_ContributionsTab> {
               (settings['flatsPerFloor'] as Map<String, dynamic>? ?? {})
                   .map((k, v) => MapEntry(k, (v as num).toInt())),
             );
+            final flatGridRows = Map<String, int>.from(
+              (settings['flatGridRows'] is Map
+                      ? settings['flatGridRows'] as Map<String, dynamic>
+                      : <String, dynamic>{})
+                  .map((k, v) => MapEntry(k, (v as num).toInt())),
+            );
 
             return ListView(
               padding: const EdgeInsets.all(12),
@@ -1608,6 +1894,7 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                           final ref = (d['referenceId'] ?? '').toString().trim();
                           final pWing = (d['wing'] ?? '').toString().trim();
                           final pBlock = (d['block'] ?? '').toString().trim();
+                          final isAdditional = d['isAdditional'] == true;
                           final locationParts = [
                             if (pWing.isNotEmpty) pWing,
                             if (pBlock.isNotEmpty) 'Block $pBlock',
@@ -1619,9 +1906,12 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 10, vertical: 8),
                             decoration: BoxDecoration(
-                              color: Colors.white,
+                              color: isAdditional ? Colors.amber.shade50 : Colors.white,
                               borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.orange.shade100),
+                              border: Border.all(
+                                  color: isAdditional
+                                      ? Colors.amber.shade400
+                                      : Colors.orange.shade100),
                             ),
                             child: Row(
                               children: [
@@ -1629,6 +1919,22 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
+                                      if (isAdditional)
+                                        Padding(
+                                          padding: const EdgeInsets.only(bottom: 4),
+                                          child: Row(children: [
+                                            Icon(Icons.warning_amber_rounded,
+                                                size: 13, color: Colors.amber.shade800),
+                                            const SizedBox(width: 4),
+                                            Flexible(
+                                              child: Text('Already paid — Additional payment',
+                                                  style: TextStyle(
+                                                      fontSize: 11,
+                                                      fontWeight: FontWeight.w600,
+                                                      color: Colors.amber.shade800)),
+                                            ),
+                                          ]),
+                                        ),
                                       Text(
                                         '$locationStr${name.isNotEmpty ? '  ·  $name' : ''}',
                                         style: const TextStyle(
@@ -1710,10 +2016,31 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                   ),
                 ),
 
+                // ── Flat chip colour legend ────────────────────────
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      _ChipLegend(color: Colors.green.shade50, border: Colors.green.shade400,
+                          text: 'Cash', textColor: Colors.green.shade700),
+                      _ChipLegend(color: Colors.blue.shade50, border: Colors.blue.shade300,
+                          text: 'Online', textColor: Colors.blue.shade700),
+                      _ChipLegend(color: Colors.purple.shade50, border: Colors.purple.shade300,
+                          text: 'Cash + Online', textColor: Colors.purple.shade800),
+                      _ChipLegend(color: Colors.orange.shade50, border: Colors.orange.shade300,
+                          text: 'Pending', textColor: Colors.orange.shade700),
+                      _ChipLegend(color: Colors.grey.shade100, border: Colors.grey.shade300,
+                          text: 'Not paid', textColor: Colors.grey.shade500),
+                    ],
+                  ),
+                ),
+
                 // ── Wing → Block → Flat chip hierarchy ────────────
                 for (final wing in wings) ...[
                   _buildWingTile(
-                      context, wing, wingBlocks, flatDocs, flatsPerFloor),
+                      context, wing, wingBlocks, flatDocs, flatsPerFloor, flatGridRows),
                 ],
 
                 // ── Unassigned contributions ───────────────────────
@@ -1873,6 +2200,7 @@ class _ContributionsTabState extends State<_ContributionsTab> {
     Map<String, dynamic> wingBlocks,
     Map<String, List<QueryDocumentSnapshot>> flatDocs,
     Map<String, int> flatsPerFloor,
+    Map<String, int> flatGridRows,
   ) {
     final raw = wingBlocks[wing];
     final Map<String, dynamic> wingData =
@@ -1887,23 +2215,23 @@ class _ContributionsTabState extends State<_ContributionsTab> {
       totalFlats += flats.length;
       paidFlats += flats.where((f) => flatDocs[f]?.isNotEmpty ?? false).length;
     }
-    final wingTotal = flatDocs.entries
-        .where((e) {
-          // check if this flat belongs to this wing
-          for (final block in blocks) {
-            final flats = List<String>.from(
-                wingData[block] is List ? wingData[block] : []);
-            if (flats.contains(e.key)) return true;
-          }
-          return false;
-        })
-        .expand((e) => e.value)
-        .fold<double>(0, (s, doc) {
-          final d = doc.data() as Map<String, dynamic>;
-          return d['amountReceived'] != false
-              ? s + (d['amount'] ?? 0).toDouble()
-              : s;
-        });
+    double wingTotal = 0, wingCash = 0, wingOnline = 0;
+    for (final e in flatDocs.entries) {
+      bool inWing = false;
+      for (final block in blocks) {
+        final flats = List<String>.from(wingData[block] is List ? wingData[block] : []);
+        if (flats.contains(e.key)) { inWing = true; break; }
+      }
+      if (!inWing) continue;
+      for (final doc in e.value) {
+        final d = doc.data() as Map<String, dynamic>;
+        if (d['amountReceived'] != true) continue;
+        final amt = (d['amount'] as num? ?? 0).toDouble();
+        final mode = (d['paymentMode'] as String? ?? '').toLowerCase();
+        wingTotal += amt;
+        if (mode == 'cash') wingCash += amt; else wingOnline += amt;
+      }
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -1934,18 +2262,23 @@ class _ContributionsTabState extends State<_ContributionsTab> {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.green.shade50,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text('₹${_fmt(wingTotal)}',
-                  style: TextStyle(
-                      color: Colors.green.shade700,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13)),
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text('₹${_fmt(wingTotal)}',
+                    style: TextStyle(
+                        color: Colors.green.shade700,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13)),
+                if (wingCash > 0 && wingOnline > 0)
+                  Text('C:${_fmt(wingCash)} · O:${_fmt(wingOnline)}',
+                      style: TextStyle(fontSize: 9, color: Colors.grey.shade500))
+                else if (wingCash > 0)
+                  Text('Cash', style: TextStyle(fontSize: 9, color: Colors.amber.shade800))
+                else if (wingOnline > 0)
+                  Text('Online', style: TextStyle(fontSize: 9, color: Colors.blue.shade600)),
+              ],
             ),
             const Icon(Icons.expand_more),
           ],
@@ -1961,7 +2294,7 @@ class _ContributionsTabState extends State<_ContributionsTab> {
               ]
             : blocks
                 .map((block) => _buildBlockTile(
-                    context, wing, block, wingData, flatDocs, flatsPerFloor))
+                    context, wing, block, wingData, flatDocs, flatsPerFloor, flatGridRows))
                 .toList(),
       ),
     );
@@ -1974,11 +2307,13 @@ class _ContributionsTabState extends State<_ContributionsTab> {
     Map<String, dynamic> wingData,
     Map<String, List<QueryDocumentSnapshot>> flatDocs,
     Map<String, int> flatsPerFloor,
+    Map<String, int> flatGridRows,
   ) {
     final flats = List<String>.from(
         wingData[block] is List ? wingData[block] : [])
       ..sort();
     final fpf = flatsPerFloor['${wing}_$block'];
+    final gridRows = (flatGridRows['${wing}_$block'] ?? 1).clamp(1, 3);
 
     final paidCount = flats.where((f) {
       final docs = flatDocs[f] ?? [];
@@ -1991,14 +2326,15 @@ class _ContributionsTabState extends State<_ContributionsTab> {
           docs.every((d) =>
               (d.data() as Map<String, dynamic>)['amountReceived'] == false);
     }).length;
-    final blockTotal = flats
-        .expand((f) => flatDocs[f] ?? [])
-        .fold<double>(0, (s, doc) {
+    double blockTotal = 0, blockCash = 0, blockOnline = 0;
+    for (final doc in flats.expand((f) => flatDocs[f] ?? [])) {
       final d = doc.data() as Map<String, dynamic>;
-      return d['amountReceived'] != false
-          ? s + (d['amount'] ?? 0).toDouble()
-          : s;
-    });
+      if (d['amountReceived'] != true) continue;
+      final amt = (d['amount'] as num? ?? 0).toDouble();
+      final mode = (d['paymentMode'] as String? ?? '').toLowerCase();
+      blockTotal += amt;
+      if (mode == 'cash') blockCash += amt; else blockOnline += amt;
+    }
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
@@ -2055,11 +2391,24 @@ class _ContributionsTabState extends State<_ContributionsTab> {
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('₹${_fmt(blockTotal)}',
-                  style: TextStyle(
-                      color: Colors.purple.shade700,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13)),
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text('₹${_fmt(blockTotal)}',
+                      style: TextStyle(
+                          color: Colors.purple.shade700,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13)),
+                  if (blockCash > 0 && blockOnline > 0)
+                    Text('C:${_fmt(blockCash)} · O:${_fmt(blockOnline)}',
+                        style: TextStyle(fontSize: 9, color: Colors.grey.shade500))
+                  else if (blockCash > 0)
+                    Text('Cash', style: TextStyle(fontSize: 9, color: Colors.amber.shade800))
+                  else if (blockOnline > 0)
+                    Text('Online', style: TextStyle(fontSize: 9, color: Colors.blue.shade600)),
+                ],
+              ),
               const Icon(Icons.expand_more),
             ],
           ),
@@ -2071,7 +2420,7 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                       style: TextStyle(
                           color: Colors.grey.shade500, fontSize: 12))
                   : _buildFlatChips(
-                      context, wing, block, flats, flatDocs, fpf),
+                      context, wing, block, flats, flatDocs, fpf, gridRows),
             ),
           ],
         ),
@@ -2086,36 +2435,59 @@ class _ContributionsTabState extends State<_ContributionsTab> {
     List<String> flats,
     Map<String, List<QueryDocumentSnapshot>> flatDocs,
     int? fpf,
+    int gridRows,
   ) {
     Widget chip(String flat) {
       final docs = flatDocs[flat] ?? [];
-      Color chipColor;
-      Color textColor;
-      Color borderColor;
+      final paidDocs = docs.where((d) =>
+          (d.data() as Map<String, dynamic>)['amountReceived'] == true).toList();
+      final isPending = docs.isNotEmpty && paidDocs.isEmpty;
+
+      // Determine payment mode of paid contributions
+      bool hasCash = false, hasOnline = false;
+      final List<double> paidAmounts = [];
+      for (final d in paidDocs) {
+        final data = d.data() as Map<String, dynamic>;
+        final mode = (data['paymentMode'] as String? ?? '').toLowerCase();
+        final amt = (data['amount'] as num? ?? 0).toDouble();
+        paidAmounts.add(amt);
+        if (mode == 'cash') hasCash = true; else hasOnline = true;
+      }
+      final hasBoth = hasCash && hasOnline;
+      final amount = paidAmounts.fold(0.0, (s, v) => s + v);
+
+      Color chipColor, textColor, borderColor;
       if (docs.isEmpty) {
+        // Not paid
         chipColor = Colors.grey.shade100;
         textColor = Colors.grey.shade500;
         borderColor = Colors.grey.shade300;
-      } else if (docs.any((d) =>
-          (d.data() as Map<String, dynamic>)['amountReceived'] != false)) {
-        chipColor = Colors.green.shade50;
-        textColor = Colors.green.shade700;
-        borderColor = Colors.green.shade300;
-      } else {
+      } else if (isPending) {
+        // Pending confirmation — orange
         chipColor = Colors.orange.shade50;
         textColor = Colors.orange.shade700;
         borderColor = Colors.orange.shade300;
+      } else if (hasBoth) {
+        // Cash + Online — purple
+        chipColor = Colors.purple.shade50;
+        textColor = Colors.purple.shade800;
+        borderColor = Colors.purple.shade300;
+      } else if (hasCash) {
+        // Cash paid — green
+        chipColor = Colors.green.shade50;
+        textColor = Colors.green.shade700;
+        borderColor = Colors.green.shade400;
+      } else {
+        // Online paid — blue
+        chipColor = Colors.blue.shade50;
+        textColor = Colors.blue.shade700;
+        borderColor = Colors.blue.shade300;
       }
-      final amount = docs.fold<double>(0, (s, d) {
-        final data = d.data() as Map<String, dynamic>;
-        return data['amountReceived'] != false
-            ? s + (data['amount'] as num? ?? 0).toDouble()
-            : s;
-      });
+
       return GestureDetector(
         onTap: () => _showFlatContribution(context, wing, block, flat, docs),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
           decoration: BoxDecoration(
             color: chipColor,
             borderRadius: BorderRadius.circular(8),
@@ -2124,16 +2496,23 @@ class _ContributionsTabState extends State<_ContributionsTab> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(flat,
-                  style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: textColor)),
-              Text(
-                docs.isEmpty ? '—' : '₹${amount.toStringAsFixed(0)}',
-                style: TextStyle(
-                    fontSize: 10,
-                    color: textColor.withValues(alpha: 0.8)),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(flat,
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: textColor)),
+              ),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  docs.isEmpty
+                      ? '—'
+                      : paidAmounts.isEmpty
+                          ? '⏳'
+                          : paidAmounts.length == 1
+                              ? '₹${paidAmounts[0].toStringAsFixed(0)}'
+                              : paidAmounts.map((a) => '₹${a.toStringAsFixed(0)}').join('+'),
+                  style: TextStyle(fontSize: 10, color: textColor.withValues(alpha: 0.8)),
+                ),
               ),
             ],
           ),
@@ -2204,11 +2583,29 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                     ],
                   ),
                 ),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: floorFlats.map(chip).toList(),
-                ),
+                Builder(builder: (_) {
+                  final perRow = (floorFlats.length / gridRows).ceil();
+                  return Column(
+                    children: List.generate(gridRows, (r) {
+                      final rowFlats = floorFlats.skip(r * perRow).take(perRow).toList();
+                      if (rowFlats.isEmpty) return const SizedBox.shrink();
+                      return Padding(
+                        padding: EdgeInsets.only(bottom: r < gridRows - 1 ? 3 : 0),
+                        child: Row(
+                          children: List.generate(perRow, (i) {
+                            if (i >= rowFlats.length) return Expanded(child: const SizedBox());
+                            return Expanded(
+                              child: Padding(
+                                padding: EdgeInsets.only(right: i < perRow - 1 ? 3 : 0),
+                                child: chip(rowFlats[i]),
+                              ),
+                            );
+                          }),
+                        ),
+                      );
+                    }),
+                  );
+                }),
               ],
             );
           }),
@@ -2223,25 +2620,34 @@ class _ContributionsTabState extends State<_ContributionsTab> {
     return v.toStringAsFixed(0);
   }
 
-  Widget _typeBadge(String type) => Container(
-        margin: const EdgeInsets.only(left: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-        decoration: BoxDecoration(
-          color: type == kTypeCarryForward
-              ? Colors.blue.shade50
-              : Colors.orange.shade50,
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Text(
-          type == kTypeCarryForward ? 'CF' : 'Laddu',
+  Widget _typeBadge(String type) {
+    String label;
+    Color bg, fg;
+    if (type == kTypeCarryForward) {
+      label = 'Carry Fwd';
+      bg = Colors.blue.shade50;
+      fg = Colors.blue.shade700;
+    } else if (type == kTypeGaneshLaddu) {
+      label = 'Special';
+      bg = Colors.purple.shade50;
+      fg = Colors.purple.shade700;
+    } else {
+      label = 'Special';
+      bg = Colors.purple.shade50;
+      fg = Colors.purple.shade700;
+    }
+    return Container(
+      margin: const EdgeInsets.only(left: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(label,
           style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.bold,
-              color: type == kTypeCarryForward
-                  ? Colors.blue.shade700
-                  : Colors.orange.shade700),
-        ),
-      );
+              fontSize: 9, fontWeight: FontWeight.bold, color: fg)),
+    );
+  }
 
   Widget _pendingBadge() => Container(
         margin: const EdgeInsets.only(left: 4),
@@ -2501,7 +2907,7 @@ class _ContributionsTabState extends State<_ContributionsTab> {
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (ctx) => Padding(
+      builder: (ctx) => SingleChildScrollView(
         padding: EdgeInsets.only(
           left: 20, right: 20, top: 20,
           bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
@@ -2522,7 +2928,6 @@ class _ContributionsTabState extends State<_ContributionsTab> {
             const SizedBox(height: 14),
             TextField(
               controller: reasonCtrl,
-              autofocus: true,
               decoration: InputDecoration(
                 labelText: 'Reason (optional)',
                 hintText: 'e.g. Payment not found in bank records',
@@ -2549,24 +2954,80 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                   style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.red.shade600,
                       foregroundColor: Colors.white),
-                  // Capture text here, before the sheet closes
                   onPressed: () => Navigator.pop(ctx, reasonCtrl.text.trim()),
                   child: const Text('Reject'),
                 ),
               ),
             ]),
+            const SizedBox(height: 8),
           ],
         ),
       ),
     );
-    reasonCtrl.dispose();
+    // Defer dispose until the sheet's close animation finishes (~300ms).
+    // Disposing synchronously crashes because the TextField still holds the
+    // controller during the closing animation frames.
+    Future<void>.delayed(const Duration(milliseconds: 500))
+        .then((_) => reasonCtrl.dispose());
 
     if (reason == null || !context.mounted) return;
 
-    // Capture navigator/messenger before async gap — context may go stale
-    // after Firestore update triggers StreamBuilder rebuild
-    final navigator = Navigator.of(context);
+    // Build WhatsApp details before any async work
+    final rejReason = reason.isEmpty ? 'payment could not be verified in bank records' : reason;
+    final waMsg = Uri.encodeComponent(
+      'Hi $name, your payment report of ₹${amt.toStringAsFixed(0)} could not be confirmed. Reason: $rejReason. Please contact the admin or re-submit with correct details.',
+    );
+    final waUrl = Uri.parse('https://wa.me/91$phone?text=$waMsg');
     final messenger = ScaffoldMessenger.of(context);
+
+    // Show WhatsApp dialog BEFORE Firestore update — avoids StreamBuilder
+    // rebuilding mid-dialog which causes duplicate GlobalKey crashes.
+    bool sendWa = false;
+    if (phone.isNotEmpty && context.mounted) {
+      // ignore: use_build_context_synchronously
+      sendWa = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: Row(children: [
+                Icon(Icons.cancel_outlined, color: Colors.red.shade600),
+                const SizedBox(width: 8),
+                const Text('Reject Payment'),
+              ]),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Reject Flat $flat\'s report of ₹${amt.toStringAsFixed(0)}?'),
+                  const SizedBox(height: 4),
+                  Text('They will see the rejection reason in their app.',
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                  const SizedBox(height: 10),
+                  Text('Notify $name via WhatsApp after rejecting?',
+                      style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
+                ],
+              ),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('Reject only')),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF25D366),
+                      foregroundColor: Colors.white),
+                  icon: const Icon(Icons.chat, size: 16),
+                  label: const Text('Reject + WhatsApp'),
+                  onPressed: () => Navigator.pop(ctx, true),
+                ),
+              ],
+            ),
+          ) ??
+          false;
+    }
+
+    // Defer Firestore update by one frame so any lingering dialog-cleanup
+    // frames finish before the StreamBuilder inside the flat sheet rebuilds.
+    await Future<void>.delayed(Duration.zero);
+    if (!context.mounted) return;
 
     await doc.reference.update({
       'status': 'rejected',
@@ -2574,68 +3035,16 @@ class _ContributionsTabState extends State<_ContributionsTab> {
       'rejectedAt': DateTime.now().toIso8601String(),
     });
 
-    // WhatsApp option for admin
-    final rejReason = reason.isEmpty ? 'payment could not be verified in bank records' : reason;
-    final waMsg = Uri.encodeComponent(
-      'Hi $name, your payment report of ₹${amt.toStringAsFixed(0)} could not be confirmed. Reason: $rejReason. Please contact the admin or re-submit with correct details.',
-    );
-    final waUrl = Uri.parse('https://wa.me/91$phone?text=$waMsg');
+    messenger.showSnackBar(
+        SnackBar(content: Text('Payment report for Flat $flat rejected')));
 
-    final ctx2 = navigator.context;
-    // ignore: use_build_context_synchronously
-    if (!ctx2.mounted) {
-      messenger.showSnackBar(
-          SnackBar(content: Text('Payment report for Flat $flat rejected')));
-      return;
+    if (sendWa) {
+      final canLaunch = await canLaunchUrl(waUrl);
+      await launchUrl(waUrl,
+          mode: canLaunch
+              ? LaunchMode.externalApplication
+              : LaunchMode.platformDefault);
     }
-
-    // ignore: use_build_context_synchronously
-    await showDialog(
-      context: ctx2,
-      builder: (ctx) => AlertDialog(
-        title: Row(children: [
-          Icon(Icons.cancel_outlined, color: Colors.red.shade600),
-          const SizedBox(width: 8),
-          const Text('Report Rejected'),
-        ]),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Flat $flat\'s report has been rejected.'),
-            const SizedBox(height: 4),
-            Text('They will see the rejection reason in their app.',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-            if (phone.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text('Notify $name via WhatsApp?',
-                  style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
-            ],
-          ],
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('OK')),
-          if (phone.isNotEmpty)
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF25D366),
-                  foregroundColor: Colors.white),
-              icon: const Icon(Icons.chat, size: 16),
-              label: const Text('WhatsApp'),
-              onPressed: () async {
-                Navigator.pop(ctx);
-                final canLaunch = await canLaunchUrl(waUrl);
-                await launchUrl(waUrl,
-                    mode: canLaunch
-                        ? LaunchMode.externalApplication
-                        : LaunchMode.platformDefault);
-              },
-            ),
-        ],
-      ),
-    );
   }
 }
 
@@ -3129,6 +3538,12 @@ class _FollowUpTab extends StatelessWidget {
           (settings['flatsPerFloor'] as Map<String, dynamic>? ?? {})
               .map((k, v) => MapEntry(k, (v as num).toInt())),
         );
+        final flatGridRows = Map<String, int>.from(
+          (settings['flatGridRows'] is Map
+                  ? settings['flatGridRows'] as Map<String, dynamic>
+                  : <String, dynamic>{})
+              .map((k, v) => MapEntry(k, (v as num).toInt())),
+        );
 
         if (wings.isEmpty) {
           return Center(
@@ -3240,7 +3655,7 @@ class _FollowUpTab extends StatelessWidget {
                 // Wing tiles — only wings with unpaid flats
                 for (final wing in wings) ...[
                   _buildWingTile(
-                      context, wing, wingBlocks, flatStatus, flatsPerFloor),
+                      context, wing, wingBlocks, flatStatus, flatsPerFloor, flatGridRows),
                 ],
               ],
             );
@@ -3256,6 +3671,7 @@ class _FollowUpTab extends StatelessWidget {
     Map<String, dynamic> wingBlocks,
     Map<String, String> flatStatus,
     Map<String, int> flatsPerFloor,
+    Map<String, int> flatGridRows,
   ) {
     final raw = wingBlocks[wing];
     final wingData =
@@ -3306,7 +3722,7 @@ class _FollowUpTab extends StatelessWidget {
         ),
         children: blocks
             .map((block) => _buildBlockTile(
-                context, wing, block, wingData, flatStatus, flatsPerFloor))
+                context, wing, block, wingData, flatStatus, flatsPerFloor, flatGridRows))
             .toList(),
       ),
     );
@@ -3319,11 +3735,13 @@ class _FollowUpTab extends StatelessWidget {
     Map<String, dynamic> wingData,
     Map<String, String> flatStatus,
     Map<String, int> flatsPerFloor,
+    Map<String, int> flatGridRows,
   ) {
     final flats = List<String>.from(
         wingData[block] is List ? wingData[block] : [])
       ..sort();
     final fpf = flatsPerFloor['${wing}_$block'];
+    final gridRows = (flatGridRows['${wing}_$block'] ?? 1).clamp(1, 3);
 
     final unpaidFlats = flats
         .where((f) => flatStatus[f] == null || flatStatus[f] == 'pending')
@@ -3411,7 +3829,7 @@ class _FollowUpTab extends StatelessWidget {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-              child: _buildFlatChips(context, flats, flatStatus, fpf),
+              child: _buildFlatChips(context, flats, flatStatus, fpf, gridRows),
             ),
           ],
         ),
@@ -3424,6 +3842,7 @@ class _FollowUpTab extends StatelessWidget {
     List<String> flats,
     Map<String, String> flatStatus,
     int? fpf,
+    int gridRows,
   ) {
     Widget chip(String flat) {
       final s = flatStatus[flat];
@@ -3444,17 +3863,20 @@ class _FollowUpTab extends StatelessWidget {
         borderColor = Colors.grey.shade300;
       }
       return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
         decoration: BoxDecoration(
           color: chipColor,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: borderColor),
         ),
-        child: Text(flat,
-            style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: textColor)),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(flat,
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: textColor)),
+        ),
       );
     }
 
@@ -3487,12 +3909,30 @@ class _FollowUpTab extends StatelessWidget {
                       color: Colors.blue.shade700)),
             ),
           ),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children:
-                flats.skip(floor * fpf).take(fpf).map(chip).toList(),
-          ),
+          Builder(builder: (_) {
+            final floorFlats = flats.skip(floor * fpf).take(fpf).toList();
+            final perRow = (floorFlats.length / gridRows).ceil();
+            return Column(
+              children: List.generate(gridRows, (r) {
+                final rowFlats = floorFlats.skip(r * perRow).take(perRow).toList();
+                if (rowFlats.isEmpty) return const SizedBox.shrink();
+                return Padding(
+                  padding: EdgeInsets.only(bottom: r < gridRows - 1 ? 3 : 0),
+                  child: Row(
+                    children: List.generate(perRow, (i) {
+                      if (i >= rowFlats.length) return Expanded(child: const SizedBox());
+                      return Expanded(
+                        child: Padding(
+                          padding: EdgeInsets.only(right: i < perRow - 1 ? 3 : 0),
+                          child: chip(rowFlats[i]),
+                        ),
+                      );
+                    }),
+                  ),
+                );
+              }),
+            );
+          }),
         ],
       ],
     );

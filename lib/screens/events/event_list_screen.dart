@@ -533,52 +533,6 @@ class _EventPageViewState extends State<_EventPageView> {
     final accentColor = eventType?.gradient.first ?? Colors.deepPurple;
 
     return Scaffold(
-      // Thin indicator bar at top showing position
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(36),
-        child: AppBar(
-          backgroundColor: accentColor,
-          foregroundColor: Colors.white,
-          elevation: 0,
-          leadingWidth: 40,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back, size: 20),
-            onPressed: () => Navigator.pop(context),
-          ),
-          title: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // Dot indicators
-              ...List.generate(total, (i) => AnimatedContainer(
-                duration: const Duration(milliseconds: 250),
-                margin: const EdgeInsets.symmetric(horizontal: 3),
-                width: i == _current ? 18 : 6,
-                height: 6,
-                decoration: BoxDecoration(
-                  color: i == _current
-                      ? Colors.white
-                      : Colors.white.withValues(alpha: 0.4),
-                  borderRadius: BorderRadius.circular(3),
-                ),
-              )),
-            ],
-          ),
-          actions: [
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: Center(
-                child: Text(
-                  '${_current + 1} / $total',
-                  style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.white70,
-                      fontWeight: FontWeight.w500),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
       body: PageView.builder(
         controller: _ctrl,
         itemCount: total,

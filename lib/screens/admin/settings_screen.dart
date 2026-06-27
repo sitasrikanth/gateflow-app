@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -12,7 +12,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   DocumentReference get _ref =>
       FirebaseFirestore.instance.collection('community_settings').doc('address');
 
-  // ── Wings ──────────────────────────────────────────────────────────────────
+  // â"€â"€ Wings â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
   Future<void> _addWing(List<String> current) async {
     final ctrl = TextEditingController();
@@ -25,7 +25,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           autofocus: true,
           textCapitalization: TextCapitalization.words,
           decoration: const InputDecoration(
-              labelText: 'Wing name', hintText: 'e.g. Diamond, Ruby…'),
+              labelText: 'Wing name', hintText: 'e.g. Diamond, Rubyâ€¦'),
           onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
         ),
         actions: [
@@ -77,7 +77,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         SetOptions(merge: true));
   }
 
-  // ── Blocks ─────────────────────────────────────────────────────────────────
+  // â"€â"€ Blocks â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
   // Returns block names for a wing (handles both old List and new Map format)
   List<String> _blocksFor(Map<String, dynamic> wingBlocks, String wing) {
@@ -204,7 +204,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  // ── Flats ──────────────────────────────────────────────────────────────────
+  Future<void> _setFlatGridRows(String wing, String block, int n) async {
+    final key = '${wing}_$block';
+    try {
+      final doc = await _ref.get();
+      final data = doc.data() as Map<String, dynamic>? ?? {};
+      final existing = data['flatGridRows'];
+      final merged = existing is Map
+          ? (Map<String, dynamic>.from(existing)..[key] = n)
+          : {key: n};
+      await _ref.update({'flatGridRows': merged});
+    } catch (e) {
+      _snack('Error: $e', Colors.red);
+    }
+  }
+
+  // â"€â"€ Flats â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
   Future<void> _addFlat(
       Map<String, dynamic> wingBlocks, String wing, String block) async {
@@ -226,7 +241,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             insetPadding: const EdgeInsets.symmetric(
                 horizontal: 16, vertical: 16),
             contentPadding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-            title: Text('Add Flats — $wing Wing, Block $block',
+            title: Text('Add Flats â€" $wing Wing, Block $block',
                 style: const TextStyle(fontSize: 16)),
             content: SingleChildScrollView(
               child: Column(
@@ -348,7 +363,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'e.g. prefix "$smartPrefix", from 101 to 112  →  ${smartPrefix}101 … ${smartPrefix}112',
+                    'e.g. prefix "\$smartPrefix", from 101 to 112 -> \${smartPrefix}101 ... \${smartPrefix}112',
                     style: TextStyle(
                         color: Colors.grey.shade500, fontSize: 11),
                   ),
@@ -436,8 +451,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final ok = await _confirmDialog(
       'Delete ${toDelete.length} flat${toDelete.length == 1 ? '' : 's'}?',
       toDelete.length == 1
-          ? 'Remove flat "${toDelete.first}" from $wing – Block $block?'
-          : 'Remove ${toDelete.length} flats from $wing – Block $block? Existing records are not affected.',
+          ? 'Remove flat "${toDelete.first}" from $wing â€" Block $block?'
+          : 'Remove ${toDelete.length} flats from $wing â€" Block $block? Existing records are not affected.',
     );
     if (ok != true) return;
     final updated = Map<String, dynamic>.from(wingBlocks);
@@ -465,7 +480,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await _ref.set({'wingBlocks': updated}, SetOptions(merge: true));
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
+  // â"€â"€ Helpers â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
   void _snack(String msg, Color color) {
     if (!mounted) return;
@@ -520,7 +535,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return result;
   }
 
-  // ── Build ──────────────────────────────────────────────────────────────────
+  // â"€â"€ Build â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
   @override
   Widget build(BuildContext context) {
@@ -542,23 +557,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
             (data['flatsPerFloor'] as Map<String, dynamic>? ?? {})
                 .map((k, v) => MapEntry(k, (v as num).toInt())),
           );
-          final rawCats = data['expenseCategories'];
-          final List<Map<String, dynamic>> categories = rawCats != null
-              ? List<Map<String, dynamic>>.from(
-                  (rawCats as List).map((e) => Map<String, dynamic>.from(e)))
-              : [];
-
+          final flatGridRows = Map<String, int>.from(
+            (data['flatGridRows'] is Map
+                    ? data['flatGridRows'] as Map<String, dynamic>
+                    : <String, dynamic>{})
+                .map((k, v) => MapEntry(k, (v as num).toInt())),
+          );
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              // ── Wings & Blocks ────────────────────────────────────
+              _DefaultNoteCard(ref: _ref, data: data),
+              const SizedBox(height: 16),
+              _PaymentModesCard(ref: _ref, data: data),
+              const SizedBox(height: 16),
               _SectionCard(
                 icon: Icons.apartment,
                 iconColor: Colors.blue,
                 title: 'Wings & Blocks',
                 subtitle: wings.isEmpty
-                    ? 'No wings yet — tap + to add your first wing'
-                    : '${wings.length} wing${wings.length == 1 ? '' : 's'} · Tap ⊕ on a wing to add blocks · Tap ⊕ on a block to add flats',
+                    ? 'No wings yet â€" tap + to add your first wing'
+                    : '${wings.length} wing${wings.length == 1 ? '' : 's'} Â· Tap âŠ• on a wing to add blocks Â· Tap âŠ• on a block to add flats',
                 onAdd: () => _addWing(wings),
                 addTooltip: 'Add Wing',
                 children: [
@@ -613,18 +631,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             _renameFlat(wingBlocks, wing, b, f),
                         flatsPerFloor: flatsPerFloor,
                         onSetFlatsPerFloor: (b, n) => _setFlatsPerFloor(wing, b, n),
+                        flatGridRows: flatGridRows,
+                        onSetFlatGridRows: (b, n) => _setFlatGridRows(wing, b, n),
                       ),
                 ],
               ),
 
-              const SizedBox(height: 16),
-
-              // ── Expense Categories ────────────────────────────────
-              _CategoriesCard(
-                categories: categories,
-                settingsRef: _ref,
-                onSnack: _snack,
-              ),
             ],
           );
         },
@@ -633,11 +645,248 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 }
 
-// ── Wing tile (Wing → Block → Flats) ─────────────────────────────────────────
+// ── Default Contribution Note Card ────────────────────────────────────────────
+
+class _DefaultNoteCard extends StatefulWidget {
+  final DocumentReference ref;
+  final Map<String, dynamic> data;
+  const _DefaultNoteCard({required this.ref, required this.data});
+
+  @override
+  State<_DefaultNoteCard> createState() => _DefaultNoteCardState();
+}
+
+class _DefaultNoteCardState extends State<_DefaultNoteCard> {
+  late TextEditingController _ctrl;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(
+        text: widget.data['defaultContributionNote'] as String? ?? '');
+  }
+
+  @override
+  void didUpdateWidget(_DefaultNoteCard old) {
+    super.didUpdateWidget(old);
+    final newVal = widget.data['defaultContributionNote'] as String? ?? '';
+    if (_ctrl.text != newVal && !_saving) {
+      _ctrl.text = newVal;
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      await widget.ref.set(
+          {'defaultContributionNote': _ctrl.text.trim()},
+          SetOptions(merge: true));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Default note saved'),
+          backgroundColor: Colors.green,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      elevation: 0,
+      color: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              const Icon(Icons.note_outlined, color: Colors.teal, size: 22),
+              const SizedBox(width: 8),
+              const Text('Default Contribution Note',
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 15)),
+            ]),
+            const SizedBox(height: 4),
+            Text(
+              'Pre-filled in the Note field when admin adds a new contribution.',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _ctrl,
+              decoration: InputDecoration(
+                hintText: 'e.g. Will pay on Chaturthi day',
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide:
+                      const BorderSide(color: Colors.teal, width: 2),
+                ),
+                suffixIcon: _saving
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2)))
+                    : IconButton(
+                        icon: const Icon(Icons.save_outlined,
+                            color: Colors.teal),
+                        onPressed: _save,
+                        tooltip: 'Save',
+                      ),
+              ),
+              onSubmitted: (_) => _save(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Payment Modes Card ────────────────────────────────────────────────────────
+
+const _kDefaultPaymentModes = ['Cash', 'UPI', 'PhonePe', 'Google Pay', 'Bank Transfer', 'NEFT / RTGS', 'Cheque', 'Other'];
+
+class _PaymentModesCard extends StatelessWidget {
+  final DocumentReference ref;
+  final Map<String, dynamic> data;
+  const _PaymentModesCard({required this.ref, required this.data});
+
+  List<String> get _modes {
+    final raw = data['paymentModes'];
+    if (raw is List && raw.isNotEmpty) return List<String>.from(raw);
+    return List<String>.from(_kDefaultPaymentModes);
+  }
+
+  Future<void> _save(List<String> modes) =>
+      ref.set({'paymentModes': modes}, SetOptions(merge: true));
+
+  Future<void> _addMode(BuildContext context) async {
+    final ctrl = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add Payment Mode'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(hintText: 'e.g. Paytm'),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
+            child: const Text('Add', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) => ctrl.dispose());
+    if (result == null || result.isEmpty) return;
+    final updated = [..._modes, result];
+    await _save(updated);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final modes = _modes;
+    return Card(
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      elevation: 0,
+      color: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              const Icon(Icons.payments_outlined, color: Colors.teal, size: 22),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text('Payment Modes',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+              ),
+              TextButton.icon(
+                onPressed: () => _addMode(context),
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('Add'),
+                style: TextButton.styleFrom(foregroundColor: Colors.teal),
+              ),
+            ]),
+            const SizedBox(height: 4),
+            Text('Shown to both admin and residents when recording payments.',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+            const SizedBox(height: 12),
+            ReorderableListView(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              onReorder: (oldIdx, newIdx) {
+                final updated = List<String>.from(modes);
+                if (newIdx > oldIdx) newIdx--;
+                updated.insert(newIdx, updated.removeAt(oldIdx));
+                _save(updated);
+              },
+              children: modes.asMap().entries.map((e) {
+                final i = e.key;
+                final mode = e.value;
+                return ListTile(
+                  key: ValueKey(mode),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                  dense: true,
+                  leading: const Icon(Icons.drag_handle, color: Colors.grey, size: 20),
+                  title: Text(mode, style: const TextStyle(fontSize: 14)),
+                  trailing: IconButton(
+                    icon: Icon(Icons.remove_circle_outline,
+                        color: Colors.red.shade300, size: 20),
+                    onPressed: modes.length <= 1
+                        ? null
+                        : () {
+                            final updated = List<String>.from(modes)..removeAt(i);
+                            _save(updated);
+                          },
+                    tooltip: 'Remove',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Wing tile (Wing → Block → Flats) ──────────────────────────────────────────
 
 class _WingTile extends StatelessWidget {
   final String wing;
-  final Map<String, dynamic> wingData; // block → List<flat>
+  final Map<String, dynamic> wingData; // block â†' List<flat>
   final VoidCallback onRename;
   final VoidCallback onDelete;
   final VoidCallback onAddBlock;
@@ -648,6 +897,8 @@ class _WingTile extends StatelessWidget {
   final void Function(String block, String flat) onRenameFlat;
   final Map<String, int> flatsPerFloor;
   final void Function(String block, int n) onSetFlatsPerFloor;
+  final Map<String, int> flatGridRows;
+  final void Function(String block, int n) onSetFlatGridRows;
 
   const _WingTile({
     required this.wing,
@@ -662,6 +913,8 @@ class _WingTile extends StatelessWidget {
     required this.onRenameFlat,
     required this.flatsPerFloor,
     required this.onSetFlatsPerFloor,
+    required this.flatGridRows,
+    required this.onSetFlatGridRows,
   });
 
   @override
@@ -694,7 +947,7 @@ class _WingTile extends StatelessWidget {
                     ? const Text('No blocks yet',
                         style: TextStyle(fontSize: 12, color: Colors.orange))
                     : Text(
-                        '${blocks.length} block${blocks.length == 1 ? '' : 's'} · $totalFlats flat${totalFlats == 1 ? '' : 's'}',
+                        '${blocks.length} block${blocks.length == 1 ? '' : 's'} Â· $totalFlats flat${totalFlats == 1 ? '' : 's'}',
                         style: const TextStyle(fontSize: 12, color: Colors.grey)),
               ],
             ),
@@ -834,6 +1087,7 @@ class _WingTile extends StatelessWidget {
                           child: _FlatGrid(
                             flats: flats,
                             flatsPerFloor: flatsPerFloor['${wing}_$block'],
+                            flatGridRows: flatGridRows['${wing}_$block'] ?? 1,
                             onDeleteFlats: (selected) =>
                                 onDeleteFlats(block, selected),
                             onRenameFlat: (flat) =>
@@ -841,6 +1095,8 @@ class _WingTile extends StatelessWidget {
                             onAddFlat: () => onAddFlat(block),
                             onSetFlatsPerFloor: (n) =>
                                 onSetFlatsPerFloor(block, n),
+                            onSetFlatGridRows: (n) =>
+                                onSetFlatGridRows(block, n),
                           ),
                         ),
                       ],
@@ -856,25 +1112,29 @@ class _WingTile extends StatelessWidget {
   }
 }
 
-// ── Section card (collapsible wrapper) ────────────────────────────────────────
+// â"€â"€ Section card (collapsible wrapper) â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
-// ── Flat grid with multi-select ───────────────────────────────────────────────
+// â"€â"€ Flat grid with multi-select â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 class _FlatGrid extends StatefulWidget {
   final List<String> flats;
   final int? flatsPerFloor;
+  final int flatGridRows;
   final void Function(List<String> selected) onDeleteFlats;
   final void Function(String flat) onRenameFlat;
   final VoidCallback onAddFlat;
   final void Function(int n) onSetFlatsPerFloor;
+  final void Function(int n) onSetFlatGridRows;
 
   const _FlatGrid({
     required this.flats,
     required this.flatsPerFloor,
+    required this.flatGridRows,
     required this.onDeleteFlats,
     required this.onRenameFlat,
     required this.onAddFlat,
     required this.onSetFlatsPerFloor,
+    required this.onSetFlatGridRows,
   });
 
   @override
@@ -943,7 +1203,7 @@ class _FlatGridState extends State<_FlatGrid> {
       onTap: () => _toggle(flat),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
         decoration: BoxDecoration(
           color: isSel ? Colors.teal.shade600 : Colors.teal.shade50,
           borderRadius: BorderRadius.circular(6),
@@ -955,14 +1215,19 @@ class _FlatGridState extends State<_FlatGrid> {
           children: [
             if (isSel) ...[
               const Icon(Icons.check, size: 11, color: Colors.white),
-              const SizedBox(width: 4),
+              const SizedBox(width: 2),
             ],
-            Text(
-              flat,
-              style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: isSel ? Colors.white : Colors.teal.shade700),
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  flat,
+                  style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: isSel ? Colors.white : Colors.teal.shade700),
+                ),
+              ),
             ),
           ],
         ),
@@ -975,10 +1240,12 @@ class _FlatGridState extends State<_FlatGrid> {
     final selecting = _selected.isNotEmpty;
     final fpf = widget.flatsPerFloor;
 
+    final rows = widget.flatGridRows.clamp(1, 3);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Floor size header
+        // Floor size + rows-per-floor header
         Row(
           children: [
             Icon(Icons.layers_outlined, size: 13, color: Colors.grey.shade500),
@@ -987,8 +1254,9 @@ class _FlatGridState extends State<_FlatGrid> {
               fpf != null ? '$fpf flats / floor' : 'Floor size not set',
               style: TextStyle(
                   fontSize: 11,
-                  color:
-                      fpf != null ? Colors.grey.shade600 : Colors.orange.shade700),
+                  color: fpf != null
+                      ? Colors.grey.shade600
+                      : Colors.orange.shade700),
             ),
             const SizedBox(width: 6),
             GestureDetector(
@@ -1001,6 +1269,41 @@ class _FlatGridState extends State<_FlatGrid> {
                     decoration: TextDecoration.underline),
               ),
             ),
+            if (fpf != null && fpf > 0) ...[
+              const SizedBox(width: 12),
+              Text('Rows:',
+                  style:
+                      TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+              const SizedBox(width: 4),
+              ...([1, 2, 3].map((n) {
+                final isSel = rows == n;
+                return GestureDetector(
+                  onTap: () => widget.onSetFlatGridRows(n),
+                  child: Container(
+                    margin: const EdgeInsets.only(left: 3),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: isSel
+                          ? Colors.teal.shade600
+                          : Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                          color: isSel
+                              ? Colors.teal.shade600
+                              : Colors.grey.shade300),
+                    ),
+                    child: Text('$n',
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: isSel
+                                ? Colors.white
+                                : Colors.grey.shade700)),
+                  ),
+                );
+              })),
+            ],
           ],
         ),
         const SizedBox(height: 8),
@@ -1011,14 +1314,13 @@ class _FlatGridState extends State<_FlatGrid> {
                 style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
           )
         else if (fpf == null || fpf <= 0)
-          // No floor grouping — plain wrap
           Wrap(
             spacing: 6,
             runSpacing: 6,
             children: widget.flats.map(_buildFlatChip).toList(),
           )
         else ...[
-          // Grouped by floor
+          // Grouped by floor, split into `rows` sub-rows
           for (int floor = 0;
               floor < (widget.flats.length / fpf).ceil();
               floor++) ...[
@@ -1043,19 +1345,41 @@ class _FlatGridState extends State<_FlatGrid> {
                 ),
               ],
             ),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: widget.flats
-                  .skip(floor * fpf)
-                  .take(fpf)
-                  .map(_buildFlatChip)
-                  .toList(),
-            ),
+            Builder(builder: (_) {
+              final floorFlats =
+                  widget.flats.skip(floor * fpf).take(fpf).toList();
+              final perRow = (floorFlats.length / rows).ceil();
+              return Column(
+                children: List.generate(rows, (r) {
+                  final rowFlats = floorFlats
+                      .skip(r * perRow)
+                      .take(perRow)
+                      .toList();
+                  if (rowFlats.isEmpty) return const SizedBox.shrink();
+                  return Padding(
+                    padding: EdgeInsets.only(bottom: r < rows - 1 ? 3 : 0),
+                    child: Row(
+                      children: List.generate(perRow, (i) {
+                        if (i >= rowFlats.length) {
+                          return Expanded(child: const SizedBox());
+                        }
+                        return Expanded(
+                          child: Padding(
+                            padding: EdgeInsets.only(
+                                right: i < perRow - 1 ? 3 : 0),
+                            child: _buildFlatChip(rowFlats[i]),
+                          ),
+                        );
+                      }),
+                    ),
+                  );
+                }),
+              );
+            }),
           ],
         ],
         const SizedBox(height: 8),
-        // Action bar — only shown in selection mode
+        // Action bar â€" only shown in selection mode
         if (selecting)
           Row(
             children: [
@@ -1176,7 +1500,7 @@ class _SectionCard extends StatelessWidget {
   }
 }
 
-// ── Shared trailing widget (actions + animated chevron) ───────────────────────
+// â"€â"€ Shared trailing widget (actions + animated chevron) â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 class _TileTrailing extends StatelessWidget {
   final List<Widget> actions;
@@ -1190,529 +1514,6 @@ class _TileTrailing extends StatelessWidget {
         ...actions,
         const Icon(Icons.expand_more, color: Colors.grey),
       ],
-    );
-  }
-}
-
-class _IconBtn extends StatelessWidget {
-  final IconData icon;
-  final MaterialColor color;
-  final VoidCallback onTap;
-  final String tooltip;
-  const _IconBtn(this.icon, this.color, this.onTap, this.tooltip);
-
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      tooltip: tooltip,
-      icon: Icon(icon, color: color.shade600, size: 20),
-      onPressed: onTap,
-      padding: const EdgeInsets.all(4),
-      constraints: const BoxConstraints(),
-      splashRadius: 20,
-      visualDensity: VisualDensity.compact,
-    );
-  }
-}
-
-// ── Expense Categories Card ────────────────────────────────────────────────────
-
-const List<Map<String, dynamic>> kDefaultCategories = [
-  {
-    'name': 'Annadam',
-    'icon': '🍚',
-    'subCategories': ['Rice', 'Dal / Lentils', 'Vegetables', 'Cooking Oil', 'Spices', 'Plates & Cups', 'Fruits'],
-  },
-  {
-    'name': 'Decoration',
-    'icon': '🎨',
-    'subCategories': ['Flowers', 'Balloons', 'Banners & Flex', 'Rangoli'],
-  },
-  {
-    'name': 'Ganesh Idol',
-    'icon': '🪔',
-    'subCategories': ['Idol Cost', 'Transportation', 'Visarjan Charges'],
-  },
-  {
-    'name': 'Priest / Pandit',
-    'icon': '🙏',
-    'subCategories': ['Dakshina', 'Pooja Items', 'Agarbatti & Camphor'],
-  },
-  {
-    'name': 'Music & Sound',
-    'icon': '🎵',
-    'subCategories': ['Sound System', 'DJ / Band', 'Microphone Rental'],
-  },
-  {
-    'name': 'Lighting',
-    'icon': '💡',
-    'subCategories': ['LED Lights', 'Candles & Diyas', 'Generator Rental'],
-  },
-  {
-    'name': 'Transport',
-    'icon': '🚗',
-    'subCategories': ['Vehicle Rental', 'Fuel', 'Parking Charges'],
-  },
-  {
-    'name': 'Prasad',
-    'icon': '🍬',
-    'subCategories': ['Modak', 'Laddu', 'Fruits', 'Peda', 'Dry Fruits'],
-  },
-  {
-    'name': 'Misc',
-    'icon': '📦',
-    'subCategories': [],
-  },
-];
-
-const List<String> kEmojiPicker = [
-  '🎨', '🍱', '🙏', '🎵', '🚗', '🌸', '💡', '📦',
-  '🎊', '🪔', '🥁', '🎺', '🍬', '🌺', '🧨', '🎁',
-  '🏮', '🕯️', '🎤', '📸', '🧹', '🛒', '💰', '🔧',
-  '🍚', '🥬', '🍲', '🫙', '🍽️', '🧂',
-];
-
-class _CategoriesCard extends StatefulWidget {
-  final List<Map<String, dynamic>> categories;
-  final DocumentReference settingsRef;
-  final void Function(String, Color) onSnack;
-
-  const _CategoriesCard({
-    required this.categories,
-    required this.settingsRef,
-    required this.onSnack,
-  });
-
-  @override
-  State<_CategoriesCard> createState() => _CategoriesCardState();
-}
-
-class _CategoriesCardState extends State<_CategoriesCard> {
-  bool _seeded = false;
-
-  @override
-  void didUpdateWidget(_CategoriesCard old) {
-    super.didUpdateWidget(old);
-    if (!_seeded && widget.categories.isEmpty) {
-      _seeded = true;
-      WidgetsBinding.instance
-          .addPostFrameCallback((_) => _seedDefaults(silent: true));
-    }
-  }
-
-  // ── Firestore ─────────────────────────────────────────────────────────────
-
-  Future<void> _write(List<Map<String, dynamic>> updated) =>
-      widget.settingsRef.set({'expenseCategories': updated}, SetOptions(merge: true));
-
-  Future<void> _seedDefaults({bool silent = false}) async {
-    await _write(List<Map<String, dynamic>>.from(kDefaultCategories));
-    if (!silent) widget.onSnack('Default categories loaded', Colors.green);
-  }
-
-  // ── Main category ops ─────────────────────────────────────────────────────
-
-  Future<void> _addMain() async {
-    String emoji = '📦';
-    final ctrl = TextEditingController();
-
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, set) => AlertDialog(
-          title: const Text('Add Category'),
-          content: Row(
-            children: [
-              GestureDetector(
-                onTap: () async {
-                  final picked = await _pickEmoji(ctx, emoji);
-                  if (picked != null) set(() => emoji = picked);
-                },
-                child: Container(
-                  width: 48, height: 48,
-                  decoration: BoxDecoration(
-                    color: Colors.red.shade50,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.red.shade200),
-                  ),
-                  child: Center(child: Text(emoji, style: const TextStyle(fontSize: 24))),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: TextField(
-                  controller: ctrl,
-                  autofocus: true,
-                  textCapitalization: TextCapitalization.words,
-                  decoration: const InputDecoration(hintText: 'e.g. Annadam…'),
-                  onSubmitted: (_) => Navigator.pop(ctx, true),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Cancel')),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade600),
-              child: const Text('Add', style: TextStyle(color: Colors.white)),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    final name = ctrl.text.trim();
-    WidgetsBinding.instance.addPostFrameCallback((_) => ctrl.dispose());
-    if (ok != true || name.isEmpty) return;
-    if (widget.categories.any(
-        (c) => (c['name'] as String).toLowerCase() == name.toLowerCase())) {
-      widget.onSnack('"$name" already exists', Colors.orange);
-      return;
-    }
-    try {
-      await _write([
-        ...widget.categories,
-        {'name': name, 'icon': emoji, 'subCategories': <String>[]},
-      ]);
-    } catch (e) {
-      widget.onSnack('Failed: $e', Colors.red);
-    }
-  }
-
-  Future<void> _renameMain(Map<String, dynamic> cat) async {
-    final ctrl = TextEditingController(text: cat['name'] as String);
-    final newName = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Rename Category'),
-        content: TextField(
-          controller: ctrl, autofocus: true,
-          textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(labelText: 'Name'),
-          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              child: const Text('Save')),
-        ],
-      ),
-    );
-    WidgetsBinding.instance.addPostFrameCallback((_) => ctrl.dispose());
-    if (newName == null || newName.isEmpty || newName == cat['name']) return;
-    final updated = widget.categories
-        .map((c) => c['name'] == cat['name'] ? {...c, 'name': newName} : c)
-        .toList();
-    await _write(updated);
-  }
-
-  Future<void> _deleteMain(Map<String, dynamic> cat) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Delete "${cat['name']}"?'),
-        content: const Text('All sub-categories will be removed. Existing records are not affected.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Delete', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-    if (ok == true) {
-      await _write(widget.categories.where((c) => c['name'] != cat['name']).toList());
-    }
-  }
-
-  // ── Sub-category ops ──────────────────────────────────────────────────────
-
-  Future<void> _addSub(Map<String, dynamic> cat) async {
-    final ctrl = TextEditingController();
-    final sub = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Add to "${cat['name']}"'),
-        content: TextField(
-          controller: ctrl, autofocus: true,
-          textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(hintText: 'e.g. Rice, Vegetables…'),
-          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              child: const Text('Add')),
-        ],
-      ),
-    );
-    WidgetsBinding.instance.addPostFrameCallback((_) => ctrl.dispose());
-    if (sub == null || sub.isEmpty) return;
-    final rawSubs = cat['subCategories'];
-    final subs = List<String>.from(rawSubs is List ? rawSubs : []);
-    if (subs.any((s) => s.toLowerCase() == sub.toLowerCase())) {
-      widget.onSnack('"$sub" already exists', Colors.orange);
-      return;
-    }
-    subs.add(sub);
-    final updated = widget.categories
-        .map((c) => c['name'] == cat['name'] ? {...c, 'subCategories': subs} : c)
-        .toList();
-    await _write(updated);
-  }
-
-  Future<void> _deleteSub(Map<String, dynamic> cat, String sub) async {
-    final rawSubs2 = cat['subCategories'];
-    final subs = List<String>.from(rawSubs2 is List ? rawSubs2 : [])..remove(sub);
-    final updated = widget.categories
-        .map((c) => c['name'] == cat['name'] ? {...c, 'subCategories': subs} : c)
-        .toList();
-    await _write(updated);
-  }
-
-  Future<String?> _pickEmoji(BuildContext ctx, String current) =>
-      showDialog<String>(
-        context: ctx,
-        builder: (dlg) => AlertDialog(
-          title: const Text('Pick an Icon'),
-          content: SizedBox(
-            width: 300,
-            child: Wrap(
-              spacing: 8, runSpacing: 8,
-              children: kEmojiPicker.map((e) => GestureDetector(
-                    onTap: () => Navigator.pop(dlg, e),
-                    child: Container(
-                      width: 44, height: 44,
-                      decoration: BoxDecoration(
-                        color: current == e ? Colors.red.shade50 : Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: current == e ? Colors.red.shade300 : Colors.transparent,
-                        ),
-                      ),
-                      child: Center(child: Text(e, style: const TextStyle(fontSize: 22))),
-                    ),
-                  )).toList(),
-            ),
-          ),
-        ),
-      );
-
-  // ── Build ─────────────────────────────────────────────────────────────────
-
-  @override
-  Widget build(BuildContext context) {
-    final cats = widget.categories;
-
-    return Card(
-      elevation: 2,
-      shadowColor: Colors.black12,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ExpansionTile(
-        initiallyExpanded: false,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        collapsedShape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        leading: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-              color: Colors.red.shade50,
-              borderRadius: BorderRadius.circular(8)),
-          child: Icon(Icons.receipt_long, color: Colors.red.shade600, size: 20),
-        ),
-        title: const Text('Expense Categories',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        subtitle: Text(
-          cats.isEmpty ? 'Loading…' : '${cats.length} categories',
-          style: const TextStyle(fontSize: 12, color: Colors.grey),
-        ),
-        trailing: _TileTrailing(
-          actions: [
-            Tooltip(
-              message: 'Load Defaults',
-              child: InkWell(
-                onTap: () => _seedDefaults(),
-                borderRadius: BorderRadius.circular(20),
-                child: Padding(
-                  padding: const EdgeInsets.all(6),
-                  child: Icon(Icons.auto_fix_high,
-                      size: 20, color: Colors.red.shade400),
-                ),
-              ),
-            ),
-            Tooltip(
-              message: 'Add Category',
-              child: InkWell(
-                onTap: _addMain,
-                borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  width: 30, height: 30,
-                  margin: const EdgeInsets.only(left: 4, right: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.red.shade50,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.red.shade200),
-                  ),
-                  child: Icon(Icons.add, size: 18, color: Colors.red.shade700),
-                ),
-              ),
-            ),
-          ],
-        ),
-        children: [
-          const Divider(height: 1),
-          if (cats.isEmpty)
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text('Loading categories…',
-                  style: TextStyle(color: Colors.grey.shade400, fontSize: 13)),
-            )
-          else
-            for (final cat in cats)
-              _CategoryTile(
-                cat: cat,
-                onRename: () => _renameMain(cat),
-                onDelete: () => _deleteMain(cat),
-                onChangeIcon: () async {
-                  final picked = await _pickEmoji(
-                      context, cat['icon'] as String? ?? '📦');
-                  if (picked != null) {
-                    final updated = widget.categories
-                        .map((c) =>
-                            c['name'] == cat['name'] ? {...c, 'icon': picked} : c)
-                        .toList();
-                    await _write(updated);
-                  }
-                },
-                onAddSub: () => _addSub(cat),
-                onDeleteSub: (sub) => _deleteSub(cat, sub),
-              ),
-          const SizedBox(height: 4),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Category tile (expandable, shows sub-categories) ──────────────────────────
-
-class _CategoryTile extends StatelessWidget {
-  final Map<String, dynamic> cat;
-  final VoidCallback onRename;
-  final VoidCallback onDelete;
-  final VoidCallback onChangeIcon;
-  final VoidCallback onAddSub;
-  final void Function(String) onDeleteSub;
-
-  const _CategoryTile({
-    required this.cat,
-    required this.onRename,
-    required this.onDelete,
-    required this.onChangeIcon,
-    required this.onAddSub,
-    required this.onDeleteSub,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final rawSubs = cat['subCategories'];
-    final subs = List<String>.from(rawSubs is List ? rawSubs : []);
-    final name = cat['name'] as String? ?? '';
-    final icon = cat['icon'] as String? ?? '📦';
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: ExpansionTile(
-        key: PageStorageKey('cat_$name'),
-        leading: GestureDetector(
-          onTap: onChangeIcon,
-          child: Container(
-            width: 36, height: 36,
-            decoration: BoxDecoration(
-              color: Colors.red.shade50,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.red.shade100),
-            ),
-            child: Center(child: Text(icon, style: const TextStyle(fontSize: 20))),
-          ),
-        ),
-        title: Text(name,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-        subtitle: Text(
-          subs.isEmpty ? 'No sub-categories' : subs.join(' · '),
-          style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        trailing: _TileTrailing(
-          actions: [
-            _IconBtn(Icons.edit_outlined, Colors.blue, onRename, 'Rename'),
-            _IconBtn(Icons.delete_outline, Colors.red, onDelete, 'Delete'),
-          ],
-        ),
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (subs.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: Text('No sub-categories yet.',
-                        style:
-                            TextStyle(color: Colors.grey.shade400, fontSize: 12)),
-                  )
-                else
-                  Wrap(
-                    spacing: 6, runSpacing: 6,
-                    children: subs
-                        .map((sub) => Chip(
-                              label: Text(sub, style: const TextStyle(fontSize: 12)),
-                              backgroundColor: Colors.red.shade50,
-                              labelStyle: TextStyle(color: Colors.red.shade700),
-                              deleteIcon: Icon(Icons.close,
-                                  size: 14, color: Colors.red.shade300),
-                              onDeleted: () => onDeleteSub(sub),
-                              materialTapTargetSize:
-                                  MaterialTapTargetSize.shrinkWrap,
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 4),
-                            ))
-                        .toList(),
-                  ),
-                const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  onPressed: onAddSub,
-                  icon: const Icon(Icons.add, size: 16),
-                  label: const Text('Add Sub-category',
-                      style: TextStyle(fontSize: 12)),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red.shade600,
-                    side: BorderSide(color: Colors.red.shade200),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

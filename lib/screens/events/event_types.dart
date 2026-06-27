@@ -83,7 +83,7 @@ final List<EventTypeData> kAllEventTypes = [
     tagline: 'Celebrate Bappa with the community',
     category: EventCategory.festive,
     gradient: const [Color(0xFFFF6B35), Color(0xFFFF9F1C)],
-    imageUrl: 'https://images.pexels.com/photos/2417726/pexels-photo-2417726.jpeg?auto=compress&cs=tinysrgb&w=800',
+    imageUrl: 'https://images.pexels.com/photos/29761491/pexels-photo-29761491.jpeg?auto=compress&cs=tinysrgb&w=800',
     suggestedDescription: 'Community celebration of Ganesh Chaturthi with idol installation, daily poojas, cultural programs, and Visarjan procession.',
     expenseCategories: [
       _c('Ganesh Idol', '🪔', ['Idol Cost', 'Transportation', 'Visarjan Charges']),
@@ -644,6 +644,24 @@ EventTypeData? eventTypeById(String? id) {
 
 List<EventTypeData> eventTypesByCategory(EventCategory cat) =>
     kAllEventTypes.where((t) => t.category == cat).toList();
+
+// Fuzzy match by name — used for migrating old events that have no eventTypeId
+EventTypeData? eventTypeByName(String? name) {
+  if (name == null || name.isEmpty) return null;
+  final lower = name.toLowerCase();
+  // Exact name match first
+  try {
+    return kAllEventTypes.firstWhere(
+        (t) => t.name.toLowerCase() == lower);
+  } catch (_) {}
+  // Partial match — event name contains type name or vice versa
+  try {
+    return kAllEventTypes.firstWhere(
+        (t) => lower.contains(t.name.toLowerCase()) ||
+               t.name.toLowerCase().contains(lower));
+  } catch (_) {}
+  return null;
+}
 
 LinearGradient gradientFor(EventTypeData type,
         {AlignmentGeometry begin = Alignment.topLeft,
