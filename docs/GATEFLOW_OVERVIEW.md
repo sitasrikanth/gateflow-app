@@ -1,6 +1,6 @@
 # GateFlow — Product & Architecture Overview
 ### "Your community, connected."
-**Version:** 1.0 | **Date:** June 2026 | **Stage:** Early Development (Day 2 of 12 weeks)
+**Version:** 1.0 | **Date:** June 2026 | **Stage:** Active Development (Week 4 of 12)
 
 ---
 
@@ -245,19 +245,38 @@ Week 12    🔜 PUBLIC LAUNCH 🚀
 
 ---
 
-## 13. CURRENT STATUS (Day 2 of 12 Weeks)
+## 13. CURRENT STATUS (Week 4 of 12)
 
 | Milestone | Status |
 |---|---|
 | Flutter SDK installed | ✅ Done |
 | GitHub repo created | ✅ github.com/sitasrikanth/gateflow-app |
-| Flutter app created | ✅ Runs on Android phone |
 | Firebase project created | ✅ gateflow-ss (asia-south1) |
-| Phone Auth enabled | ✅ Done |
-| Firestore Database created | ✅ Done |
-| Firebase connected to app | ✅ firebase_options.dart generated |
-| GateFlow splash screen | ✅ Running on Honor ELN W09 |
-| **Next:** Phone OTP Login screen | 🔜 Day 3 |
+| Firebase connected to app | ✅ Done |
+| QuickCode login (Admin/Resident/Guard) | ✅ Done |
+| Admin home with tabs | ✅ Done |
+| Resident home screen | ✅ Done |
+| Guard home screen | ✅ Done |
+| Event Fund Manager module | ✅ Done |
+| — Create / Edit events | ✅ Done |
+| — Event type catalog (29 types, 8 categories) | ✅ Done |
+| — HD images per event type (Pexels CDN) | ✅ Done |
+| — Custom image upload per event type | ✅ (needs Blaze plan) |
+| — Per-event banner image | ✅ (needs Blaze plan) |
+| — Event list 2-column grid with HD images | ✅ Done |
+| — Horizontal swipe between events (PageView) | ✅ Done |
+| — Contributions (Wing→Block→Flat grouping) | ✅ Done |
+| — Self-report flow (resident submits, admin confirms) | ✅ Done |
+| — Expenses with hierarchical categories | ✅ Done |
+| — Recalculate totals (fixed to match summary) | ✅ Done |
+| — Activity log with soft-delete & restore | ✅ Done |
+| — Collection status by block (live updates) | ✅ Done |
+| — PDF report generation | ✅ Done |
+| Expense categories screen (admin) | ✅ Done |
+| Firestore rules (open for quickCode auth) | ✅ Done |
+| Firebase Storage (Blaze plan upgrade) | 🔜 In progress |
+| **Next:** Follow-up tab — unpaid flats + reminders | 🔜 Next session |
+| **Next:** Push notifications | 🔜 Planned |
 
 ---
 

@@ -3,9 +3,11 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:math';
 import '../auth/login_screen.dart';
 import '../events/event_dashboard_screen.dart';
+import '../events/event_types.dart';
 import '../events/create_event_screen.dart';
 import 'settings_screen.dart';
 
@@ -2319,7 +2321,7 @@ class _EventsTabState extends State<_EventsTab>
   }
 }
 
-const List<Color> _kEventColors = [
+const List<Color> _kAdminEventColors = [
   Color(0xFF6C63FF),
   Color(0xFF00897B),
   Color(0xFFE64A19),
@@ -2334,13 +2336,7 @@ class _AdminEventList extends StatelessWidget {
   final String status;
   const _AdminEventList({required this.status});
 
-  Color _colorFor(int i) => _kEventColors[i % _kEventColors.length];
-
-  String _fmt(double v) {
-    if (v >= 100000) return '${(v / 100000).toStringAsFixed(1)}L';
-    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
-    return v.toStringAsFixed(0);
-  }
+  Color _colorFor(int i) => _kAdminEventColors[i % _kAdminEventColors.length];
 
   @override
   Widget build(BuildContext context) {
@@ -2350,6 +2346,28 @@ class _AdminEventList extends StatelessWidget {
           .where('status', isEqualTo: status)
           .snapshots(),
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.lock_outline, size: 48, color: Colors.red),
+                  const SizedBox(height: 12),
+                  const Text('Permission error — update Firestore rules to: allow read, write: if true;',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.red, fontSize: 13)),
+                  const SizedBox(height: 8),
+                  Text('${snapshot.error}',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                ],
+              ),
+            ),
+          );
+        }
+
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -2365,9 +2383,7 @@ class _AdminEventList extends StatelessWidget {
                     size: 64, color: Colors.grey.shade300),
                 const SizedBox(height: 12),
                 Text(
-                  status == 'active'
-                      ? 'No active events'
-                      : 'No closed events yet',
+                  status == 'active' ? 'No active events' : 'No closed events yet',
                   style: TextStyle(
                       color: Colors.grey.shade500,
                       fontSize: 15,
@@ -2376,11 +2392,8 @@ class _AdminEventList extends StatelessWidget {
                 if (status == 'active') ...[
                   const SizedBox(height: 16),
                   ElevatedButton.icon(
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const CreateEventScreen()),
-                    ),
+                    onPressed: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const CreateEventScreen())),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.deepPurple,
                       foregroundColor: Colors.white,
@@ -2396,183 +2409,320 @@ class _AdminEventList extends StatelessWidget {
           );
         }
 
-        return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 100),
+        return GridView.builder(
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 100),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            mainAxisSpacing: 14,
+            crossAxisSpacing: 14,
+            childAspectRatio: 0.78,
+          ),
           itemCount: events.length,
           itemBuilder: (context, i) {
-            final data = events[i].data() as Map<String, dynamic>;
+            final doc = events[i];
+            final data = doc.data() as Map<String, dynamic>;
             final double collected = ((data['totalCollected'] ?? 0) as num).toDouble();
             final double spent = ((data['totalSpent'] ?? 0) as num).toDouble();
             final double target = ((data['targetAmount'] ?? 0) as num).toDouble();
             final double balance = collected - spent;
             final double progress =
-                target > 0 ? ((collected / target).clamp(0.0, 1.0) as num).toDouble() : 0.0;
-            final cardColor = _colorFor(i);
+                target > 0 ? (collected / target).clamp(0.0, 1.0) : 0.0;
+            final eventType = eventTypeById(data['eventTypeId'] as String?);
+            final gradientColors = eventType?.gradient ??
+                [_colorFor(i), _colorFor(i).withValues(alpha: 0.75)];
+            final String typeEmoji = eventType?.emoji ?? '🎉';
+            final String imageUrl =
+                (data['bannerUrl'] as String?)?.isNotEmpty == true
+                    ? data['bannerUrl'] as String
+                    : (eventType?.imageUrl ?? '');
 
             return GestureDetector(
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => EventDashboardScreen(
-                    eventId: events[i].id,
-                    eventName: data['name'] ?? '',
-                    isAdmin: true,
+                  builder: (_) => _AdminEventPageView(
+                    events: events,
+                    initialIndex: i,
                   ),
                 ),
               ),
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 14),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                        color: cardColor.withValues(alpha: 0.18),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4))
-                  ],
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: Column(
-                    children: [
-                      // Colored top band
-                      Container(
-                        color: cardColor,
-                        padding:
-                            const EdgeInsets.fromLTRB(16, 14, 16, 14),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color:
-                                    Colors.white.withValues(alpha: 0.2),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: const Icon(Icons.celebration,
-                                  color: Colors.white, size: 20),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment.start,
-                                children: [
-                                  Text(data['name'] ?? '',
-                                      style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 16)),
-                                  if ((data['startDate'] ?? '')
-                                      .isNotEmpty)
-                                    Text(data['startDate'],
-                                        style: const TextStyle(
-                                            color: Colors.white70,
-                                            fontSize: 12)),
-                                ],
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color:
-                                    Colors.white.withValues(alpha: 0.2),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                status == 'active'
-                                    ? '🟢 Active'
-                                    : '🔴 Closed',
-                                style: const TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.white),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      // White bottom section
-                      Container(
-                        color: Colors.white,
-                        padding: const EdgeInsets.all(14),
-                        child: Column(
-                          children: [
-                            Row(
-                              children: [
-                                _MiniStatChip(
-                                    label: 'Collected',
-                                    value: '₹${_fmt(collected)}',
-                                    color: Colors.green),
-                                const SizedBox(width: 8),
-                                _MiniStatChip(
-                                    label: 'Spent',
-                                    value: '₹${_fmt(spent)}',
-                                    color: Colors.red),
-                                const SizedBox(width: 8),
-                                _MiniStatChip(
-                                    label: 'Balance',
-                                    value: '₹${_fmt(balance)}',
-                                    color: Colors.blue),
-                              ],
-                            ),
-                            if (target > 0) ...[
-                              const SizedBox(height: 10),
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text('Target: ₹${_fmt(target)}',
-                                      style: TextStyle(
-                                          color: Colors.grey.shade500,
-                                          fontSize: 12)),
-                                  Text(
-                                      '${(progress * 100).toStringAsFixed(0)}%',
-                                      style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 12,
-                                          color: cardColor)),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(4),
-                                child: LinearProgressIndicator(
-                                  value: progress,
-                                  minHeight: 6,
-                                  backgroundColor: Colors.grey.shade200,
-                                  valueColor:
-                                      AlwaysStoppedAnimation(cardColor),
-                                ),
-                              ),
-                            ],
-                            const SizedBox(height: 10),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                Text('View Dashboard',
-                                    style: TextStyle(
-                                        color: cardColor,
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 13)),
-                                const SizedBox(width: 4),
-                                Icon(Icons.arrow_forward_rounded,
-                                    color: cardColor, size: 16),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              child: _AdminEventGridCard(
+                name: data['name'] ?? '',
+                status: status,
+                collected: collected,
+                spent: spent,
+                balance: balance,
+                target: target,
+                progress: progress,
+                gradientColors: gradientColors,
+                typeEmoji: typeEmoji,
+                imageUrl: imageUrl,
+                startDate: data['startDate'] as String? ?? '',
+                tagline: eventType?.tagline ?? '',
               ),
             );
           },
         );
       },
+    );
+  }
+}
+
+class _AdminEventPageView extends StatefulWidget {
+  final List<QueryDocumentSnapshot> events;
+  final int initialIndex;
+  const _AdminEventPageView({required this.events, required this.initialIndex});
+
+  @override
+  State<_AdminEventPageView> createState() => _AdminEventPageViewState();
+}
+
+class _AdminEventPageViewState extends State<_AdminEventPageView> {
+  late PageController _pageController;
+  late int _currentIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.initialIndex;
+    _pageController = PageController(initialPage: widget.initialIndex);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          '${_currentIndex + 1} / ${widget.events.length}',
+          style: const TextStyle(color: Colors.white70, fontSize: 14),
+        ),
+        centerTitle: true,
+        actions: [
+          if (widget.events.length > 1)
+            Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: Row(
+                children: List.generate(widget.events.length, (i) => Container(
+                  width: 6,
+                  height: 6,
+                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: i == _currentIndex ? Colors.white : Colors.white30,
+                  ),
+                )),
+              ),
+            ),
+        ],
+      ),
+      body: PageView.builder(
+        controller: _pageController,
+        itemCount: widget.events.length,
+        onPageChanged: (i) => setState(() => _currentIndex = i),
+        itemBuilder: (context, i) {
+          final doc = widget.events[i];
+          final data = doc.data() as Map<String, dynamic>;
+          return EventDashboardScreen(
+            eventId: doc.id,
+            eventName: data['name'] ?? '',
+            isAdmin: true,
+            hideAppBarBackButton: true,
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _AdminEventGridCard extends StatelessWidget {
+  final String name, status, typeEmoji, imageUrl, startDate, tagline;
+  final double collected, spent, balance, target, progress;
+  final List<Color> gradientColors;
+
+  const _AdminEventGridCard({
+    required this.name,
+    required this.status,
+    required this.collected,
+    required this.spent,
+    required this.balance,
+    required this.target,
+    required this.progress,
+    required this.gradientColors,
+    required this.typeEmoji,
+    required this.imageUrl,
+    required this.startDate,
+    required this.tagline,
+  });
+
+  String _fmt(double v) {
+    if (v >= 100000) return '${(v / 100000).toStringAsFixed(1)}L';
+    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
+    return v.toStringAsFixed(0);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+              color: gradientColors[0].withValues(alpha: 0.25),
+              blurRadius: 12,
+              offset: const Offset(0, 5))
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Background image
+            if (imageUrl.isNotEmpty)
+              CachedNetworkImage(
+                imageUrl: imageUrl,
+                fit: BoxFit.cover,
+                errorWidget: (_, __, ___) => Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                        colors: gradientColors,
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight),
+                  ),
+                ),
+              )
+            else
+              Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                      colors: gradientColors,
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight),
+                ),
+              ),
+            // Dark gradient overlay
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.transparent,
+                    Colors.black.withValues(alpha: 0.75),
+                  ],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                ),
+              ),
+            ),
+            // Content
+            Padding(
+              padding: const EdgeInsets.all(10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.22),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(typeEmoji, style: const TextStyle(fontSize: 14)),
+                      ),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: status == 'active'
+                              ? Colors.green.withValues(alpha: 0.85)
+                              : Colors.red.withValues(alpha: 0.85),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          status == 'active' ? 'Active' : 'Closed',
+                          style: const TextStyle(color: Colors.white, fontSize: 9,
+                              fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Spacer(),
+                  Text(name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          height: 1.2)),
+                  if (tagline.isNotEmpty)
+                    Text(tagline,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.7),
+                            fontSize: 10)),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      _CardMiniStat('₹${_fmt(collected)}', 'collected', Colors.greenAccent),
+                      const SizedBox(width: 6),
+                      _CardMiniStat('₹${_fmt(balance)}', 'balance',
+                          balance >= 0 ? Colors.lightBlueAccent : Colors.redAccent),
+                    ],
+                  ),
+                  if (target > 0) ...[
+                    const SizedBox(height: 6),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(3),
+                      child: LinearProgressIndicator(
+                        value: progress,
+                        minHeight: 4,
+                        backgroundColor: Colors.white24,
+                        valueColor: AlwaysStoppedAnimation(gradientColors[0]),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CardMiniStat extends StatelessWidget {
+  final String value, label;
+  final Color color;
+  const _CardMiniStat(this.value, this.label, this.color);
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(value,
+              style: TextStyle(
+                  color: color, fontWeight: FontWeight.bold, fontSize: 11)),
+          Text(label,
+              style: const TextStyle(color: Colors.white54, fontSize: 9)),
+        ],
+      ),
     );
   }
 }

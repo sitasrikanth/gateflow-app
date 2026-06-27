@@ -17,12 +17,14 @@ class EventDashboardScreen extends StatefulWidget {
   final String eventId;
   final String eventName;
   final bool isAdmin;
+  final bool hideAppBarBackButton;
 
   const EventDashboardScreen({
     super.key,
     required this.eventId,
     required this.eventName,
     required this.isAdmin,
+    this.hideAppBarBackButton = false,
   });
 
   @override
@@ -68,7 +70,9 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
       double total = 0;
       for (final doc in contribs.docs) {
         final d = doc.data();
-        if (d['amountReceived'] != false) {
+        if (d['status'] == 'deleted') continue;
+        if (d['selfReported'] == true && d['amountReceived'] != true) continue;
+        if (d['amountReceived'] == true) {
           total += (d['amount'] as num? ?? 0).toDouble();
         }
       }
@@ -153,11 +157,12 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                   children: [
                     Row(
                       children: [
-                        IconButton(
-                          icon: const Icon(Icons.arrow_back,
-                              color: Colors.white),
-                          onPressed: () => Navigator.pop(context),
-                        ),
+                        if (!widget.hideAppBarBackButton)
+                          IconButton(
+                            icon: const Icon(Icons.arrow_back,
+                                color: Colors.white),
+                            onPressed: () => Navigator.pop(context),
+                          ),
                         IconButton(
                           icon: const Icon(Icons.home_rounded,
                               color: Colors.white70),
@@ -749,6 +754,7 @@ class _BlockStatsWidget extends StatefulWidget {
 
 class _BlockStatsWidgetState extends State<_BlockStatsWidget> {
   Map<String, dynamic> _wingBlocks = {};
+  List<String> _wings = [];
   bool _settingsLoaded = false;
 
   @override
@@ -758,16 +764,21 @@ class _BlockStatsWidgetState extends State<_BlockStatsWidget> {
   }
 
   Future<void> _fetchSettings() async {
-    final doc = await FirebaseFirestore.instance
-        .collection('community_settings')
-        .doc('address')
-        .get();
-    if (!mounted) return;
-    final data = doc.data() as Map<String, dynamic>? ?? {};
-    setState(() {
-      _wingBlocks = Map<String, dynamic>.from(data['wingBlocks'] as Map? ?? {});
-      _settingsLoaded = true;
-    });
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('community_settings')
+          .doc('address')
+          .get();
+      if (!mounted) return;
+      final data = doc.data() as Map<String, dynamic>? ?? {};
+      setState(() {
+        _wingBlocks = Map<String, dynamic>.from(data['wingBlocks'] as Map? ?? {});
+        _wings = List<String>.from(data['wings'] as List? ?? _wingBlocks.keys.toList()..sort());
+        _settingsLoaded = true;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _settingsLoaded = true);
+    }
   }
 
   static String _fmt(double v) {
@@ -791,61 +802,60 @@ class _BlockStatsWidgetState extends State<_BlockStatsWidget> {
         final contribDocs = contribSnap.data!.docs;
         final wingBlocks = _wingBlocks;
 
-        // Qualified paid tracking: "wing_block" → set of paid flat numbers
-        final paidFlatsByBlock = <String, Set<String>>{};
-        final paidFlatsUnqualified = <String>{};
-        final wingCollected = <String, double>{};
-
+        // Build a set of paid flatNumbers and a map of flatNumber → amount.
+        // We match against community flat lists by flatNumber (same as Contributions
+        // tab) to avoid wing/block naming mismatches between docs and structure.
+        final paidFlats = <String>{};
+        final flatAmount = <String, double>{};
         for (final doc in contribDocs) {
           final d = doc.data() as Map<String, dynamic>;
           if (d['amountReceived'] == true &&
               d['status'] != 'rejected' &&
               d['status'] != 'deleted') {
             final f = (d['flatNumber'] ?? '').toString().trim();
-            final dWing = (d['wing'] ?? '').toString().trim();
-            final dBlock = (d['block'] ?? '').toString().trim();
-            if (f.isNotEmpty) {
-              if (dWing.isNotEmpty && dBlock.isNotEmpty) {
-                paidFlatsByBlock.putIfAbsent('${dWing}_$dBlock', () => {}).add(f);
-              } else {
-                paidFlatsUnqualified.add(f);
-              }
-            }
             final amt = (d['amount'] as num?)?.toDouble() ?? 0;
-            if (dWing.isNotEmpty && amt > 0) {
-              wingCollected[dWing] = (wingCollected[dWing] ?? 0) + amt;
+            if (f.isNotEmpty) {
+              paidFlats.add(f);
+              flatAmount[f] = (flatAmount[f] ?? 0) + amt;
             }
           }
         }
 
-        final wings = wingBlocks.keys.toList()..sort();
+        // For each wing/block in community structure, count paid flats and
+        // sum amounts using the flat list as the source of truth.
+        final wings = _wings.isNotEmpty ? _wings : (wingBlocks.keys.toList()..sort());
         final byWing = <String, ({double collected, List<({String block, int total, int paid})> blocks})>{};
         for (final wing in wings) {
           final blocks = Map<String, dynamic>.from(wingBlocks[wing] as Map? ?? {});
+          if (blocks.isEmpty) continue;
           final sortedBlocks = blocks.keys.toList()..sort();
           final blockList = <({String block, int total, int paid})>[];
+          double wingAmt = 0;
           for (final block in sortedBlocks) {
-            final flats = (blocks[block] as List?)?.cast<String>() ?? [];
+            final flats = List<String>.from((blocks[block] as List?) ?? []);
             if (flats.isEmpty) continue;
-            final qualKey = '${wing}_$block';
-            final qualPaid = paidFlatsByBlock[qualKey];
-            int paid;
-            if (qualPaid != null) {
-              paid = flats.where((f) =>
-                qualPaid.contains(f) ||
-                qualPaid.any((p) => f.endsWith(p) || p.endsWith(f))
-              ).length;
-            } else {
-              paid = flats.where((f) =>
-                paidFlatsUnqualified.contains(f) ||
-                paidFlatsUnqualified.any((p) => f.endsWith(p) || p.endsWith(f))
-              ).length;
+            // Match paid flats: exact first, then suffix (for short flat numbers)
+            int paid = 0;
+            for (final f in flats) {
+              if (paidFlats.contains(f)) {
+                paid++;
+                wingAmt += flatAmount[f] ?? 0;
+              } else {
+                final match = paidFlats.firstWhere(
+                  (p) => f.endsWith(p) || p.endsWith(f),
+                  orElse: () => '',
+                );
+                if (match.isNotEmpty) {
+                  paid++;
+                  wingAmt += flatAmount[match] ?? 0;
+                }
+              }
             }
             blockList.add((block: block, total: flats.length, paid: paid));
           }
           if (blockList.isNotEmpty) {
             byWing[wing] = (
-              collected: wingCollected[wing] ?? 0,
+              collected: wingAmt,
               blocks: blockList,
             );
           }
@@ -2483,8 +2493,10 @@ class _ContributionsTabState extends State<_ContributionsTab> {
     final phone = d['phone'] ?? '';
     final amt = (d['amount'] as num?)?.toDouble() ?? 0;
 
+    // Return the reason string directly from the sheet so we never
+    // read from the controller after it may have been torn down.
     final reasonCtrl = TextEditingController();
-    final confirmed = await showModalBottomSheet<bool>(
+    final reason = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
@@ -2527,7 +2539,7 @@ class _ContributionsTabState extends State<_ContributionsTab> {
             Row(children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: () => Navigator.pop(ctx, false),
+                  onPressed: () => Navigator.pop(ctx),
                   child: const Text('Cancel'),
                 ),
               ),
@@ -2537,7 +2549,8 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                   style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.red.shade600,
                       foregroundColor: Colors.white),
-                  onPressed: () => Navigator.pop(ctx, true),
+                  // Capture text here, before the sheet closes
+                  onPressed: () => Navigator.pop(ctx, reasonCtrl.text.trim()),
                   child: const Text('Reject'),
                 ),
               ),
@@ -2546,11 +2559,9 @@ class _ContributionsTabState extends State<_ContributionsTab> {
         ),
       ),
     );
-
-    final reason = reasonCtrl.text.trim();
     reasonCtrl.dispose();
 
-    if (confirmed != true || !context.mounted) return;
+    if (reason == null || !context.mounted) return;
 
     // Capture navigator/messenger before async gap — context may go stale
     // after Firestore update triggers StreamBuilder rebuild
@@ -2752,10 +2763,10 @@ class _ExpensesTab extends StatelessWidget {
 
             ...docs.map((doc) {
               final d = doc.data() as Map<String, dynamic>;
+              final receiptUrl = d['receiptUrl'] as String?;
               return Container(
                 margin: const EdgeInsets.only(bottom: 8),
                 decoration: BoxDecoration(
-                  color: Colors.white,
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
@@ -2764,64 +2775,89 @@ class _ExpensesTab extends StatelessWidget {
                         offset: const Offset(0, 2))
                   ],
                 ),
-                child: ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: Colors.red.shade50,
-                    child: Text(
-                        (d['categoryIcon'] as String?)?.isNotEmpty == true
-                            ? d['categoryIcon']
-                            : _categoryIcon(d['category'] ?? 'Misc'),
-                        style: const TextStyle(fontSize: 18)),
-                  ),
-                  title: Text(d['item'] ?? '',
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text([
-                    d['category'] ?? 'Misc',
-                    if ((d['subCategory'] ?? '').isNotEmpty) d['subCategory'],
-                    if ((d['vendor'] ?? '').isNotEmpty) d['vendor'],
-                    if ((d['note'] ?? '').isNotEmpty) d['note'],
-                  ].join(' • ')),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text(
-                            '₹${(d['amount'] ?? 0).toStringAsFixed(0)}',
-                            style: TextStyle(
-                                color: Colors.red.shade700,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16),
-                          ),
-                          Text(
-                            (d['addedAt'] ?? '').length >= 10
-                                ? d['addedAt'].substring(0, 10)
-                                : '',
-                            style: TextStyle(
-                                color: Colors.grey.shade400, fontSize: 11),
-                          ),
-                        ],
+                child: Material(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: Colors.red.shade50,
+                        child: Text(
+                            (d['categoryIcon'] as String?)?.isNotEmpty == true
+                                ? d['categoryIcon']
+                                : _categoryIcon(d['category'] ?? 'Misc'),
+                            style: const TextStyle(fontSize: 18)),
                       ),
-                      if (isAdmin) ...[
-                        const SizedBox(width: 8),
-                        GestureDetector(
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => AddExpenseScreen(
-                                eventId: eventId,
-                                existingExpenseId: doc.id,
-                                existingData: d,
+                      title: Text(d['item'] ?? '',
+                          style: const TextStyle(fontWeight: FontWeight.bold)),
+                      subtitle: Text([
+                        d['category'] ?? 'Misc',
+                        if ((d['subCategory'] ?? '').isNotEmpty) d['subCategory'],
+                        if ((d['vendor'] ?? '').isNotEmpty) d['vendor'],
+                        if ((d['note'] ?? '').isNotEmpty) d['note'],
+                      ].join(' • ')),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                '₹${(d['amount'] ?? 0).toStringAsFixed(0)}',
+                                style: TextStyle(
+                                    color: Colors.red.shade700,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16),
+                              ),
+                              Text(
+                                (d['addedAt'] ?? '').length >= 10
+                                    ? d['addedAt'].substring(0, 10)
+                                    : '',
+                                style: TextStyle(
+                                    color: Colors.grey.shade400, fontSize: 11),
+                              ),
+                            ],
+                          ),
+                          if (receiptUrl != null) ...[
+                            const SizedBox(width: 8),
+                            GestureDetector(
+                              onTap: () => _showReceiptFullScreen(context, receiptUrl),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(6),
+                                child: Image.network(receiptUrl,
+                                    width: 40,
+                                    height: 40,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Icon(
+                                        Icons.receipt,
+                                        color: Colors.grey.shade400)),
                               ),
                             ),
-                          ),
-                          child: Icon(Icons.edit,
-                              size: 18, color: Colors.grey.shade400),
-                        ),
-                      ],
-                    ],
+                          ],
+                          if (isAdmin) ...[
+                            const SizedBox(width: 8),
+                            GestureDetector(
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => AddExpenseScreen(
+                                    eventId: eventId,
+                                    existingExpenseId: doc.id,
+                                    existingData: d,
+                                  ),
+                                ),
+                              ),
+                              child: Icon(Icons.edit,
+                                  size: 18, color: Colors.grey.shade400),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
                   ),
                 ),
               );
@@ -2829,6 +2865,27 @@ class _ExpensesTab extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+
+  void _showReceiptFullScreen(BuildContext context, String url) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.black,
+            foregroundColor: Colors.white,
+            title: const Text('Receipt'),
+          ),
+          body: Center(
+            child: InteractiveViewer(
+              child: Image.network(url, fit: BoxFit.contain),
+            ),
+          ),
+        ),
+      ),
     );
   }
 

@@ -447,19 +447,54 @@ Provide specific fixes with code examples.
 
 ## 6. 12-WEEK DETAILED ROADMAP
 
-### WEEK 1 — Foundation & Research
+### WEEK 1–2 — Foundation & Research ✅ COMPLETE
 
 **Goals:**
 - Set up all tools and accounts
-- Validate the idea with 5 potential customers
 - Complete project scaffolding
 
 **Deliverables:**
-- [ ] GitHub repo created, README written
-- [ ] Firebase project set up (Auth, Firestore, FCM, Storage)
-- [ ] Flutter project scaffolded with folder structure
-- [ ] Figma project created with design system
-- [ ] 5 society secretary/admin interviews completed
+- [x] GitHub repo created
+- [x] Firebase project set up (Firestore, Storage)
+- [x] Flutter project running on Android device
+- [x] QuickCode login for Admin / Resident / Guard
+- [x] Role-based home screens (Admin, Resident, Guard)
+
+---
+
+### WEEK 3–4 — Event Fund Manager ✅ COMPLETE
+
+**What was built (ahead of plan — Event module instead of visitor loop):**
+- [x] Event Fund Manager module (create, edit, close events)
+- [x] 29 event types catalog across 8 categories with HD images
+- [x] Custom image upload per event type (Firebase Storage — Blaze needed)
+- [x] Per-event banner image
+- [x] Event list 2-column grid with horizontal PageView swipe navigation
+- [x] Contributions (Wing→Block→Flat grouping, self-report flow, admin confirm)
+- [x] Expenses with hierarchical categories
+- [x] Activity log with soft-delete and restore
+- [x] Collection status by block (live StreamBuilder)
+- [x] PDF report generation
+- [x] Recalculate totals bug fixed (now matches Summary tab)
+- [x] Firestore rules updated for quickCode auth
+- [x] Expense categories admin screen
+
+---
+
+### WEEK 5 — Follow-up Tab + Push Notifications 🔜 NEXT
+
+**Goals:**
+- Admin can see unpaid flats and send reminders
+- Push notifications for payment reminders
+
+**Deliverables:**
+- [ ] Follow-up tab: list unpaid flats, filter by wing/block
+- [ ] Send payment reminder notification from admin
+- [ ] Firebase Storage working (Blaze plan upgrade)
+
+---
+
+### WEEK 6 — Visitor Management (Original Week 3–4)
 - [ ] Notion workspace set up with project tracker
 
 **AI Prompts to Use:**
