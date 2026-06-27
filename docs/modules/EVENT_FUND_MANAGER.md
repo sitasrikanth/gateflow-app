@@ -1,7 +1,7 @@
 # Event Fund Manager — Module Documentation
 **Module:** Event Fund Manager  
-**Status:** ✅ Live (Sessions 1 & 2 — 2026-06-14)  
-**Screens:** 6 screens + 1 dashboard with 3 tabs
+**Status:** ✅ Live (Sessions 1–5 — 2026-06-14 to 2026-06-27)  
+**Screens:** 6 screens + 1 dashboard with 5 admin tabs / 2 resident tabs
 
 ---
 
@@ -33,19 +33,30 @@ Admin creates an event with a target amount → collects contributions flat-by-f
 - Total received, total pending, total expenses
 - Event status badge (Active / Closed)
 - Admin popup menu: Edit Event, Close Event, Send Notification
+- Collection status by block (live via `_BlockStatsWidget`)
 
-### Contributions Tab
+### Contributions Tab (admin)
 - Grouped by **Wing → Block → Flat** (nested `ExpansionTile`)
 - Wing level: entry count, total received for that wing
 - Block level: flat count, pending count badge
 - Flat level: contribution amount, type badge, PENDING badge if not received, edit icon
+- **Flat chip grid** — each block shows floor-grouped flat grid with configurable rows per floor (1/2/3 from community settings)
 - Grand total banner at bottom (received only, pending excluded)
 - Flats sorted by flat number; wings/blocks sorted alphabetically
+
+### Follow-up Tab (admin only)
+- Same Wing → Block → Flat chip grid layout
+- Flat chips color-coded: green (paid), amber (pending), grey (no record)
+- Rows per floor applied same as Contributions tab
 
 ### Expenses Tab
 - List of all expenses with category, sub-category, vendor, note, amount
 - Subtitle format: `Category • Sub-category • Vendor • Note`
 - FAB to add new expense
+
+### Activity Tab (admin)
+- Chronological log of all contribution adds, edits, deletions
+- Soft-delete with restore option
 
 ---
 
@@ -75,12 +86,14 @@ Admin creates an event with a target amount → collects contributions flat-by-f
   flatNumber: string,
   residentName: string,
   amount: number,
-  contributionType: 'Regular' | 'Carry Forward' | 'Ganesh Laddu',
-  paymentMode: 'Cash' | 'UPI' | 'Bank Transfer' | 'Cheque',
+  contributionType: 'Regular' | 'Carry Forward' | 'Special Contribution' | 'Ganesh Laddu',
+  specialDescription: string,   // populated when type = Special Contribution, else ''
+  paymentMode: string,          // from community_settings.paymentModes list
   amountReceived: boolean,      // false = pending
-  referenceId: string?,         // optional
+  referenceId: string?,         // optional; shown when mode requires reference (UPI, Bank, etc.)
   date: Timestamp,
   notes: string?,
+  selfReported: boolean?,       // true when resident self-reported; absent or false for admin entry
   createdAt: Timestamp
 }
 ```
@@ -103,6 +116,10 @@ Admin creates an event with a target amount → collects contributions flat-by-f
 {
   wings: [string],                          // ['Diamond', 'Ruby', ...]
   wingBlocks: { wingName: [string] },       // { Diamond: ['A','B','C'], Ruby: ['A','B'] }
+  flatsPerFloor: { wingName_block: number },// { Diamond_A: 12, Diamond_B: 8 }
+  flatGridRows: { wingName_block: number }, // { Diamond_A: 2, Diamond_B: 1 } — rows per floor in UI
+  paymentModes: [string],                   // ordered list; e.g. ['Cash','UPI','PhonePe',...]
+  defaultNote: string,                      // pre-filled note in Add Contribution form
   expenseCategories: [
     {
       name: string,
@@ -137,11 +154,14 @@ Admin can rename, delete, add new main categories and sub-categories from Settin
 
 ## 6. CONTRIBUTION TYPES
 
-| Type | Description |
-|------|-------------|
-| Regular | Standard flat contribution |
-| Carry Forward | Contribution carried from a previous event |
-| Ganesh Laddu | In-kind contribution (laddus for prasad) |
+| Type | Description | Extra Field |
+|------|-------------|-------------|
+| Regular | Standard flat contribution | — |
+| Carry Forward | Contribution carried from a previous event | — |
+| Special Contribution | One-off special amount (e.g. from donor, surplus) | `specialDescription` text box |
+| Ganesh Laddu | In-kind contribution (laddus for prasad) | — |
+
+**Special Contribution:** when this type is selected, a multi-line text field ("Special Contribution Description") is shown and required. Saved as `specialDescription` in Firestore. Loaded back when editing.
 
 Each contribution has a **Received / Pending** toggle:
 - `amountReceived: true` → increments `totalCollected` on the event
@@ -160,6 +180,10 @@ Each contribution has a **Received / Pending** toggle:
 | `TextEditingController.dispose()` via `addPostFrameCallback` | Synchronous dispose during dialog dismiss animation causes `editable_text.dart:6268` assertion crash |
 | Categories stored as `List<Map<String,dynamic>>` | Supports sub-categories; flat `List<String>` was insufficient |
 | `PageStorageKey` on each `ExpansionTile` | Preserves expand/collapse state across widget rebuilds |
+| `flatGridRows` saved with read-merge-write (not `set merge:true`) | `set` with `merge:true` does shallow merge — replaces entire sub-map, wiping other blocks' rows settings |
+| `flatGridRows` stored as `{wing_block: n}` map (not global int) | Different blocks have different floor sizes; a global rows setting would be wrong for mixed-size blocks |
+| Payment modes loaded via `StreamSubscription` (not `FutureBuilder`) | Modes can change while the form is open; stream ensures the picker stays in sync |
+| Admin tab bar: `_CustomTabBar`; Resident: classic `TabBar` | Admin has 5 tabs needing grocery-style horizontal layout; resident has 2 tabs and simple use case |
 
 ---
 
@@ -201,22 +225,28 @@ Accessed from Admin panel → Settings icon.
 **Wings & Blocks section:**
 - Add / rename / delete wings
 - Add / delete blocks per wing
-- Changes reflected immediately in contribution form dropdowns
+- Set flats per floor per block (shows flat grid preview)
+- Set rows per floor (1/2/3) per block — shown inline next to "Set Floor Size"
+- Changes reflected immediately in contribution form flat grid
+
+**Payment Modes section:**
+- Drag to reorder, add custom mode, remove mode
+- Stored as ordered list in `community_settings/address.paymentModes`
+- Propagated live to all contribution screens
 
 **Expense Categories section:**
 - Add / rename / delete main categories (with emoji icon)
 - Add / delete sub-categories per main
 - Changes reflected immediately in Add Expense screen
 
-Both sections are collapsible (`ExpansionTile` in `Card`). Add actions via `+` button in section header (opens dialog).
+All sections are collapsible (`ExpansionTile` in `Card`). Add actions via `+` button in section header (opens dialog).
 
 ---
 
 ## 10. PLANNED ENHANCEMENTS
 
-- [ ] **Pending follow-up list** — flats with `amountReceived: false`, with reminder notification button
+- [ ] **Push notifications** — admin sends payment reminders to specific flats/wings from Follow-up tab
+- [ ] **Firebase Storage (Blaze plan)** — custom banner images and event type photos
 - [ ] **PDF report** — contribution + expense summary exportable as PDF
 - [ ] **Budget vs actual chart** — target vs collected vs spent on Overview tab
-- [ ] **Resident view** — residents see their own contribution status for active events
-- [ ] **Multiple events** — currently supports multiple events in list; ensure dashboard handles switching cleanly
 - [ ] **Event templates** — reuse last year's category setup for recurring events

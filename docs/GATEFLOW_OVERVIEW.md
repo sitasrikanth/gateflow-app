@@ -1,6 +1,6 @@
 # GateFlow — Product & Architecture Overview
 ### "Your community, connected."
-**Version:** 1.0 | **Date:** June 2026 | **Stage:** Active Development (Week 4 of 12)
+**Version:** 1.3 | **Date:** June 2026 | **Stage:** Active Development (Week 7 of 12)
 
 ---
 
@@ -234,9 +234,10 @@ Audit:           Every admin action logged to auditLogs collection
 
 ```
 Week 1–2   ✅ Foundation (Flutter + Firebase + GitHub)
-Week 3–4   🔜 Authentication + Visitor Approval (core loop)
-Week 5–6   🔜 Complaints + Notice Board + Admin Panel
-Week 7–8   🔜 Delivery, Staff Entry, Offline Mode, Polish
+Week 3–4   ✅ Authentication + Visitor Approval (core loop)
+Week 5–6   ✅ Event Fund Manager (core + enhancements)
+Week 7     ✅ UX Polish — flat grid, configurable payment modes, admin tab bar
+Week 8     🔜 Follow-up reminders, push notifications, Firebase Storage
 Week 9     🔜 Alpha — 1 real society
 Week 10    🔜 Beta — 3 societies
 Week 11    🔜 Play Store listing, landing page
@@ -245,7 +246,7 @@ Week 12    🔜 PUBLIC LAUNCH 🚀
 
 ---
 
-## 13. CURRENT STATUS (Week 4 of 12)
+## 13. CURRENT STATUS (Week 7 of 12)
 
 | Milestone | Status |
 |---|---|
@@ -266,17 +267,20 @@ Week 12    🔜 PUBLIC LAUNCH 🚀
 | — Event list 2-column grid with HD images | ✅ Done |
 | — Horizontal swipe between events (PageView) | ✅ Done |
 | — Contributions (Wing→Block→Flat grouping) | ✅ Done |
+| — Flat grid with rows-per-floor setting | ✅ Done |
 | — Self-report flow (resident submits, admin confirms) | ✅ Done |
+| — Configurable payment modes (community settings) | ✅ Done |
+| — Special Contribution description field | ✅ Done |
 | — Expenses with hierarchical categories | ✅ Done |
 | — Recalculate totals (fixed to match summary) | ✅ Done |
 | — Activity log with soft-delete & restore | ✅ Done |
 | — Collection status by block (live updates) | ✅ Done |
 | — PDF report generation | ✅ Done |
+| — Admin grocery-style tab bar | ✅ Done |
 | Expense categories screen (admin) | ✅ Done |
 | Firestore rules (open for quickCode auth) | ✅ Done |
 | Firebase Storage (Blaze plan upgrade) | 🔜 In progress |
-| **Next:** Follow-up tab — unpaid flats + reminders | 🔜 Next session |
-| **Next:** Push notifications | 🔜 Planned |
+| **Next:** Follow-up reminders + push notifications | 🔜 Next session |
 
 ---
 

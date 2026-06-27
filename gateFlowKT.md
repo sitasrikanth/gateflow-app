@@ -74,6 +74,8 @@ When a resident self-reports a payment ("I've Paid"):
 | Full Wings → Blocks → Flats hierarchy | ✅ Yes (editable) | ✅ Yes (read-only, used for flat picker) |
 | Add / rename / delete wings or blocks | ✅ Yes | ❌ No |
 | Flats per floor setting | ✅ Yes | ❌ No |
+| Rows per floor (flat grid layout 1/2/3) | ✅ Yes | ❌ No |
+| Payment modes (order, add, remove) | ✅ Yes | ❌ No (gets the configured list) |
 | Expense categories management | ✅ Yes | ❌ No |
 
 ---
@@ -103,4 +105,85 @@ When admin approves or rejects a pending registration:
 
 ---
 
-*Document Version: 1.0 | Created: 2026-06-21 | Maintained by: Development team*
+---
+
+## Flat Grid — Rows per Floor Design
+
+The flat grid (used in Add Contribution, Contributions tab, and Follow-up tab) groups flats by floor and can split each floor's row into 1, 2, or 3 sub-rows.
+
+**Why sub-rows?** When flatsPerFloor = 12, all 12 flats on a row are tiny and unreadable. Splitting into 2 rows gives 6 per row — much more readable on mobile.
+
+**How it works:**
+- Setting stored per-block: `flatGridRows.${wing}_${block}` in `community_settings/address`
+- Floor detected by: `flatNumber ~/ 100` (e.g. flat 201 → floor 2)
+- `perRow = ceil(floorFlats.length / gridRows)` — divides floor evenly
+- Each sub-row uses `Row` with `Expanded` chips; empty slots filled with `SizedBox`
+
+**Save pattern — read-merge-write (not `set` with merge):**
+```dart
+final doc = await _ref.get();
+final existing = data['flatGridRows'];
+final merged = existing is Map
+    ? (Map<String, dynamic>.from(existing)..[key] = n)
+    : {key: n};
+await _ref.update({'flatGridRows': merged});
+```
+Reason: `set({flatGridRows: {key: n}}, merge: true)` does a shallow merge that replaces the entire `flatGridRows` sub-map, wiping out other blocks' settings. Also handles the case where old data stored `flatGridRows` as an int (legacy).
+
+**Live propagation:** All three views subscribe to `community_settings/address` via `StreamBuilder` — settings changes apply instantly without restarting the screen.
+
+---
+
+## Payment Modes — Configurable List
+
+Payment modes are no longer hardcoded. They are stored in `community_settings/address.paymentModes` as an ordered list.
+
+**Default modes (seeded when field is absent):**
+`['Cash', 'UPI', 'PhonePe', 'Google Pay', 'Bank Transfer', 'NEFT / RTGS', 'Cheque', 'Other']`
+
+**Admin settings:** drag to reorder, add custom, remove — via `_PaymentModesCard` with `ReorderableListView`.
+
+**Reference-required modes** (shows "Reference ID / UTR" field in form):
+`{'UPI', 'PhonePe', 'Google Pay', 'Bank Transfer', 'NEFT / RTGS', 'Cheque'}`
+This set is hardcoded in the contribution forms, not configurable — changing a mode name to match exactly is what wires it to the reference field.
+
+**Propagation:**
+- `add_contribution_screen.dart` → `StreamSubscription` on settings; if selected mode is removed, resets to `modes.first`
+- `resident_events_screen.dart` → `StreamBuilder` in payment chips section; same reset logic via `addPostFrameCallback`
+
+---
+
+## Admin vs Resident Tab Bar Design
+
+| | Admin Event Dashboard | Resident Event Dashboard |
+|---|---|---|
+| Tab bar style | `_CustomTabBar` (grocery-style) | Classic `TabBar` on purple header |
+| Background | White bar below purple header | Purple |
+| Icons | Icon in rounded square (purple when selected) | None |
+| Indicator | Animated purple underline | White underline |
+| Number of tabs | 5 (Overview, Contributions, Follow-up, Expenses, Activity) | 2 (Overview, Expenses) |
+
+**Why different designs?** Admin has 5 tabs that need horizontal space and clear labelling. The grocery-style icon-above-text layout provides more visual breathing room. Residents have only 2 tabs and a simpler use case — the classic design is familiar and lightweight.
+
+**`_CustomTabBar` implementation:**
+- `TabController.addListener` to track selected index and trigger `setState`
+- Each tab: `AnimatedContainer` icon box (purple tint / grey) + `Text` below
+- `GestureDetector.onTap` calls `controller.animateTo(index)`
+- Wrapped in `SingleChildScrollView` for horizontal scroll if needed
+
+---
+
+## Contribution Types
+
+| Type | Field | Description |
+|------|-------|-------------|
+| Regular | `contributionType: 'Regular'` | Standard flat contribution |
+| Carry Forward | `contributionType: 'Carry Forward'` | Contribution from a previous event, carried into this one |
+| Special | `contributionType: 'Special Contribution'` | One-off special contribution; requires `specialDescription` field |
+| Ganesh Laddu | `contributionType: 'Ganesh Laddu'` | In-kind contribution (laddus for prasad) |
+
+When type is **Special**, an additional text field `specialDescription` is shown and saved to Firestore. This field is blank for all other types.
+
+---
+
+*Document Version: 1.3 | Created: 2026-06-21 | Last Updated: 2026-06-27 | Maintained by: Development team*
