@@ -1,7 +1,7 @@
 # Event Fund Manager — Module Documentation
 **Module:** Event Fund Manager  
-**Status:** ✅ Live (Sessions 1–5 — 2026-06-14 to 2026-06-27)  
-**Screens:** 6 screens + 1 dashboard with 5 admin tabs / 2 resident tabs
+**Status:** ✅ Live (Sessions 1–6 — 2026-06-14 to 2026-06-28)  
+**Screens:** 7 screens + 1 dashboard with 7 admin tabs / 2 resident tabs
 
 ---
 
@@ -19,10 +19,11 @@ Admin creates an event with a target amount → collects contributions flat-by-f
 |--------|------|-------------|
 | Event List | `lib/screens/events/event_list_screen.dart` | All events with color palette, progress bar, status badge |
 | Create / Edit Event | `lib/screens/events/create_event_screen.dart` | Name, description, target amount, start/end dates |
-| Event Dashboard | `lib/screens/events/event_dashboard_screen.dart` | 3-tab dashboard: Overview, Contributions, Expenses |
+| Event Dashboard | `lib/screens/events/event_dashboard_screen.dart` | 7-tab admin dashboard / 2-tab resident dashboard |
 | Add Contribution | `lib/screens/events/add_contribution_screen.dart` | Per-flat contribution form with type, payment mode, received toggle |
-| Add Expense | `lib/screens/events/add_expense_screen.dart` | Expense form with two-level category selection |
+| Add Expense | `lib/screens/events/add_expense_screen.dart` | Expense form with two-level category selection (per-event-type) |
 | Send Notification | `lib/screens/events/send_notification_screen.dart` | Send pooja/prasad alert to all residents |
+| Event Settings | `lib/screens/events/event_type_settings_screen.dart` | Per-event-type config: Pooja Schedule, Special Contribution, Expense Categories, Volunteer Roles |
 
 ---
 
@@ -52,7 +53,14 @@ Admin creates an event with a target amount → collects contributions flat-by-f
 ### Expenses Tab
 - List of all expenses with category, sub-category, vendor, note, amount
 - Subtitle format: `Category • Sub-category • Vendor • Note`
+- Categories loaded from `/eventTypeConfig/{eventTypeId}` (per-event-type); falls back to global categories
 - FAB to add new expense
+
+### Volunteers Tab (admin + resident)
+- Admin: manually add volunteers with name, flat, role, phone; auto-approved
+- Resident: self-register for available roles
+- Roles are per-event-type, loaded from `/eventTypeConfig/{eventTypeId}.volunteerRoles`
+- Default roles: Coordinator, Decoration, Food & Catering, Security, Music & Sound, Collection, Photography, Transport, Other
 
 ### Activity Tab (admin)
 - Chronological log of all contribution adds, edits, deletions
@@ -111,6 +119,34 @@ Admin creates an event with a target amount → collects contributions flat-by-f
 }
 ```
 
+### `/appSettings/poojaSchedule`
+```
+{
+  enabledTypeIds: [string],     // event type IDs that show Pooja Schedule tab
+  morningCapacity: number,      // default morning slot capacity (e.g. 2 families)
+  eveningCapacity: number       // default evening slot capacity
+}
+```
+
+### `/appSettings/specialContribution`
+```
+{
+  enabledTypeIds: [string]      // event type IDs that show Special Contribution option
+}
+```
+
+### `/eventTypeConfig/{typeId}`
+```
+{
+  expenseCategories: [          // per-event-type expense categories; auto-seeded from event_types.dart
+    { name: string, icon: string, subCategories: [string] }
+  ],
+  volunteerRoles: [string],     // per-event-type volunteer roles list
+  specialDescriptions: [string],// preset Special Contribution description chips
+  specialDefaultNote: string    // default note pre-filled in Add Contribution (Special type)
+}
+```
+
 ### `/community_settings/address` (shared with other modules)
 ```
 {
@@ -134,21 +170,27 @@ Admin creates an event with a target amount → collects contributions flat-by-f
 
 ## 5. EXPENSE CATEGORIES
 
-### Default Categories (auto-seeded when empty)
+### Category inheritance (two-level)
+1. **Per-event-type** — `/eventTypeConfig/{typeId}.expenseCategories` (auto-seeded from `event_types.dart` on first expand in settings)
+2. **Global fallback** — `kDefaultCategories` in `expense_categories_screen.dart` (used when no event type specified)
+
+### Generic Default Categories (`kDefaultCategories` — global fallback)
 
 | Icon | Main Category | Example Sub-categories |
 |------|--------------|----------------------|
-| 🍚 | Annadam | Rice, Dal, Vegetables, Oil, Plates, Cups, Spoons |
-| 🎨 | Decoration | Flowers, Balloons, Banners, Rangoli, Lights |
-| 🪔 | Ganesh Idol | Idol Cost, Transportation, Visarjan Arrangements |
-| 🙏 | Priest / Pandit | Dakshina, Pooja Items, Flowers, Fruits |
-| 🎵 | Music & Sound | DJ / Band, Sound System, Microphone Rental |
-| 💡 | Lighting | Stage Lighting, Decoration Lights, Generator |
-| 🚗 | Transport | Vehicle Rental, Fuel, Parking |
-| 🍬 | Prasad | Modak, Coconut, Fruits, Sweets |
-| 📦 | Miscellaneous | Printing, Stationery, Cleaning, Contingency |
+| 🍽️ | Food & Catering | Catering Service, Raw Materials, Snacks & Beverages, Plates & Cups |
+| 🎨 | Decoration | Flowers & Garlands, Balloons, Banners & Flex, Stage Setup, Lighting |
+| 🏠 | Venue & Setup | Hall Rental, Chairs & Tables, Tent / Shamiana, Cleaning |
+| 🎤 | Entertainment | Performers, Anchor, Kids Activities, Games & Prizes |
+| 🎵 | Music & Sound | Sound System, DJ / Band, Microphone Rental |
+| 📸 | Photography | Photographer, Videographer, Drone, Printing |
+| 🚗 | Transport | Vehicle Rental, Fuel, Parking Charges |
+| 🎁 | Gifts & Prizes | Trophies, Gift Hampers, Certificates, Mementos |
+| 📦 | Misc | — |
 
-Admin can rename, delete, add new main categories and sub-categories from Settings.
+Event-type-specific defaults (e.g. Ganesh Chaturthi gets Ganesh Idol, Prasad, Priest) come from `event_types.dart` and are auto-seeded into `/eventTypeConfig/{typeId}` on first expand.
+
+Admin can rename, delete, add main categories and sub-categories from **Event Settings → Expense Categories**.
 
 ---
 
@@ -220,26 +262,37 @@ Each contribution has a **Received / Pending** toggle:
 
 ## 9. SETTINGS (Admin)
 
+### Community Settings — `settings_screen.dart`
 Accessed from Admin panel → Settings icon.
 
-**Wings & Blocks section:**
-- Add / rename / delete wings
-- Add / delete blocks per wing
-- Set flats per floor per block (shows flat grid preview)
-- Set rows per floor (1/2/3) per block — shown inline next to "Set Floor Size"
-- Changes reflected immediately in contribution form flat grid
+**Wings & Blocks:** Add/rename/delete wings and blocks, set flats per floor, set rows per floor (1/2/3).  
+**Payment Modes:** Drag to reorder, add custom, remove. Stored in `community_settings/address.paymentModes`.  
+**Expense Categories (global):** Global fallback categories (add/rename/delete). Per-event-type categories managed in Event Settings.
 
-**Payment Modes section:**
-- Drag to reorder, add custom mode, remove mode
-- Stored as ordered list in `community_settings/address.paymentModes`
-- Propagated live to all contribution screens
+### Event Settings — `event_type_settings_screen.dart`
+Accessed from Admin panel → Events tab → tune icon (⚙️).
 
-**Expense Categories section:**
-- Add / rename / delete main categories (with emoji icon)
-- Add / delete sub-categories per main
-- Changes reflected immediately in Add Expense screen
+**Pooja Schedule:**
+- Collapsable hierarchy: top section → EventCategory groups → individual event types
+- Default morning/evening slot capacity (stepper)
+- Controls whether Pooja Schedule section appears in the event dashboard
 
-All sections are collapsible (`ExpansionTile` in `Card`). Add actions via `+` button in section header (opens dialog).
+**Special Contribution:**
+- Same hierarchy: category → event type → checkbox to enable
+- Per-type: preset description chips (pre-fill in Add Contribution) + default note text
+- Stored in `/eventTypeConfig/{typeId}` as `specialDescriptions` and `specialDefaultNote`
+
+**Expense Categories:**
+- Category → event type hierarchy; per-type category/sub-category editor
+- Auto-seeds from `event_types.dart` on first expand
+- Badge always shows count (defaults before seeding, live count after)
+- Add / delete categories and sub-categories; Reset Defaults button
+
+**Volunteer Roles:**
+- Category → event type hierarchy
+- Roles as chips: tap to rename, long-press to delete; Add Role button; Reset Defaults
+- Stored in `/eventTypeConfig/{typeId}.volunteerRoles`
+- Loaded by Volunteers tab on next dashboard open
 
 ---
 
