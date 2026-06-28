@@ -9,6 +9,7 @@ import '../auth/login_screen.dart';
 import '../events/event_dashboard_screen.dart';
 import '../events/event_types.dart';
 import '../events/create_event_screen.dart';
+import '../events/event_type_settings_screen.dart';
 import 'settings_screen.dart';
 
 class AdminHomeScreen extends StatefulWidget {
@@ -2318,6 +2319,16 @@ class _EventsTabState extends State<_EventsTab>
                 ),
               ),
               IconButton(
+                icon: const Icon(Icons.tune,
+                    color: Colors.deepPurple),
+                tooltip: 'Event Settings',
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const EventTypeSettingsScreen()),
+                ),
+              ),
+              IconButton(
                 icon: const Icon(Icons.add_circle,
                     color: Colors.deepPurple, size: 28),
                 tooltip: 'Create Event',
@@ -2450,7 +2461,8 @@ class _AdminEventList extends StatelessWidget {
             final double balance = collected - spent;
             final double progress =
                 target > 0 ? (collected / target).clamp(0.0, 1.0) : 0.0;
-            final eventType = eventTypeById(data['eventTypeId'] as String?);
+            final eventType = eventTypeById(data['eventTypeId'] as String?) ??
+                eventTypeByName(data['name'] as String?);
             final gradientColors = eventType?.gradient ??
                 [_colorFor(i), _colorFor(i).withValues(alpha: 0.75)];
             final String typeEmoji = eventType?.emoji ?? '🎉';

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -6,12 +7,14 @@ import 'package:url_launcher/url_launcher.dart';
 import '../auth/login_screen.dart';
 import '../admin/admin_home_screen.dart';
 import '../resident/resident_home_screen.dart';
+import 'event_type_settings_screen.dart';
 import 'add_contribution_screen.dart';
 import 'add_expense_screen.dart';
 import 'send_notification_screen.dart';
 import 'create_event_screen.dart';
 import '../../utils/event_pdf_report.dart';
 import 'import_contributions_screen.dart';
+import 'event_types.dart';
 
 class EventDashboardScreen extends StatefulWidget {
   final String eventId;
@@ -35,20 +38,26 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   String _residentFlat = '';
+  String _residentName = '';
+  String _residentWing = '';
+  String _residentBlock = '';
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(
         length: widget.isAdmin ? 7 : 4, vsync: this);
-    if (!widget.isAdmin) _loadFlat();
+    if (!widget.isAdmin) _loadSession();
   }
 
-  Future<void> _loadFlat() async {
+  Future<void> _loadSession() async {
     final prefs = await SharedPreferences.getInstance();
     if (mounted) {
       setState(() {
         _residentFlat = prefs.getString('session_flat') ?? '';
+        _residentName = prefs.getString('session_name') ?? '';
+        _residentWing = prefs.getString('session_wing') ?? '';
+        _residentBlock = prefs.getString('session_block') ?? '';
       });
     }
   }
@@ -147,17 +156,58 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
         final double progress =
             target > 0 ? ((collected / target).clamp(0.0, 1.0) as num).toDouble() : 0.0;
 
+        // Resolve event type for image/gradient
+        final eventType = eventTypeById(data['eventTypeId'] as String?) ??
+            eventTypeByName(data['name'] as String?);
+        final List<Color> headerGradient = eventType?.gradient ??
+            [Colors.deepPurple.shade700, Colors.deepPurple.shade400];
+        final String imageUrl =
+            (data['bannerUrl'] as String?)?.isNotEmpty == true
+                ? data['bannerUrl'] as String
+                : (eventType?.imageUrl ?? '');
+
         return Scaffold(
           backgroundColor: Colors.grey.shade50,
           body: Column(
             children: [
               // Header
               Container(
-                color: Colors.deepPurple,
-                padding: const EdgeInsets.fromLTRB(20, 52, 20, 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: headerGradient,
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
+                child: Stack(children: [
+                  if (imageUrl.isNotEmpty) ...[
+                    Positioned.fill(
+                      child: Image.asset(
+                        imageUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const SizedBox(),
+                      ),
+                    ),
+                    Positioned.fill(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              headerGradient.first.withValues(alpha: 0.72),
+                              headerGradient.last.withValues(alpha: 0.82),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 52, 20, 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                     Row(
                       children: [
                         if (!widget.hideAppBarBackButton)
@@ -265,6 +315,7 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                                   MaterialPageRoute(
                                     builder: (_) => AddContributionScreen(
                                       eventId: widget.eventId,
+                                      eventTypeId: data['eventTypeId'] as String? ?? '',
                                       prefillContributionType: val == 'cf'
                                           ? kTypeCarryForward
                                           : kTypeGaneshLaddu,
@@ -402,7 +453,9 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                     ],
 
                   ],
-                ),
+                    ),
+                  ),
+                ]),
               ),
 
               // ── Tab bar: grocery-style for admin, classic for resident ──
@@ -457,14 +510,20 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                           _EventTab(
                               eventId: widget.eventId,
                               data: data,
-                              isAdmin: true),
+                              isAdmin: true,
+                              residentFlat: _residentFlat,
+                              residentName: _residentName,
+                              residentWing: _residentWing,
+                              residentBlock: _residentBlock),
                           _ContributionsTab(
                               eventId: widget.eventId,
+                              eventTypeId: data['eventTypeId'] as String? ?? '',
                               isAdmin: true,
                               status: status,
                               residentFlat: _residentFlat),
                           _ExpensesTab(
                               eventId: widget.eventId,
+                              eventTypeId: data['eventTypeId'] as String? ?? '',
                               isAdmin: true,
                               status: status),
                           _FollowUpTab(
@@ -472,6 +531,7 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                               eventName: data['name'] ?? widget.eventName),
                           _VolunteersTab(
                               eventId: widget.eventId,
+                              eventTypeId: data['eventTypeId'] as String? ?? '',
                               isAdmin: true),
                           _ActivityTab(eventId: widget.eventId),
                         ]
@@ -480,7 +540,11 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                           _EventTab(
                               eventId: widget.eventId,
                               data: data,
-                              isAdmin: false),
+                              isAdmin: false,
+                              residentFlat: _residentFlat,
+                              residentName: _residentName,
+                              residentWing: _residentWing,
+                              residentBlock: _residentBlock),
                           _OverviewTab(
                               eventId: widget.eventId,
                               collected: collected,
@@ -490,11 +554,17 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                               isAdmin: false),
                           _ExpensesTab(
                               eventId: widget.eventId,
+                              eventTypeId: data['eventTypeId'] as String? ?? '',
                               isAdmin: false,
                               status: status),
                           _VolunteersTab(
                               eventId: widget.eventId,
-                              isAdmin: false),
+                              eventTypeId: data['eventTypeId'] as String? ?? '',
+                              isAdmin: false,
+                              residentFlat: _residentFlat,
+                              residentName: _residentName,
+                              residentWing: _residentWing,
+                              residentBlock: _residentBlock),
                         ],
                 ),
               ),
@@ -515,7 +585,8 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                           context,
                           MaterialPageRoute(
                             builder: (_) => AddContributionScreen(
-                                eventId: widget.eventId),
+                                eventId: widget.eventId,
+                                eventTypeId: data['eventTypeId'] as String? ?? ''),
                           ),
                         ),
                         backgroundColor: Colors.green,
@@ -531,7 +602,8 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                           context,
                           MaterialPageRoute(
                             builder: (_) => AddExpenseScreen(
-                                eventId: widget.eventId),
+                                eventId: widget.eventId,
+                                eventTypeId: data['eventTypeId'] as String? ?? ''),
                           ),
                         ),
                         backgroundColor: Colors.red.shade400,
@@ -1124,7 +1196,19 @@ class _EventTab extends StatefulWidget {
   final String eventId;
   final Map<String, dynamic> data;
   final bool isAdmin;
-  const _EventTab({required this.eventId, required this.data, required this.isAdmin});
+  final String residentFlat;
+  final String residentName;
+  final String residentWing;
+  final String residentBlock;
+  const _EventTab({
+    required this.eventId,
+    required this.data,
+    required this.isAdmin,
+    this.residentFlat = '',
+    this.residentName = '',
+    this.residentWing = '',
+    this.residentBlock = '',
+  });
   @override
   State<_EventTab> createState() => _EventTabState();
 }
@@ -1336,6 +1420,10 @@ class _EventTabState extends State<_EventTab> {
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
             children: [
+
+              // ── Countdown banner ────────────────────────────────
+              _CountdownBanner(startStr: startStr, endStr: endStr),
+              const SizedBox(height: 12),
 
               // ── Event details card ──────────────────────────────
               Container(
@@ -1551,6 +1639,36 @@ class _EventTabState extends State<_EventTab> {
                     ),
                   );
                 }),
+
+              // ── Pooja Schedule section ──────────────────────────
+              StreamBuilder<DocumentSnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('appSettings')
+                    .doc('poojaSchedule')
+                    .snapshots(),
+                builder: (context, catSnap) {
+                  final catData = catSnap.data?.data() as Map<String, dynamic>? ?? {};
+                  final enabledIds = List<String>.from(catData['enabledTypeIds'] as List? ?? []);
+                  final eventTypeId = widget.data['eventTypeId'] as String? ?? '';
+                  if (!enabledIds.contains(eventTypeId)) return const SizedBox.shrink();
+                  final defaultMorning = (catData['morningCapacity'] as int?) ?? 2;
+                  final defaultEvening = (catData['eveningCapacity'] as int?) ?? 2;
+                  return Column(children: [
+                    const SizedBox(height: 28),
+                    _PoojaScheduleSection(
+                      eventId: widget.eventId,
+                      data: widget.data,
+                      isAdmin: widget.isAdmin,
+                      residentFlat: widget.residentFlat,
+                      residentName: widget.residentName,
+                      residentWing: widget.residentWing,
+                      residentBlock: widget.residentBlock,
+                      defaultMorningCap: defaultMorning,
+                      defaultEveningCap: defaultEvening,
+                    ),
+                  ]);
+                },
+              ),
             ],
           );
         },
@@ -1580,17 +1698,819 @@ class _EventDetailRow extends StatelessWidget {
   }
 }
 
+// ── Countdown Banner ─────────────────────────────────────────────────────────
+
+class _CountdownBanner extends StatefulWidget {
+  final String startStr;
+  final String endStr;
+  const _CountdownBanner({required this.startStr, required this.endStr});
+  @override
+  State<_CountdownBanner> createState() => _CountdownBannerState();
+}
+
+class _CountdownBannerState extends State<_CountdownBanner> {
+  late Timer _timer;
+  Duration _remaining = Duration.zero;
+  bool _started = false;
+  bool _ended = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _update();
+    _timer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() => _update());
+    });
+  }
+
+  void _update() {
+    final now = DateTime.now();
+    final start = _parse(widget.startStr);
+    final end = _parse(widget.endStr);
+    if (start == null) return;
+    if (now.isBefore(start)) {
+      _remaining = start.difference(now);
+      _started = false;
+      _ended = false;
+    } else if (end != null && now.isAfter(end.add(const Duration(days: 1)))) {
+      _started = true;
+      _ended = true;
+    } else {
+      _started = true;
+      _ended = false;
+    }
+  }
+
+  DateTime? _parse(String s) {
+    if (s.isEmpty) return null;
+    try {
+      final p = s.split('/');
+      return DateTime(int.parse(p[2]), int.parse(p[1]), int.parse(p[0]));
+    } catch (_) { return null; }
+  }
+
+  @override
+  void dispose() { _timer.cancel(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_parse(widget.startStr) == null) return const SizedBox.shrink();
+
+    if (_ended) return const SizedBox.shrink();
+
+    if (_started) {
+      // Event is ongoing
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(colors: [Colors.green.shade600, Colors.teal.shade500]),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(children: [
+          const Icon(Icons.celebration_outlined, color: Colors.white, size: 22),
+          const SizedBox(width: 12),
+          const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Event is Happening Now! 🎉', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15)),
+            SizedBox(height: 2),
+            Text('Join us and be part of the celebration', style: TextStyle(color: Colors.white70, fontSize: 12)),
+          ])),
+        ]),
+      );
+    }
+
+    // Countdown
+    final d = _remaining.inDays;
+    final h = _remaining.inHours % 24;
+    final m = _remaining.inMinutes % 60;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.deepPurple.shade700, Colors.indigo.shade500],
+          begin: Alignment.topLeft, end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.deepPurple.withValues(alpha: 0.25), blurRadius: 12, offset: const Offset(0, 5))],
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.timer_outlined, color: Colors.white70, size: 16),
+          const SizedBox(width: 6),
+          const Text('Event starts in', style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w500)),
+        ]),
+        const SizedBox(height: 10),
+        Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+          _CountUnit(value: d, label: 'Days'),
+          _Divider(),
+          _CountUnit(value: h, label: 'Hrs'),
+          _Divider(),
+          _CountUnit(value: m, label: 'Min'),
+        ]),
+      ]),
+    );
+  }
+}
+
+class _CountUnit extends StatelessWidget {
+  final int value;
+  final String label;
+  const _CountUnit({required this.value, required this.label});
+  @override
+  Widget build(BuildContext context) => Column(children: [
+    Text('${value.toString().padLeft(2, '0')}',
+        style: const TextStyle(color: Colors.white, fontSize: 34, fontWeight: FontWeight.w800, height: 1)),
+    const SizedBox(height: 2),
+    Text(label, style: const TextStyle(color: Colors.white54, fontSize: 11, letterSpacing: 0.5)),
+  ]);
+}
+
+class _Divider extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) =>
+      const Text(':', style: TextStyle(color: Colors.white38, fontSize: 28, fontWeight: FontWeight.w300));
+}
+
+// ── Pooja Schedule Section ────────────────────────────────────────────────────
+
+class _PoojaScheduleSection extends StatefulWidget {
+  final String eventId;
+  final Map<String, dynamic> data;
+  final bool isAdmin;
+  final String residentFlat;
+  final String residentName;
+  final String residentWing;
+  final String residentBlock;
+  final int defaultMorningCap;
+  final int defaultEveningCap;
+  const _PoojaScheduleSection({
+    required this.eventId,
+    required this.data,
+    required this.isAdmin,
+    this.residentFlat = '',
+    this.residentName = '',
+    this.residentWing = '',
+    this.residentBlock = '',
+    this.defaultMorningCap = 2,
+    this.defaultEveningCap = 2,
+  });
+  @override
+  State<_PoojaScheduleSection> createState() => _PoojaScheduleSectionState();
+}
+
+class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
+  CollectionReference get _col => FirebaseFirestore.instance
+      .collection('events').doc(widget.eventId).collection('poojaRegistrations');
+
+  DocumentReference get _eventRef =>
+      FirebaseFirestore.instance.collection('events').doc(widget.eventId);
+
+  // Parse DD/MM/YYYY
+  DateTime? _parseDate(String s) {
+    if (s.isEmpty) return null;
+    try { final p = s.split('/'); return DateTime(int.parse(p[2]), int.parse(p[1]), int.parse(p[0])); } catch (_) { return null; }
+  }
+
+  List<DateTime> _eventDates() {
+    final start = _parseDate(widget.data['startDate'] as String? ?? '');
+    final end = _parseDate(widget.data['endDate'] as String? ?? '');
+    if (start == null) return [];
+    final e = end ?? start;
+    return List.generate(
+      e.difference(start).inDays + 1,
+      (i) => start.add(Duration(days: i)),
+    );
+  }
+
+  String _dateKey(DateTime dt) =>
+      '${dt.year}-${dt.month.toString().padLeft(2,'0')}-${dt.day.toString().padLeft(2,'0')}';
+
+  String _fmtDate(DateTime dt) {
+    const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return '${days[dt.weekday-1]}, ${months[dt.month-1]} ${dt.day}';
+  }
+
+  Future<void> _showConfigDialog(Map<String, dynamic> currentConfig) async {
+    int morning = (currentConfig['morningCapacity'] as int?) ?? widget.defaultMorningCap;
+    int evening = (currentConfig['eveningCapacity'] as int?) ?? widget.defaultEveningCap;
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setSt) => AlertDialog(
+        title: const Text('Pooja Slot Configuration'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text('Set max participants per shift per day:',
+              style: TextStyle(fontSize: 13, color: Colors.grey)),
+          const SizedBox(height: 16),
+          Row(children: [
+            const Icon(Icons.wb_sunny_outlined, color: Color(0xFFF59E0B), size: 20),
+            const SizedBox(width: 8),
+            const Text('Morning capacity:', style: TextStyle(fontWeight: FontWeight.w500)),
+            const Spacer(),
+            IconButton(icon: const Icon(Icons.remove_circle_outline), iconSize: 20,
+                onPressed: morning > 1 ? () => setSt(() => morning--) : null),
+            Text('$morning', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            IconButton(icon: const Icon(Icons.add_circle_outline), iconSize: 20,
+                onPressed: () => setSt(() => morning++)),
+          ]),
+          Row(children: [
+            const Icon(Icons.nights_stay_outlined, color: Color(0xFF8B5CF6), size: 20),
+            const SizedBox(width: 8),
+            const Text('Evening capacity:', style: TextStyle(fontWeight: FontWeight.w500)),
+            const Spacer(),
+            IconButton(icon: const Icon(Icons.remove_circle_outline), iconSize: 20,
+                onPressed: evening > 1 ? () => setSt(() => evening--) : null),
+            Text('$evening', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            IconButton(icon: const Icon(Icons.add_circle_outline), iconSize: 20,
+                onPressed: () => setSt(() => evening++)),
+          ]),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () async {
+              await _eventRef.update({'poojaConfig': {'morningCapacity': morning, 'eveningCapacity': evening}});
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple),
+            child: const Text('Save', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      )),
+    );
+  }
+
+  Future<void> _showRegisterDialog(DateTime date, String shift,
+      List<Map<String, dynamic>> existingRegs, int capacity,
+      {Map<String, dynamic>? myReg, String? myRegId}) async {
+    // If resident already has an approved reg, allow date change
+    if (myReg != null && myReg['status'] == 'approved') {
+      // Show date change dialog
+      final dates = _eventDates();
+      if (dates.isEmpty) return;
+      DateTime? picked;
+      String pickedShift = shift;
+      await showDialog(
+        context: context,
+        builder: (ctx) => StatefulBuilder(builder: (ctx, setSt) => AlertDialog(
+          title: const Text('Change Pooja Date'),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Text('Select a new date and shift:',
+                style: TextStyle(fontSize: 13, color: Colors.grey)),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              value: pickedShift,
+              decoration: const InputDecoration(labelText: 'Shift', isDense: true),
+              items: const [
+                DropdownMenuItem(value: 'morning', child: Text('☀ Morning')),
+                DropdownMenuItem(value: 'evening', child: Text('🌙 Evening')),
+              ],
+              onChanged: (v) => setSt(() => pickedShift = v!),
+            ),
+            const SizedBox(height: 12),
+            Wrap(spacing: 6, runSpacing: 6, children: dates.map((d) {
+              final sel = picked != null && _dateKey(picked!) == _dateKey(d);
+              return ChoiceChip(
+                label: Text(_fmtDate(d), style: TextStyle(fontSize: 12,
+                    color: sel ? Colors.white : Colors.grey.shade700)),
+                selected: sel,
+                selectedColor: Colors.deepPurple,
+                onSelected: (_) => setSt(() => picked = d),
+              );
+            }).toList()),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: picked == null ? null : () async {
+                await _col.doc(myRegId).update({
+                  'date': _dateKey(picked!),
+                  'shift': pickedShift,
+                  'status': 'pending',
+                  'requestedAt': Timestamp.now(),
+                });
+                if (ctx.mounted) Navigator.pop(ctx);
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple),
+              child: const Text('Change Date', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        )),
+      );
+      return;
+    }
+
+    // New registration
+    final approvedCount = existingRegs.where((r) => r['status'] == 'approved').length;
+    if (approvedCount >= capacity) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$shift slot is full for ${_fmtDate(date)}')),
+        );
+      }
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Register for ${shift == 'morning' ? '☀ Morning' : '🌙 Evening'} Pooja'),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Date: ${_fmtDate(date)}',
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+          const SizedBox(height: 8),
+          const Text('You will be seated beside the idol to offer prayers during this shift. Your request will be reviewed by the admin.',
+              style: TextStyle(fontSize: 13, color: Colors.grey, height: 1.5)),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple),
+            child: const Text('Request Slot', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _col.add({
+        'flat': widget.residentFlat,
+        'name': widget.residentName,
+        'wing': widget.residentWing,
+        'block': widget.residentBlock,
+        'date': _dateKey(date),
+        'shift': shift,
+        'status': 'pending',
+        'requestedAt': Timestamp.now(),
+      });
+    }
+  }
+
+  Future<void> _updateStatus(String docId, String status) async {
+    await _col.doc(docId).update({'status': status, '${status}At': Timestamp.now()});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: _eventRef.snapshots(),
+      builder: (context, eventSnap) {
+        final poojaConfig = (eventSnap.data?.data() as Map<String, dynamic>?)?['poojaConfig']
+            as Map<String, dynamic>? ?? {};
+        final morningCap = (poojaConfig['morningCapacity'] as int?) ?? widget.defaultMorningCap;
+        final eveningCap = (poojaConfig['eveningCapacity'] as int?) ?? widget.defaultEveningCap;
+        final dates = _eventDates();
+
+        return StreamBuilder<QuerySnapshot>(
+          stream: _col.orderBy('requestedAt').snapshots(),
+          builder: (context, snap) {
+            final allRegs = (snap.data?.docs ?? []).map((d) {
+              return {...(d.data() as Map<String, dynamic>), '_id': d.id};
+            }).toList();
+
+            // Group registrations by date+shift
+            Map<String, Map<String, List<Map<String, dynamic>>>> grouped = {};
+            for (final r in allRegs) {
+              final date = r['date'] as String? ?? '';
+              final shift = r['shift'] as String? ?? 'morning';
+              grouped.putIfAbsent(date, () => {});
+              grouped[date]!.putIfAbsent(shift, () => []);
+              grouped[date]![shift]!.add(r);
+            }
+
+            // My registrations (for residents)
+            final myRegs = widget.isAdmin ? <Map<String, dynamic>>[] :
+                allRegs.where((r) => r['flat'] == widget.residentFlat).toList();
+
+            return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              // Section header
+              Row(children: [
+                const Text('🙏', style: TextStyle(fontSize: 18)),
+                const SizedBox(width: 8),
+                Text('Pooja Schedule',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800,
+                        color: Colors.grey.shade800, letterSpacing: 0.3)),
+                const Spacer(),
+                if (widget.isAdmin)
+                  TextButton.icon(
+                    icon: const Icon(Icons.tune, size: 16),
+                    label: const Text('Configure', style: TextStyle(fontSize: 12)),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.deepPurple,
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    ),
+                    onPressed: () => _showConfigDialog(poojaConfig),
+                  ),
+              ]),
+              const SizedBox(height: 4),
+              Text('Capacity: ☀ Morning ${morningCap}p  ·  🌙 Evening ${eveningCap}p per day',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+              const SizedBox(height: 14),
+
+              if (dates.isEmpty)
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white, borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: Center(child: Text('Set event start/end dates to enable Pooja scheduling.',
+                      style: TextStyle(color: Colors.grey.shade400, fontSize: 13), textAlign: TextAlign.center)),
+                )
+              else
+                ...dates.map((date) {
+                  final dk = _dateKey(date);
+                  final dayRegs = grouped[dk] ?? {};
+                  final morningRegs = dayRegs['morning'] ?? [];
+                  final eveningRegs = dayRegs['evening'] ?? [];
+
+                  final myMorning = myRegs.where((r) => r['date'] == dk && r['shift'] == 'morning').firstOrNull;
+                  final myEvening = myRegs.where((r) => r['date'] == dk && r['shift'] == 'evening').firstOrNull;
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 3))],
+                    ),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      // Date header
+                      Container(
+                        padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+                        decoration: BoxDecoration(
+                          color: Colors.deepPurple.shade50,
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+                        ),
+                        child: Row(children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.deepPurple,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text('${date.day}',
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(_fmtDate(date),
+                              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Colors.deepPurple.shade800)),
+                          const Spacer(),
+                          // Day number label
+                          Text('Day ${dates.indexOf(date) + 1}',
+                              style: TextStyle(fontSize: 11, color: Colors.deepPurple.shade300)),
+                        ]),
+                      ),
+                      // Morning shift
+                      _PoojaShift(
+                        shift: 'morning',
+                        label: 'Morning',
+                        icon: Icons.wb_sunny_outlined,
+                        color: const Color(0xFFF59E0B),
+                        regs: morningRegs,
+                        capacity: morningCap,
+                        isAdmin: widget.isAdmin,
+                        myReg: myMorning,
+                        onRegister: () => _showRegisterDialog(date, 'morning', morningRegs, morningCap,
+                            myReg: myMorning, myRegId: myMorning?['_id'] as String?),
+                        onApprove: (id) => _updateStatus(id, 'approved'),
+                        onReject: (id) => _updateStatus(id, 'rejected'),
+                      ),
+                      const Divider(height: 1, indent: 14, endIndent: 14),
+                      // Evening shift
+                      _PoojaShift(
+                        shift: 'evening',
+                        label: 'Evening',
+                        icon: Icons.nights_stay_outlined,
+                        color: const Color(0xFF8B5CF6),
+                        regs: eveningRegs,
+                        capacity: eveningCap,
+                        isAdmin: widget.isAdmin,
+                        myReg: myEvening,
+                        onRegister: () => _showRegisterDialog(date, 'evening', eveningRegs, eveningCap,
+                            myReg: myEvening, myRegId: myEvening?['_id'] as String?),
+                        onApprove: (id) => _updateStatus(id, 'approved'),
+                        onReject: (id) => _updateStatus(id, 'rejected'),
+                      ),
+                    ]),
+                  );
+                }),
+            ]);
+          },
+        );
+      },
+    );
+  }
+}
+
+class _PoojaShift extends StatelessWidget {
+  final String shift;
+  final String label;
+  final IconData icon;
+  final Color color;
+  final List<Map<String, dynamic>> regs;
+  final int capacity;
+  final bool isAdmin;
+  final Map<String, dynamic>? myReg;
+  final VoidCallback onRegister;
+  final void Function(String) onApprove;
+  final void Function(String) onReject;
+
+  const _PoojaShift({
+    required this.shift,
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.regs,
+    required this.capacity,
+    required this.isAdmin,
+    required this.myReg,
+    required this.onRegister,
+    required this.onApprove,
+    required this.onReject,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final approved = regs.where((r) => r['status'] == 'approved').toList();
+    final pending = regs.where((r) => r['status'] == 'pending').toList();
+    final rejected = regs.where((r) => r['status'] == 'rejected').toList();
+    final isFull = approved.length >= capacity;
+    final myStatus = myReg?['status'] as String?;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // Shift header row
+        Row(children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 6),
+          Text(label, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: color)),
+          const SizedBox(width: 8),
+          // Slot count badge
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: isFull ? Colors.red.shade50 : Colors.green.shade50,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: isFull ? Colors.red.shade200 : Colors.green.shade200),
+            ),
+            child: Text('${approved.length}/$capacity slots',
+                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600,
+                    color: isFull ? Colors.red.shade700 : Colors.green.shade700)),
+          ),
+          const Spacer(),
+          // Register / Change date button (residents only)
+          if (!isAdmin)
+            myStatus == 'approved'
+              ? GestureDetector(
+                  onTap: onRegister,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.teal.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.teal.shade300),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.swap_horiz, size: 12, color: Colors.teal.shade700),
+                      const SizedBox(width: 3),
+                      Text('Change', style: TextStyle(fontSize: 11, color: Colors.teal.shade700, fontWeight: FontWeight.w600)),
+                    ]),
+                  ),
+                )
+              : myStatus == 'pending'
+                ? Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text('Requested', style: TextStyle(fontSize: 11, color: Colors.orange.shade700, fontWeight: FontWeight.w600)),
+                  )
+                : isFull
+                  ? Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(8)),
+                      child: Text('Full', style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                    )
+                  : GestureDetector(
+                      onTap: onRegister,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: color.withValues(alpha: 0.4)),
+                        ),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(Icons.add, size: 13, color: color),
+                          const SizedBox(width: 3),
+                          Text('Join', style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w700)),
+                        ]),
+                      ),
+                    ),
+        ]),
+
+        // Approved list (always visible)
+        if (approved.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          ...approved.map((r) => Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Row(children: [
+              Icon(Icons.check_circle, size: 14, color: Colors.green.shade600),
+              const SizedBox(width: 6),
+              Text('${r['flat']} — ${r['name']}',
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+              const Spacer(),
+              if (isAdmin)
+                GestureDetector(
+                  onTap: () => onReject(r['_id'] as String),
+                  child: Icon(Icons.close, size: 14, color: Colors.red.shade300),
+                ),
+            ]),
+          )),
+        ],
+
+        // Admin: pending requests in request order
+        if (isAdmin && pending.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          ...pending.asMap().entries.map((entry) {
+            final i = entry.key;
+            final r = entry.value;
+            final reqTime = (r['requestedAt'] as Timestamp?)?.toDate();
+            final agoStr = reqTime != null ? _ago(reqTime) : '';
+            return Container(
+              margin: const EdgeInsets.only(bottom: 4),
+              padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Row(children: [
+                Container(
+                  width: 20, height: 20,
+                  decoration: BoxDecoration(
+                    color: i == 0 ? Colors.deepPurple : Colors.orange.shade300,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(child: Text('${i+1}',
+                      style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold))),
+                ),
+                const SizedBox(width: 8),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('${r['flat']} — ${r['name']}',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                  if (agoStr.isNotEmpty)
+                    Text('Requested $agoStr${i == 0 ? ' · First in queue' : ''}',
+                        style: TextStyle(fontSize: 10, color: Colors.orange.shade700)),
+                ])),
+                Row(mainAxisSize: MainAxisSize.min, children: [
+                  GestureDetector(
+                    onTap: approved.length < capacity ? () => onApprove(r['_id'] as String) : null,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: approved.length < capacity ? Colors.green.shade600 : Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text('Approve', style: TextStyle(fontSize: 11, color: approved.length < capacity ? Colors.white : Colors.grey.shade500, fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  GestureDetector(
+                    onTap: () => onReject(r['_id'] as String),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.red.shade200)),
+                      child: Text('Reject', style: TextStyle(fontSize: 11, color: Colors.red.shade700, fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                ]),
+              ]),
+            );
+          }),
+        ],
+
+        // Resident: show if rejected
+        if (!isAdmin && myStatus == 'rejected')
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Row(children: [
+              Icon(Icons.cancel_outlined, size: 14, color: Colors.red.shade400),
+              const SizedBox(width: 6),
+              Text('Your request was not approved for this slot.',
+                  style: TextStyle(fontSize: 11, color: Colors.red.shade600)),
+            ]),
+          ),
+
+        // Vacant indicator
+        if (approved.isEmpty && pending.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Row(children: [
+              Icon(Icons.circle_outlined, size: 12, color: Colors.green.shade400),
+              const SizedBox(width: 5),
+              Text('All $capacity slot${capacity > 1 ? 's' : ''} available',
+                  style: TextStyle(fontSize: 11, color: Colors.green.shade600)),
+            ]),
+          ),
+      ]),
+    );
+  }
+
+  static String _ago(DateTime dt) {
+    final diff = DateTime.now().difference(dt);
+    if (diff.inDays > 0) return '${diff.inDays}d ago';
+    if (diff.inHours > 0) return '${diff.inHours}h ago';
+    if (diff.inMinutes > 0) return '${diff.inMinutes}m ago';
+    return 'just now';
+  }
+}
+
 // ── Volunteers Tab ────────────────────────────────────────────────────────────
 
 class _VolunteersTab extends StatefulWidget {
   final String eventId;
+  final String eventTypeId;
   final bool isAdmin;
-  const _VolunteersTab({required this.eventId, required this.isAdmin});
+  final String residentFlat;
+  final String residentName;
+  final String residentWing;
+  final String residentBlock;
+  const _VolunteersTab({
+    required this.eventId,
+    this.eventTypeId = '',
+    required this.isAdmin,
+    this.residentFlat = '',
+    this.residentName = '',
+    this.residentWing = '',
+    this.residentBlock = '',
+  });
   @override
   State<_VolunteersTab> createState() => _VolunteersTabState();
 }
 
 class _VolunteersTabState extends State<_VolunteersTab> {
+  // Load session directly so flat is always available even if parent hasn't loaded yet
+  String _flat = '';
+  String _name = '';
+  String _wing = '';
+  String _block = '';
+  final Map<String, bool> _volExpanded = {};
+  List<String> _roles = _defaultRoles;
+
+  @override
+  void initState() {
+    super.initState();
+    _flat = widget.residentFlat;
+    _name = widget.residentName;
+    _wing = widget.residentWing;
+    _block = widget.residentBlock;
+    if (!widget.isAdmin && _flat.isEmpty) _loadSession();
+    _loadRoles();
+  }
+
+  Future<void> _loadRoles() async {
+    if (widget.eventTypeId.isEmpty) return;
+    final snap = await FirebaseFirestore.instance
+        .collection('eventTypeConfig')
+        .doc(widget.eventTypeId)
+        .get();
+    if (!mounted) return;
+    final d = snap.data() as Map<String, dynamic>? ?? {};
+    final raw = d['volunteerRoles'];
+    if (raw != null) {
+      setState(() => _roles = List<String>.from(raw as List));
+    }
+  }
+
+  @override
+  void didUpdateWidget(_VolunteersTab old) {
+    super.didUpdateWidget(old);
+    if (widget.residentFlat.isNotEmpty && widget.residentFlat != _flat) {
+      setState(() {
+        _flat = widget.residentFlat;
+        _name = widget.residentName;
+        _wing = widget.residentWing;
+        _block = widget.residentBlock;
+      });
+    }
+  }
+
+  Future<void> _loadSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _flat = prefs.getString('session_flat') ?? '';
+      _name = prefs.getString('session_name') ?? '';
+      _wing = prefs.getString('session_wing') ?? '';
+      _block = prefs.getString('session_block') ?? '';
+    });
+  }
+
   static const _defaultRoles = [
     'Coordinator', 'Decoration', 'Food & Prasad', 'Security',
     'Music & Sound', 'Collection', 'Photography', 'Transport', 'Other',
@@ -1618,11 +2538,17 @@ class _VolunteersTabState extends State<_VolunteersTab> {
     'Other': Color(0xFF374151),
   };
 
-  Future<void> _showAddDialog({Map<String, dynamic>? existing, String? docId}) async {
-    final nameCtrl = TextEditingController(text: existing?['name'] ?? '');
-    final flatCtrl = TextEditingController(text: existing?['flat'] ?? '');
+  CollectionReference get _col => FirebaseFirestore.instance
+      .collection('events').doc(widget.eventId).collection('volunteers');
+
+  // ── Admin: manually add volunteer (auto-approved) ──────────────────────────
+  Future<void> _showAdminAddDialog({Map<String, dynamic>? existing, String? docId}) async {
+    final nameCtrl  = TextEditingController(text: existing?['name']  ?? '');
+    final wingCtrl  = TextEditingController(text: existing?['wing']  ?? '');
+    final blockCtrl = TextEditingController(text: existing?['block'] ?? '');
+    final flatCtrl  = TextEditingController(text: existing?['flat']  ?? '');
     final phoneCtrl = TextEditingController(text: existing?['phone'] ?? '');
-    String role = existing?['role'] ?? _defaultRoles.first;
+    String role = existing?['role'] ?? _roles.first;
 
     await showDialog(
       context: context,
@@ -1630,104 +2556,303 @@ class _VolunteersTabState extends State<_VolunteersTab> {
         builder: (ctx, setSt) => AlertDialog(
           title: Text(existing == null ? 'Add Volunteer' : 'Edit Volunteer'),
           content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  controller: nameCtrl,
-                  textCapitalization: TextCapitalization.words,
-                  decoration: InputDecoration(
-                    labelText: 'Name *',
-                    hintText: 'e.g. Ramesh Kumar',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Colors.deepPurple, width: 2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                const Text('Role', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 6, runSpacing: 6,
-                  children: _defaultRoles.map((r) => ChoiceChip(
-                    label: Text(r, style: const TextStyle(fontSize: 12)),
-                    selected: role == r,
-                    selectedColor: (_roleColors[r] ?? Colors.deepPurple).withOpacity(0.15),
-                    onSelected: (_) => setSt(() => role = r),
-                  )).toList(),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: flatCtrl,
-                  decoration: InputDecoration(
-                    labelText: 'Flat / Unit (optional)',
-                    hintText: 'e.g. DA101',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Colors.deepPurple, width: 2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: phoneCtrl,
-                  keyboardType: TextInputType.phone,
-                  decoration: InputDecoration(
-                    labelText: 'Phone (optional)',
-                    hintText: 'e.g. 9876543210',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Colors.deepPurple, width: 2),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _volTextField(nameCtrl, 'Name *', 'e.g. Ramesh Kumar', TextInputType.name),
+              const SizedBox(height: 12),
+              const Text('Role', style: TextStyle(fontSize: 12, color: Colors.grey)),
+              const SizedBox(height: 6),
+              _roleChips(role, (r) => setSt(() => role = r)),
+              const SizedBox(height: 12),
+              // Wing · Block · Flat row
+              Row(children: [
+                Expanded(child: _volTextField(wingCtrl,  'Wing',  'e.g. D', TextInputType.text)),
+                const SizedBox(width: 8),
+                Expanded(child: _volTextField(blockCtrl, 'Block', 'e.g. A', TextInputType.text)),
+                const SizedBox(width: 8),
+                Expanded(flex: 2, child: _volTextField(flatCtrl, 'Flat No', 'e.g. 101', TextInputType.text)),
+              ]),
+              const SizedBox(height: 10),
+              _volTextField(phoneCtrl, 'Phone (optional)', 'e.g. 9876543210', TextInputType.phone),
+            ]),
           ),
           actions: [
-            if (existing != null && docId != null)
-              TextButton(
-                onPressed: () async {
-                  Navigator.pop(ctx);
-                  await FirebaseFirestore.instance
-                      .collection('events').doc(widget.eventId)
-                      .collection('volunteers').doc(docId).delete();
-                },
-                child: Text('Remove', style: TextStyle(color: Colors.red.shade600)),
-              ),
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
             ElevatedButton(
               onPressed: () async {
                 final name = nameCtrl.text.trim();
                 if (name.isEmpty) return;
                 Navigator.pop(ctx);
-                final ref = FirebaseFirestore.instance
-                    .collection('events').doc(widget.eventId)
-                    .collection('volunteers');
+                final wing  = wingCtrl.text.trim().toUpperCase();
+                final block = blockCtrl.text.trim().toUpperCase();
+                final flatNo = flatCtrl.text.trim();
+                final flat = flatNo.isNotEmpty ? '$wing$block $flatNo' : '$wing$block';
                 final payload = {
-                  'name': name,
-                  'role': role,
-                  'flat': flatCtrl.text.trim(),
+                  'name': name, 'role': role,
+                  'wing': wing, 'block': block, 'flat': flat,
                   'phone': phoneCtrl.text.trim(),
+                  'status': 'approved', 'addedBy': 'admin',
+                  'approvedAt': Timestamp.now(),
                   'addedAt': Timestamp.now(),
                 };
-                if (docId != null) {
-                  await ref.doc(docId).update(payload);
-                } else {
-                  await ref.add(payload);
-                }
+                if (docId != null) { await _col.doc(docId).update(payload); }
+                else { await _col.add(payload); }
               },
               style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple),
-              child: Text(existing == null ? 'Add' : 'Save',
+              child: Text(existing == null ? 'Add' : 'Save', style: const TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Admin: soft-delete volunteer (keeps log intact) ──────────────────────
+  Future<void> _confirmRemove(String docId, String name, String currentStatus) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove Volunteer'),
+        content: Text('Remove $name from the active list?\nYou can restore them later.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade600),
+            child: const Text('Remove', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      await _col.doc(docId).update({
+        'status': 'deleted',
+        'preDeleteStatus': currentStatus,
+        'deletedAt': Timestamp.now(),
+      });
+    }
+  }
+
+  // ── Admin: restore deleted volunteer ────────────────────────────────────
+  Future<void> _restoreVolunteer(String docId, String preDeleteStatus) async {
+    final restoreTo = preDeleteStatus.isEmpty || preDeleteStatus == 'deleted'
+        ? 'pending'
+        : preDeleteStatus;
+    await _col.doc(docId).update({
+      'status': restoreTo,
+      'restoredAt': Timestamp.now(),
+      'preDeleteStatus': FieldValue.delete(),
+    });
+  }
+
+  // ── Admin / resident: move volunteer back to pending ─────────────────────
+  Future<void> _moveToPending(String docId) async {
+    await _col.doc(docId).update({
+      'status': 'pending',
+      'pendingAt': Timestamp.now(),
+    });
+  }
+
+  // ── Resident: self-register dialog ────────────────────────────────────────
+  Future<void> _showRegisterDialog({Map<String, dynamic>? existing, String? docId, Set<String> excludeRoles = const {}}) async {
+    final availableRoles = _roles.where((r) => existing?['role'] == r || !excludeRoles.contains(r)).toList();
+    String role = existing?['role'] ?? (availableRoles.isNotEmpty ? availableRoles.first : _roles.first);
+    final noteCtrl = TextEditingController(text: existing?['note'] ?? '');
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) => AlertDialog(
+          title: Text(existing == null ? 'Register as Volunteer' : 'Edit Registration'),
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              // Name + flat (read-only, from session)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.deepPurple.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(children: [
+                  CircleAvatar(
+                    radius: 18, backgroundColor: Colors.deepPurple.shade100,
+                    child: Text(
+                      _name.isNotEmpty ? _name[0].toUpperCase() : '?',
+                      style: TextStyle(color: Colors.deepPurple.shade700, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(_name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                    if (_flat.isNotEmpty)
+                      Text('Flat $_flat', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                  ]),
+                ]),
+              ),
+              const SizedBox(height: 14),
+              const Text('Choose your role', style: TextStyle(fontSize: 12, color: Colors.grey)),
+              const SizedBox(height: 6),
+              _roleChips(role, (r) => setSt(() => role = r), availableRoles: availableRoles),
+              const SizedBox(height: 12),
+              TextField(
+                controller: noteCtrl,
+                maxLines: 2,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: InputDecoration(
+                  labelText: 'Note (optional)',
+                  hintText: 'Any specific availability or skills…',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Colors.deepPurple, width: 2),
+                  ),
+                ),
+              ),
+            ]),
+          ),
+          actions: [
+            if (existing != null && docId != null)
+              TextButton(
+                onPressed: () async { Navigator.pop(ctx); await _col.doc(docId).delete(); },
+                child: Text('Withdraw', style: TextStyle(color: Colors.red.shade600)),
+              ),
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                final payload = {
+                  'name': _name,
+                  'flat': _flat,
+                  'wing': _wing,
+                  'block': _block,
+                  'role': role,
+                  'note': noteCtrl.text.trim(),
+                  'status': 'pending',
+                  'addedBy': 'resident',
+                  'addedAt': Timestamp.now(),
+                };
+                if (docId != null) { await _col.doc(docId).update(payload); }
+                else { await _col.add(payload); }
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple),
+              child: Text(existing == null ? 'Submit Registration' : 'Update',
                   style: const TextStyle(color: Colors.white)),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // ── Admin: approve / reject / waitlist ────────────────────────────────────
+  Future<void> _updateStatus(String docId, String status) async {
+    await _col.doc(docId).update({
+      'status': status,
+      '${status}At': Timestamp.now(),
+    });
+  }
+
+  // ── Shared helpers ────────────────────────────────────────────────────────
+  Widget _roleChips(String selected, void Function(String) onSelect, {List<String>? availableRoles}) {
+    final roles = availableRoles ?? _roles;
+    return Wrap(
+      spacing: 6, runSpacing: 6,
+      children: roles.map((r) => ChoiceChip(
+        label: Text(r, style: const TextStyle(fontSize: 12)),
+        selected: selected == r,
+        selectedColor: (_roleColors[r] ?? Colors.deepPurple).withValues(alpha: 0.15),
+        onSelected: (_) => onSelect(r),
+      )).toList(),
+    );
+  }
+
+  Widget _volTextField(TextEditingController ctrl, String label, String hint, TextInputType kbt) =>
+    TextField(
+      controller: ctrl,
+      keyboardType: kbt,
+      textCapitalization: kbt == TextInputType.name ? TextCapitalization.words : TextCapitalization.none,
+      decoration: InputDecoration(
+        labelText: label, hintText: hint,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: Colors.deepPurple, width: 2),
+        ),
+      ),
+    );
+
+  Widget _memberCard(Map<String, dynamic> m, Color color, {bool editable = false, bool removable = false, List<_CardAction>? extraActions, VoidCallback? onTap}) {
+    final name = m['name'] as String? ?? '';
+    final flat = m['flat'] as String? ?? '';
+    final phone = m['phone'] as String? ?? '';
+    final note = m['note'] as String? ?? '';
+    final docId = m['_id'] as String? ?? '';
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha: 0.18)),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 4, offset: const Offset(0, 2))],
+        ),
+        child: Row(children: [
+          CircleAvatar(
+            radius: 18,
+            backgroundColor: color.withValues(alpha: 0.12),
+            child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: color)),
+          ),
+          const SizedBox(width: 10),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+            if (flat.isNotEmpty || phone.isNotEmpty)
+              Text([if (flat.isNotEmpty) flat, if (phone.isNotEmpty) phone].join('  ·  '),
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+            if (note.isNotEmpty)
+              Text(note, style: TextStyle(fontSize: 11, color: Colors.grey.shade500, fontStyle: FontStyle.italic)),
+            if (extraActions != null && extraActions.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Row(children: extraActions.map((a) => Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: GestureDetector(
+                  onTap: a.onTap,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: a.color.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: a.color.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      if (a.icon != null) ...[
+                        Icon(a.icon, size: 11, color: a.color),
+                        const SizedBox(width: 3),
+                      ],
+                      Text(a.label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: a.color)),
+                    ]),
+                  ),
+                ),
+              )).toList()),
+            ],
+          ])),
+          if (editable) ...[
+            IconButton(
+              icon: Icon(Icons.edit_outlined, size: 16, color: Colors.grey.shade400),
+              padding: EdgeInsets.zero, constraints: const BoxConstraints(),
+              onPressed: onTap,
+            ),
+          ],
+          if (removable && docId.isNotEmpty) ...[
+            const SizedBox(width: 4),
+            IconButton(
+              icon: Icon(Icons.delete_outline, size: 16, color: Colors.red.shade300),
+              padding: EdgeInsets.zero, constraints: const BoxConstraints(),
+              onPressed: () => _confirmRemove(docId, name, m['status'] as String? ?? ''),
+            ),
+          ],
+        ]),
       ),
     );
   }
@@ -1739,163 +2864,689 @@ class _VolunteersTabState extends State<_VolunteersTab> {
       floatingActionButton: widget.isAdmin
           ? FloatingActionButton.extended(
               heroTag: 'volunteer_add',
-              onPressed: _showAddDialog,
+              onPressed: _showAdminAddDialog,
               backgroundColor: Colors.deepPurple,
               icon: const Icon(Icons.person_add_outlined, color: Colors.white),
               label: const Text('Add Volunteer', style: TextStyle(color: Colors.white)),
             )
           : null,
       body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('events').doc(widget.eventId)
-            .collection('volunteers')
-            .orderBy('addedAt')
-            .snapshots(),
+        stream: _col.snapshots(),
         builder: (context, snap) {
+          if (snap.hasError) {
+            return Center(child: Text('Error: ${snap.error}', style: const TextStyle(color: Colors.red)));
+          }
           final docs = snap.data?.docs ?? [];
+          final all = (docs.map((d) => {...d.data() as Map<String, dynamic>, '_id': d.id}).toList())
+            ..sort((a, b) {
+              final at = a['addedAt'];
+              final bt = b['addedAt'];
+              if (at == null || bt == null) return 0;
+              return (at as Timestamp).compareTo(bt as Timestamp);
+            });
 
-          if (docs.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.groups_outlined, size: 56, color: Colors.grey.shade300),
-                  const SizedBox(height: 12),
-                  Text(
-                    widget.isAdmin
-                        ? 'No volunteers yet.\nTap "+ Add Volunteer" to add team members.'
-                        : 'Volunteer list will be posted here.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.grey.shade400, fontSize: 14),
-                  ),
-                ],
-              ),
-            );
-          }
+          // Partition
+          final pending   = all.where((m) => m['status'] == 'pending').toList();
+          final approved  = all.where((m) => m['status'] == 'approved').toList();
+          final waitlisted = all.where((m) => m['status'] == 'waitlisted').toList();
+          final rejected  = all.where((m) => m['status'] == 'rejected').toList();
+          final deleted   = all.where((m) => m['status'] == 'deleted').toList();
 
-          // Group by role
+          // Resident's own registrations (can register for multiple roles, excludes deleted)
+          final myRegs = widget.isAdmin ? <Map<String,dynamic>>[] : all.where((m) =>
+              m['addedBy'] == 'resident' && m['flat'] == _flat && m['status'] != 'deleted').toList();
+          final hasRegistered = myRegs.isNotEmpty;
+          final myRegisteredRoles = myRegs.map((m) => m['role'] as String? ?? '').toSet();
+
+          // Group approved by role
           final byRole = <String, List<Map<String, dynamic>>>{};
-          for (final doc in docs) {
-            final d = doc.data() as Map<String, dynamic>;
-            final role = d['role'] as String? ?? 'Other';
-            byRole.putIfAbsent(role, () => []).add({...d, '_id': doc.id});
+          for (final m in approved) {
+            byRole.putIfAbsent(m['role'] as String? ?? 'Other', () => []).add(m);
           }
-
-          // Sort roles by default order, unknowns at end
           final sortedRoles = byRole.keys.toList()
             ..sort((a, b) {
-              final ai = _defaultRoles.indexOf(a);
-              final bi = _defaultRoles.indexOf(b);
+              final ai = _roles.indexOf(a); final bi = _roles.indexOf(b);
               return (ai < 0 ? 99 : ai).compareTo(bi < 0 ? 99 : bi);
             });
 
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-            children: [
-              // Total count chip
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Row(children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.deepPurple.shade50,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text('${docs.length} Volunteers',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
-                            color: Colors.deepPurple.shade700)),
-                  ),
-                ]),
-              ),
+          // Expand/collapse state for volunteer sections
+          final allSections = ['approved', 'waitlisted', 'rejected', 'deleted'];
 
-              ...sortedRoles.map((role) {
-                final members = byRole[role]!;
-                final color = _roleColors[role] ?? const Color(0xFF374151);
-                final icon = _roleIcons[role] ?? Icons.volunteer_activism_outlined;
-
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Role header
-                      Row(children: [
-                        Icon(icon, size: 16, color: color),
-                        const SizedBox(width: 6),
-                        Text(role,
-                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: color)),
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: color.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(10),
+          Widget volSection({
+                required String key,
+                required String label,
+                required int count,
+                required Color color,
+                required IconData icon,
+                required bool initiallyExpanded,
+                required List<Widget> children,
+              }) {
+                _volExpanded.putIfAbsent(key, () => initiallyExpanded);
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    InkWell(
+                      onTap: () => setState(() => _volExpanded[key] = !(_volExpanded[key] ?? true)),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Row(children: [
+                          _SectionHeader(label: label, count: count, color: color, icon: icon),
+                          const Spacer(),
+                          Icon(
+                            (_volExpanded[key] ?? true) ? Icons.expand_less : Icons.expand_more,
+                            size: 18, color: color,
                           ),
-                          child: Text('${members.length}',
-                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color)),
+                        ]),
+                      ),
+                    ),
+                    if (_volExpanded[key] ?? true) ...children,
+                    const SizedBox(height: 8),
+                  ],
+                );
+              }
+
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+                children: [
+
+                // ── RESIDENT: volunteer invitation / appreciation ────
+                if (!widget.isAdmin) ...[
+                  if (!hasRegistered) ...[
+                    // ── Invitation banner ──────────────────────────────
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [const Color(0xFF4F46E5), const Color(0xFF7C3AED)],
+                          begin: Alignment.topLeft, end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF4F46E5).withValues(alpha: 0.35),
+                            blurRadius: 20, offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: Stack(
+                        children: [
+                          // Decorative circle top-right
+                          Positioned(
+                            top: -20, right: -20,
+                            child: Container(
+                              width: 100, height: 100,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Colors.white.withValues(alpha: 0.07),
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            bottom: -30, left: -10,
+                            child: Container(
+                              width: 130, height: 130,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Colors.white.withValues(alpha: 0.05),
+                              ),
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 22, 20, 20),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.18),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Icon(Icons.volunteer_activism,
+                                        color: Colors.white, size: 26),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Text('Be Part of Something Beautiful',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w800,
+                                              height: 1.2,
+                                            )),
+                                        const SizedBox(height: 3),
+                                        Text('Help make this event unforgettable',
+                                            style: TextStyle(
+                                              color: Colors.white.withValues(alpha: 0.75),
+                                              fontSize: 12,
+                                            )),
+                                      ],
+                                    ),
+                                  ),
+                                ]),
+                                const SizedBox(height: 14),
+                                Text('Every helping hand counts. Choose a role that suits you and join our volunteer team!',
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(alpha: 0.88),
+                                      fontSize: 13,
+                                      height: 1.5,
+                                    )),
+                                const SizedBox(height: 14),
+                                // Role preview chips
+                                Wrap(
+                                  spacing: 6, runSpacing: 6,
+                                  children: _roles.take(6).map((r) {
+                                    final icon = _roleIcons[r] ?? Icons.volunteer_activism_outlined;
+                                    return Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withValues(alpha: 0.15),
+                                        borderRadius: BorderRadius.circular(20),
+                                        border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+                                      ),
+                                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                        Icon(icon, size: 12, color: Colors.white.withValues(alpha: 0.9)),
+                                        const SizedBox(width: 4),
+                                        Text(r, style: TextStyle(
+                                          color: Colors.white.withValues(alpha: 0.9),
+                                          fontSize: 11, fontWeight: FontWeight.w500,
+                                        )),
+                                      ]),
+                                    );
+                                  }).toList(),
+                                ),
+                                const SizedBox(height: 18),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton.icon(
+                                    onPressed: () => _showRegisterDialog(excludeRoles: myRegisteredRoles),
+                                    icon: const Icon(Icons.add_circle_outline, size: 18),
+                                    label: const Text('I Want to Volunteer!',
+                                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.white,
+                                      foregroundColor: const Color(0xFF4F46E5),
+                                      padding: const EdgeInsets.symmetric(vertical: 13),
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(12)),
+                                      elevation: 0,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ] else ...[
+                    // ── Appreciation banner ────────────────────────────
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [const Color(0xFF059669), const Color(0xFF0D9488)],
+                          begin: Alignment.topLeft, end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(18),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF059669).withValues(alpha: 0.28),
+                            blurRadius: 18, offset: const Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: Stack(children: [
+                        Positioned(
+                          top: -15, right: -15,
+                          child: Container(
+                            width: 90, height: 90,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.white.withValues(alpha: 0.07),
+                            ),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+                          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.18),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.favorite_rounded,
+                                  color: Colors.white, size: 22),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Thank You for Stepping Up! 🙏',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 15, fontWeight: FontWeight.w800,
+                                    )),
+                                const SizedBox(height: 5),
+                                Text(
+                                  'Your spirit of service makes this event shine. '
+                                  'We\'ll review your registration and get back to you soon.',
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.85),
+                                    fontSize: 12, height: 1.5,
+                                  ),
+                                ),
+                                if (myRegisteredRoles.isNotEmpty) ...[
+                                  const SizedBox(height: 10),
+                                  Wrap(
+                                    spacing: 5, runSpacing: 5,
+                                    children: myRegisteredRoles.map((r) {
+                                      final icon = _roleIcons[r] ?? Icons.volunteer_activism_outlined;
+                                      return Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withValues(alpha: 0.18),
+                                          borderRadius: BorderRadius.circular(20),
+                                        ),
+                                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                          Icon(icon, size: 11, color: Colors.white),
+                                          const SizedBox(width: 4),
+                                          Text(r, style: const TextStyle(
+                                            color: Colors.white, fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                          )),
+                                        ]),
+                                      );
+                                    }).toList(),
+                                  ),
+                                ],
+                              ],
+                            )),
+                          ]),
                         ),
                       ]),
-                      const SizedBox(height: 8),
-
-                      // Member cards
-                      ...members.map((m) {
-                        final name = m['name'] as String? ?? '';
-                        final flat = m['flat'] as String? ?? '';
-                        final phone = m['phone'] as String? ?? '';
-                        final docId = m['_id'] as String;
-
-                        return GestureDetector(
-                          onTap: widget.isAdmin
-                              ? () => _showAddDialog(existing: m, docId: docId)
-                              : null,
-                          child: Container(
-                            margin: const EdgeInsets.only(bottom: 6),
-                            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: color.withOpacity(0.15)),
-                              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha:0.03), blurRadius:4, offset: const Offset(0,2))],
-                            ),
-                            child: Row(children: [
-                              CircleAvatar(
-                                radius: 18,
-                                backgroundColor: color.withOpacity(0.12),
-                                child: Text(
-                                  name.isNotEmpty ? name[0].toUpperCase() : '?',
-                                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: color),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                                    if (flat.isNotEmpty || phone.isNotEmpty)
-                                      Text(
-                                        [if (flat.isNotEmpty) flat, if (phone.isNotEmpty) phone].join('  ·  '),
-                                        style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                              if (widget.isAdmin)
-                                Icon(Icons.edit_outlined, size: 16, color: Colors.grey.shade300),
-                            ]),
+                    ),
+                    // Register for another role (right after banner)
+                    if (myRegisteredRoles.length < _roles.length)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: OutlinedButton.icon(
+                          onPressed: () => _showRegisterDialog(excludeRoles: myRegisteredRoles),
+                          icon: const Icon(Icons.add, size: 16),
+                          label: const Text('Register for Another Role',
+                              style: TextStyle(fontSize: 13)),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.teal.shade700,
+                            side: BorderSide(color: Colors.teal.shade300),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10)),
                           ),
-                        );
-                      }),
-                    ],
+                        ),
+                      ),
+                    // My registrations grouped by status (collapsible)
+                    ...() {
+                      final myPending    = myRegs.where((r) => r['status'] == 'pending').toList();
+                      final myApproved   = myRegs.where((r) => r['status'] == 'approved').toList();
+                      final myWaitlisted = myRegs.where((r) => r['status'] == 'waitlisted').toList();
+                      final myRejected   = myRegs.where((r) => r['status'] == 'rejected').toList();
+                      Widget regCard(Map<String, dynamic> reg) => Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: _MyRegistrationCard(
+                          reg: reg,
+                          onEdit: () => _showRegisterDialog(existing: reg, docId: reg['_id'] as String, excludeRoles: myRegisteredRoles),
+                        ),
+                      );
+                      return [
+                        if (myApproved.isNotEmpty)
+                          volSection(
+                            key: 'my_approved', label: 'Approved', count: myApproved.length,
+                            color: Colors.green.shade700, icon: Icons.check_circle_outline,
+                            initiallyExpanded: false,
+                            children: myApproved.map(regCard).toList(),
+                          ),
+                        if (myPending.isNotEmpty)
+                          volSection(
+                            key: 'my_pending', label: 'Pending', count: myPending.length,
+                            color: Colors.orange.shade700, icon: Icons.pending_outlined,
+                            initiallyExpanded: false,
+                            children: myPending.map(regCard).toList(),
+                          ),
+                        if (myWaitlisted.isNotEmpty)
+                          volSection(
+                            key: 'my_waitlisted', label: 'Waitlisted', count: myWaitlisted.length,
+                            color: Colors.blue.shade700, icon: Icons.schedule_outlined,
+                            initiallyExpanded: false,
+                            children: myWaitlisted.map(regCard).toList(),
+                          ),
+                        if (myRejected.isNotEmpty)
+                          volSection(
+                            key: 'my_rejected', label: 'Not Selected', count: myRejected.length,
+                            color: Colors.red.shade400, icon: Icons.cancel_outlined,
+                            initiallyExpanded: false,
+                            children: myRejected.map(regCard).toList(),
+                          ),
+                      ];
+                    }(),
+                  ],
+                  const SizedBox(height: 16),
+                ],
+
+                // ── ADMIN: pending registrations (not collapsible — requires action) ──
+                if (widget.isAdmin && pending.isNotEmpty) ...[
+                  _SectionHeader(
+                    label: 'Pending Registrations', count: pending.length,
+                    color: Colors.orange.shade700, icon: Icons.pending_outlined,
                   ),
-                );
-              }),
-            ],
-          );
+                  const SizedBox(height: 8),
+                  ...pending.map((m) => _PendingCard(
+                    m: m,
+                    onApprove: () => _updateStatus(m['_id'] as String, 'approved'),
+                    onWaitlist: () => _updateStatus(m['_id'] as String, 'waitlisted'),
+                    onReject: () => _updateStatus(m['_id'] as String, 'rejected'),
+                  )),
+                  const SizedBox(height: 12),
+                ],
+
+                // ── ADMIN: waitlisted ─────────────────────────────────
+                if (widget.isAdmin && waitlisted.isNotEmpty)
+                  volSection(
+                    key: 'waitlisted', label: 'Waitlisted', count: waitlisted.length,
+                    color: Colors.blue.shade700, icon: Icons.schedule_outlined,
+                    initiallyExpanded: false,
+                    children: waitlisted.map((m) {
+                      final color = _roleColors[m['role']] ?? const Color(0xFF374151);
+                      return _memberCard(m, color,
+                        editable: true, removable: true,
+                        extraActions: [
+                          _CardAction(label: 'Approve', color: Colors.green.shade700,
+                              icon: Icons.check_circle_outline,
+                              onTap: () => _updateStatus(m['_id'] as String, 'approved')),
+                          _CardAction(label: 'Revert', color: Colors.orange.shade700,
+                              icon: Icons.undo_outlined,
+                              onTap: () => _moveToPending(m['_id'] as String)),
+                        ],
+                        onTap: () => _showAdminAddDialog(existing: m, docId: m['_id'] as String),
+                      );
+                    }).toList(),
+                  ),
+
+                // ── Admin: approved volunteers (collapsible by role) ──
+                if (widget.isAdmin && approved.isNotEmpty)
+                  volSection(
+                      key: 'approved', label: 'Approved', count: approved.length,
+                      color: Colors.green.shade700, icon: Icons.check_circle_outline,
+                      initiallyExpanded: false,
+                      children: sortedRoles.map((role) {
+                        final members = byRole[role]!;
+                        final color = _roleColors[role] ?? const Color(0xFF374151);
+                        final rIcon = _roleIcons[role] ?? Icons.volunteer_activism_outlined;
+                        return volSection(
+                          key: 'role_$role', label: role, count: members.length,
+                          color: color, icon: rIcon,
+                          initiallyExpanded: false,
+                          children: members.map((m) => _memberCard(m, color,
+                            editable: true, removable: true,
+                            extraActions: [
+                              _CardAction(label: 'Revert', color: Colors.orange.shade700,
+                                  icon: Icons.undo_outlined,
+                                  onTap: () => _moveToPending(m['_id'] as String)),
+                            ],
+                            onTap: () => _showAdminAddDialog(existing: m, docId: m['_id'] as String),
+                          )).toList(),
+                        );
+                      }).toList(),
+                    ),
+
+                // ── ADMIN: rejected ────────────────────────────────────
+                if (widget.isAdmin && rejected.isNotEmpty)
+                  volSection(
+                    key: 'rejected', label: 'Rejected', count: rejected.length,
+                    color: Colors.red.shade400, icon: Icons.cancel_outlined,
+                    initiallyExpanded: false,
+                    children: rejected.map((m) {
+                      final color = _roleColors[m['role']] ?? const Color(0xFF374151);
+                      return Opacity(opacity: 0.7, child: _memberCard(m, color,
+                        removable: true,
+                        extraActions: [
+                          _CardAction(label: 'Revert', color: Colors.orange.shade700,
+                              icon: Icons.undo_outlined,
+                              onTap: () => _moveToPending(m['_id'] as String)),
+                          _CardAction(label: 'Approve', color: Colors.green.shade700,
+                              icon: Icons.check_circle_outline,
+                              onTap: () => _updateStatus(m['_id'] as String, 'approved')),
+                        ],
+                      ));
+                    }).toList(),
+                  ),
+
+                // ── ADMIN: removed (restore + hard delete) ─────────────
+                if (widget.isAdmin && deleted.isNotEmpty)
+                  volSection(
+                    key: 'deleted', label: 'Removed', count: deleted.length,
+                    color: Colors.grey.shade500, icon: Icons.delete_outline,
+                    initiallyExpanded: false,
+                    children: deleted.map((m) {
+                      final color = _roleColors[m['role']] ?? const Color(0xFF374151);
+                      return Opacity(opacity: 0.5, child: _memberCard(m, color,
+                        extraActions: [
+                          _CardAction(label: 'Restore', color: Colors.teal.shade700,
+                              icon: Icons.restore_outlined,
+                              onTap: () => _restoreVolunteer(m['_id'] as String, m['preDeleteStatus'] as String? ?? '')),
+                          _CardAction(label: 'Delete', color: Colors.red.shade700,
+                              icon: Icons.delete_forever_outlined,
+                              onTap: () async {
+                                final ok = await showDialog<bool>(context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    title: const Text('Permanently Delete'),
+                                    content: Text('Permanently delete ${m['name']}? This cannot be undone.'),
+                                    actions: [
+                                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                                      ElevatedButton(
+                                        onPressed: () => Navigator.pop(ctx, true),
+                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700),
+                                        child: const Text('Delete Forever', style: TextStyle(color: Colors.white)),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (ok == true) await _col.doc(m['_id'] as String).delete();
+                              }),
+                        ],
+                      ));
+                    }).toList(),
+                  ),
+              ],
+            );
         },
       ),
     );
+  }
+}
+
+// ── My Registration Card (resident) ──────────────────────────────────────────
+
+class _MyRegistrationCard extends StatelessWidget {
+  final Map<String, dynamic> reg;
+  final VoidCallback onEdit;
+  const _MyRegistrationCard({required this.reg, required this.onEdit});
+
+  @override
+  Widget build(BuildContext context) {
+    final status = reg['status'] as String? ?? 'pending';
+    final role = reg['role'] as String? ?? '';
+    final note = reg['note'] as String? ?? '';
+
+    final (Color bg, Color border, Color text, IconData icon, String label) = switch (status) {
+      'approved'   => (Colors.green.shade50,  Colors.green.shade300,  Colors.green.shade700,  Icons.check_circle_rounded, 'Approved ✓'),
+      'rejected'   => (Colors.red.shade50,    Colors.red.shade200,    Colors.red.shade700,    Icons.cancel_rounded,       'Not Selected'),
+      'waitlisted' => (Colors.blue.shade50,   Colors.blue.shade200,   Colors.blue.shade700,   Icons.schedule_rounded,     'Waitlisted'),
+      _            => (Colors.orange.shade50, Colors.orange.shade200, Colors.orange.shade700, Icons.pending_rounded,      'Pending Review'),
+    };
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(14), border: Border.all(color: border)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(icon, size: 18, color: text),
+          const SizedBox(width: 8),
+          Text('My Registration', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: text)),
+          const Spacer(),
+          Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: text)),
+        ]),
+        const Divider(height: 14),
+        Row(children: [
+          Text('Role: ', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+          Text(role, style: const TextStyle(fontSize: 13)),
+        ]),
+        if (note.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(note, style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontStyle: FontStyle.italic)),
+        ],
+        if (status == 'pending' || status == 'waitlisted') ...[
+          const SizedBox(height: 10),
+          Row(children: [
+            TextButton.icon(
+              onPressed: onEdit,
+              icon: const Icon(Icons.edit_outlined, size: 15),
+              label: const Text('Edit', style: TextStyle(fontSize: 12)),
+              style: TextButton.styleFrom(foregroundColor: text, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
+            ),
+          ]),
+        ],
+      ]),
+    );
+  }
+}
+
+// ── Pending Card (admin) ──────────────────────────────────────────────────────
+
+class _PendingCard extends StatelessWidget {
+  final Map<String, dynamic> m;
+  final VoidCallback onApprove;
+  final VoidCallback onWaitlist;
+  final VoidCallback onReject;
+  const _PendingCard({required this.m, required this.onApprove, required this.onWaitlist, required this.onReject});
+
+  @override
+  Widget build(BuildContext context) {
+    final name = m['name'] as String? ?? '';
+    final flat = m['flat'] as String? ?? '';
+    final role = m['role'] as String? ?? '';
+    final note = m['note'] as String? ?? '';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.orange.shade200),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          CircleAvatar(
+            radius: 17, backgroundColor: Colors.orange.shade100,
+            child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
+                style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange.shade800)),
+          ),
+          const SizedBox(width: 10),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+            Text([if (flat.isNotEmpty) flat, role].where((s) => s.isNotEmpty).join('  ·  '),
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+          ])),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(color: Colors.orange.shade100, borderRadius: BorderRadius.circular(8)),
+            child: Text('New', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.orange.shade800)),
+          ),
+        ]),
+        if (note.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8)),
+            child: Text('"$note"', style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontStyle: FontStyle.italic)),
+          ),
+        ],
+        const SizedBox(height: 10),
+        Row(children: [
+          Expanded(child: OutlinedButton(
+            onPressed: onApprove,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.green.shade700,
+              side: BorderSide(color: Colors.green.shade400),
+              padding: const EdgeInsets.symmetric(vertical: 8),
+            ),
+            child: const Text('Approve', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+          )),
+          const SizedBox(width: 8),
+          Expanded(child: OutlinedButton(
+            onPressed: onWaitlist,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.blue.shade700,
+              side: BorderSide(color: Colors.blue.shade300),
+              padding: const EdgeInsets.symmetric(vertical: 8),
+            ),
+            child: const Text('Waitlist', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+          )),
+          const SizedBox(width: 8),
+          Expanded(child: OutlinedButton(
+            onPressed: onReject,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.red.shade600,
+              side: BorderSide(color: Colors.red.shade300),
+              padding: const EdgeInsets.symmetric(vertical: 8),
+            ),
+            child: const Text('Reject', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+          )),
+        ]),
+      ]),
+    );
+  }
+}
+
+// ── Card Action (inline chip button on volunteer cards) ──────────────────────
+
+class _CardAction {
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+  final IconData? icon;
+  const _CardAction({required this.label, required this.color, required this.onTap, this.icon});
+}
+
+// ── Section Header ────────────────────────────────────────────────────────────
+
+class _SectionHeader extends StatelessWidget {
+  final String label;
+  final int count;
+  final Color color;
+  final IconData icon;
+  const _SectionHeader({required this.label, required this.count, required this.color, required this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(children: [
+      Icon(icon, size: 15, color: color),
+      const SizedBox(width: 6),
+      Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: color)),
+      const SizedBox(width: 6),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+        decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
+        child: Text('$count', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color)),
+      ),
+    ]);
   }
 }
 
@@ -2027,12 +3678,14 @@ class _StatChip extends StatelessWidget {
 
 class _ContributionsTab extends StatefulWidget {
   final String eventId;
+  final String eventTypeId;
   final bool isAdmin;
   final String status;
   final String residentFlat;
 
   const _ContributionsTab(
       {required this.eventId,
+      this.eventTypeId = '',
       required this.isAdmin,
       required this.status,
       this.residentFlat = ''});
@@ -2088,6 +3741,7 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                       MaterialPageRoute(
                         builder: (_) => AddContributionScreen(
                           eventId: widget.eventId,
+                          eventTypeId: widget.eventTypeId,
                           prefillFlat: flat,
                           prefillWing: wing,
                           prefillBlock: block,
@@ -2144,6 +3798,7 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                               MaterialPageRoute(
                                 builder: (_) => AddContributionScreen(
                                   eventId: widget.eventId,
+                                  eventTypeId: widget.eventTypeId,
                                   prefillFlat: flat,
                                   prefillWing: wing,
                                   prefillBlock: block,
@@ -3828,11 +5483,13 @@ class _ContributionsTabState extends State<_ContributionsTab> {
 
 class _ExpensesTab extends StatelessWidget {
   final String eventId;
+  final String eventTypeId;
   final bool isAdmin;
   final String status;
 
   const _ExpensesTab(
       {required this.eventId,
+      this.eventTypeId = '',
       required this.isAdmin,
       required this.status});
 
@@ -4030,6 +5687,7 @@ class _ExpensesTab extends StatelessWidget {
                                 MaterialPageRoute(
                                   builder: (_) => AddExpenseScreen(
                                     eventId: eventId,
+                                    eventTypeId: eventTypeId,
                                     existingExpenseId: doc.id,
                                     existingData: d,
                                   ),
@@ -4926,6 +6584,9 @@ class _ActivityTabState extends State<_ActivityTab> {
   String _flatFilter = '';
   bool _showSearch = false;
   bool _autoExpanded = false; // expand current month on first data load
+  DateTime? _dateFilter;
+  String _wingFilter = '';
+  String _blockFilter = '';
 
   @override
   void initState() {
@@ -4960,12 +6621,14 @@ class _ActivityTabState extends State<_ActivityTab> {
       ),
     );
     if (confirmed != true) return;
+    final now = DateTime.now().toIso8601String();
     final update = <String, dynamic>{
       'status': 'pending',
       'amountReceived': false,
       'deletedAt': FieldValue.delete(),
       'preDeleteStatus': FieldValue.delete(),
       'preDeleteAmountReceived': FieldValue.delete(),
+      'restoredAt': now,
     };
     // If it was previously confirmed, restore totalCollected
     final wasConfirmed = e['preDeleteAmountReceived'] == true;
@@ -5007,6 +6670,7 @@ class _ActivityTabState extends State<_ActivityTab> {
       'amountReceived': false,
       'rejectionReason': FieldValue.delete(),
       'rejectedAt': FieldValue.delete(),
+      'revertedAt': DateTime.now().toIso8601String(),
     });
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -5046,9 +6710,88 @@ class _ActivityTabState extends State<_ActivityTab> {
     try { return DateTime.parse(iso).toLocal(); } catch (_) { return null; }
   }
 
+  // Normalize flat format: "DB104" → "DB 104" (letters then space then digits)
+  String _fmtFlat(String flat) {
+    final m = RegExp(r'^([A-Za-z]+)(\d+)$').firstMatch(flat.trim());
+    if (m != null) return '${m.group(1)} ${m.group(2)}';
+    return flat;
+  }
+
+  // Build volunteer log entries from volunteer docs
+  List<Map<String, dynamic>> _volEntries(List<QueryDocumentSnapshot> docs) {
+    final entries = <Map<String, dynamic>>[];
+    for (final doc in docs) {
+      final d = doc.data() as Map<String, dynamic>;
+      final name = d['name'] as String? ?? '';
+      final rawFlat = d['flat'] as String? ?? '';
+      final flat = _fmtFlat(rawFlat);
+      final role = d['role'] as String? ?? '';
+      final addedBy = d['addedBy'] as String? ?? '';
+
+      Timestamp? _ts(String key) => d[key] as Timestamp?;
+      String _label() => flat.isNotEmpty ? '$name ($flat)' : name;
+
+      // Registered / added
+      if (_ts('addedAt') != null) {
+        entries.add({
+          'type': addedBy == 'resident' ? 'vol_registered' : 'vol_added',
+          'name': _label(), 'flat': flat, 'role': role,
+          'ts': _ts('addedAt')!.toDate().toIso8601String(),
+        });
+      }
+      if (_ts('approvedAt') != null) {
+        entries.add({
+          'type': 'vol_approved',
+          'name': _label(), 'flat': flat, 'role': role,
+          'ts': _ts('approvedAt')!.toDate().toIso8601String(),
+        });
+      }
+      if (_ts('rejectedAt') != null) {
+        entries.add({
+          'type': 'vol_rejected',
+          'name': _label(), 'flat': flat, 'role': role,
+          'ts': _ts('rejectedAt')!.toDate().toIso8601String(),
+        });
+      }
+      if (_ts('waitlistedAt') != null) {
+        entries.add({
+          'type': 'vol_waitlisted',
+          'name': _label(), 'flat': flat, 'role': role,
+          'ts': _ts('waitlistedAt')!.toDate().toIso8601String(),
+        });
+      }
+      if (_ts('deletedAt') != null) {
+        entries.add({
+          'type': 'vol_deleted',
+          'name': _label(), 'flat': flat, 'role': role,
+          'ts': _ts('deletedAt')!.toDate().toIso8601String(),
+        });
+      }
+      if (_ts('restoredAt') != null) {
+        entries.add({
+          'type': 'vol_restored',
+          'name': _label(), 'flat': flat, 'role': role,
+          'ts': _ts('restoredAt')!.toDate().toIso8601String(),
+        });
+      }
+      if (_ts('pendingAt') != null) {
+        entries.add({
+          'type': 'vol_pending',
+          'name': _label(), 'flat': flat, 'role': role,
+          'ts': _ts('pendingAt')!.toDate().toIso8601String(),
+        });
+      }
+    }
+    return entries;
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('events').doc(widget.eventId).collection('volunteers')
+          .snapshots(),
+      builder: (context, volSnap) => StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('events')
           .doc(widget.eventId)
@@ -5059,11 +6802,12 @@ class _ActivityTabState extends State<_ActivityTab> {
           return const Center(child: CircularProgressIndicator());
         }
 
-        // Build a flat list of log entries from contribution docs
+        // Build a flat list of log entries from contribution docs + volunteer docs
         final entries = <Map<String, dynamic>>[];
+        entries.addAll(_volEntries(volSnap.data?.docs ?? []));
         for (final doc in snap.data!.docs) {
           final d = doc.data() as Map<String, dynamic>;
-          final flat = d['flatNumber'] ?? '';
+          final flat = _fmtFlat((d['flatNumber'] ?? '') as String);
           final name = d['residentName'] ?? '';
           final amt = (d['amount'] as num?)?.toDouble() ?? 0;
           final mode = d['paymentMode'] ?? '';
@@ -5079,34 +6823,51 @@ class _ActivityTabState extends State<_ActivityTab> {
               'preDeleteAmountReceived': d['preDeleteAmountReceived'],
               'ts': d['deletedAt'] ?? d['paidAt'] ?? '',
             });
-          } else if (selfReported) {
-            entries.add({
-              'type': 'submitted',
-              'flat': flat, 'name': name, 'amt': amt, 'mode': mode,
-              'ts': d['reportedAt'] ?? d['paidAt'] ?? '',
-            });
-            if (status == 'confirmed' && (d['confirmedAt'] ?? '').isNotEmpty) {
-              entries.add({
-                'type': 'confirmed',
-                'flat': flat, 'name': name, 'amt': amt, 'mode': mode,
-                'ts': d['confirmedAt'],
-              });
-            }
-            if (status == 'rejected' && (d['rejectedAt'] ?? '').isNotEmpty) {
-              entries.add({
-                'type': 'rejected',
-                'flat': flat, 'name': name, 'amt': amt,
-                'reason': d['rejectionReason'] ?? '',
-                'ref': doc.reference,
-                'ts': d['rejectedAt'],
-              });
-            }
           } else {
-            entries.add({
-              'type': 'added',
-              'flat': flat, 'name': name, 'amt': amt, 'mode': mode,
-              'ts': d['paidAt'] ?? '',
-            });
+            // Restored from deleted
+            if ((d['restoredAt'] as String?)?.isNotEmpty == true) {
+              entries.add({
+                'type': 'restored',
+                'flat': flat, 'name': name, 'amt': amt,
+                'ts': d['restoredAt'],
+              });
+            }
+            if (selfReported) {
+              entries.add({
+                'type': 'submitted',
+                'flat': flat, 'name': name, 'amt': amt, 'mode': mode,
+                'ts': d['reportedAt'] ?? d['paidAt'] ?? '',
+              });
+              if (status == 'confirmed' && (d['confirmedAt'] ?? '').isNotEmpty) {
+                entries.add({
+                  'type': 'confirmed',
+                  'flat': flat, 'name': name, 'amt': amt, 'mode': mode,
+                  'ts': d['confirmedAt'],
+                });
+              }
+              if ((d['rejectedAt'] as String?)?.isNotEmpty == true) {
+                entries.add({
+                  'type': 'rejected',
+                  'flat': flat, 'name': name, 'amt': amt,
+                  'reason': d['rejectionReason'] ?? '',
+                  'ref': status == 'rejected' ? doc.reference : null,
+                  'ts': d['rejectedAt'],
+                });
+              }
+              if ((d['revertedAt'] as String?)?.isNotEmpty == true) {
+                entries.add({
+                  'type': 'reverted',
+                  'flat': flat, 'name': name, 'amt': amt,
+                  'ts': d['revertedAt'],
+                });
+              }
+            } else {
+              entries.add({
+                'type': 'added',
+                'flat': flat, 'name': name, 'amt': amt, 'mode': mode,
+                'ts': d['paidAt'] ?? '',
+              });
+            }
           }
         }
 
@@ -5114,10 +6875,24 @@ class _ActivityTabState extends State<_ActivityTab> {
         for (final e in entries) {
           e['dt'] = _parse(e['ts'] as String?);
         }
-        final displayEntries = _flatFilter.isEmpty
+        bool _matchEntry(Map<String, dynamic> e) {
+          final flat = (e['flat'] as String? ?? '').toUpperCase();
+          if (_flatFilter.isNotEmpty && !flat.toLowerCase().contains(_flatFilter)) return false;
+          if (_wingFilter.isNotEmpty && !flat.startsWith(_wingFilter.toUpperCase())) return false;
+          if (_blockFilter.isNotEmpty) {
+            final afterWing = flat.substring(_wingFilter.length);
+            if (!afterWing.startsWith(_blockFilter.toUpperCase())) return false;
+          }
+          if (_dateFilter != null) {
+            final dt = e['dt'] as DateTime?;
+            if (dt == null) return false;
+            if (dt.year != _dateFilter!.year || dt.month != _dateFilter!.month || dt.day != _dateFilter!.day) return false;
+          }
+          return true;
+        }
+        final displayEntries = (_flatFilter.isEmpty && _wingFilter.isEmpty && _blockFilter.isEmpty && _dateFilter == null)
             ? entries
-            : entries.where((e) =>
-                (e['flat'] as String? ?? '').toLowerCase().contains(_flatFilter)).toList();
+            : entries.where(_matchEntry).toList();
         displayEntries.sort((a, b) {
           final dtA = a['dt'] as DateTime?;
           final dtB = b['dt'] as DateTime?;
@@ -5134,7 +6909,7 @@ class _ActivityTabState extends State<_ActivityTab> {
               children: [
                 Icon(Icons.history, size: 48, color: Colors.grey.shade300),
                 const SizedBox(height: 12),
-                Text(_flatFilter.isEmpty ? 'No activity yet' : 'No activity for "$_flatFilter"',
+                Text((_flatFilter.isEmpty && _wingFilter.isEmpty && _blockFilter.isEmpty && _dateFilter == null) ? 'No activity yet' : 'No matching activity',
                     style: TextStyle(color: Colors.grey.shade400, fontSize: 15)),
               ],
             ),
@@ -5153,13 +6928,24 @@ class _ActivityTabState extends State<_ActivityTab> {
         final allExpanded = _expandedMonths.containsAll(allMonthKeys) &&
             _expandedDates.containsAll(allDateKeys);
 
-        // Auto-expand the most recent month on first data load
+        // Auto-expand today's month and date on first data load
         if (!_autoExpanded && allMonthKeys.isNotEmpty) {
           _autoExpanded = true;
-          final mostRecent = allMonthKeys.reduce(
-              (a, b) => a.compareTo(b) > 0 ? a : b);
+          final now = DateTime.now();
+          final todayMonthKey = '${now.year}-${now.month.toString().padLeft(2, '0')}';
+          final todayDateKey  = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+          final targetMonth = allMonthKeys.contains(todayMonthKey)
+              ? todayMonthKey
+              : allMonthKeys.reduce((a, b) => a.compareTo(b) > 0 ? a : b);
+          final targetDate = allDateKeys.contains(todayDateKey)
+              ? todayDateKey
+              : (allDateKeys.where((k) => k.startsWith(targetMonth)).toList()
+                    ..sort()).lastOrNull ?? '';
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) setState(() => _expandedMonths.add(mostRecent));
+            if (mounted) setState(() {
+              _expandedMonths.add(targetMonth);
+              if (targetDate.isNotEmpty) _expandedDates.add(targetDate);
+            });
           });
         }
 
@@ -5272,7 +7058,7 @@ class _ActivityTabState extends State<_ActivityTab> {
                   controller: _searchCtrl,
                   autofocus: true,
                   decoration: InputDecoration(
-                    hintText: 'Flat number (e.g. DA404)',
+                    hintText: 'Flat number (e.g. DB 104)',
                     hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade400),
                     prefixIcon: Icon(Icons.search, size: 18, color: Colors.grey.shade400),
                     suffixIcon: _flatFilter.isNotEmpty
@@ -5291,6 +7077,118 @@ class _ActivityTabState extends State<_ActivityTab> {
                   ),
                 ),
               ),
+            // Wing / Block / Date filter row
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  // Wing filter chip
+                  ActionChip(
+                    avatar: Icon(Icons.home_work_outlined, size: 14,
+                        color: _wingFilter.isNotEmpty ? Colors.deepPurple.shade700 : Colors.grey.shade500),
+                    label: Text(_wingFilter.isEmpty ? 'Wing' : 'Wing: $_wingFilter',
+                        style: TextStyle(fontSize: 11,
+                            color: _wingFilter.isNotEmpty ? Colors.deepPurple.shade700 : Colors.grey.shade600)),
+                    backgroundColor: _wingFilter.isNotEmpty ? Colors.deepPurple.shade50 : Colors.grey.shade100,
+                    side: BorderSide(color: _wingFilter.isNotEmpty ? Colors.deepPurple.shade200 : Colors.grey.shade300),
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    onPressed: () async {
+                      final ctrl = TextEditingController(text: _wingFilter);
+                      final val = await showDialog<String>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('Filter by Wing'),
+                          content: TextField(
+                            controller: ctrl,
+                            autofocus: true,
+                            textCapitalization: TextCapitalization.characters,
+                            decoration: const InputDecoration(hintText: 'e.g. D', isDense: true),
+                          ),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(ctx, ''), child: const Text('Clear')),
+                            TextButton(onPressed: () => Navigator.pop(ctx, ctrl.text.trim().toUpperCase()), child: const Text('Apply')),
+                          ],
+                        ),
+                      );
+                      if (val != null) setState(() => _wingFilter = val);
+                    },
+                  ),
+                  // Block filter chip
+                  ActionChip(
+                    avatar: Icon(Icons.domain_outlined, size: 14,
+                        color: _blockFilter.isNotEmpty ? Colors.indigo.shade700 : Colors.grey.shade500),
+                    label: Text(_blockFilter.isEmpty ? 'Block' : 'Block: $_blockFilter',
+                        style: TextStyle(fontSize: 11,
+                            color: _blockFilter.isNotEmpty ? Colors.indigo.shade700 : Colors.grey.shade600)),
+                    backgroundColor: _blockFilter.isNotEmpty ? Colors.indigo.shade50 : Colors.grey.shade100,
+                    side: BorderSide(color: _blockFilter.isNotEmpty ? Colors.indigo.shade200 : Colors.grey.shade300),
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    onPressed: () async {
+                      final ctrl = TextEditingController(text: _blockFilter);
+                      final val = await showDialog<String>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('Filter by Block'),
+                          content: TextField(
+                            controller: ctrl,
+                            autofocus: true,
+                            textCapitalization: TextCapitalization.characters,
+                            decoration: const InputDecoration(hintText: 'e.g. B', isDense: true),
+                          ),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(ctx, ''), child: const Text('Clear')),
+                            TextButton(onPressed: () => Navigator.pop(ctx, ctrl.text.trim().toUpperCase()), child: const Text('Apply')),
+                          ],
+                        ),
+                      );
+                      if (val != null) setState(() => _blockFilter = val);
+                    },
+                  ),
+                  // Date filter chip
+                  ActionChip(
+                    avatar: Icon(Icons.calendar_today_outlined, size: 14,
+                        color: _dateFilter != null ? Colors.teal.shade700 : Colors.grey.shade500),
+                    label: Text(_dateFilter == null
+                        ? 'Date'
+                        : '${_dateFilter!.day}/${_dateFilter!.month}/${_dateFilter!.year}',
+                        style: TextStyle(fontSize: 11,
+                            color: _dateFilter != null ? Colors.teal.shade700 : Colors.grey.shade600)),
+                    backgroundColor: _dateFilter != null ? Colors.teal.shade50 : Colors.grey.shade100,
+                    side: BorderSide(color: _dateFilter != null ? Colors.teal.shade200 : Colors.grey.shade300),
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    onPressed: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: _dateFilter ?? DateTime.now(),
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime.now().add(const Duration(days: 365)),
+                      );
+                      if (picked != null) setState(() => _dateFilter = picked);
+                    },
+                  ),
+                  // Clear all filters
+                  if (_wingFilter.isNotEmpty || _blockFilter.isNotEmpty || _dateFilter != null)
+                    ActionChip(
+                      avatar: const Icon(Icons.clear_all, size: 14, color: Colors.red),
+                      label: const Text('Clear', style: TextStyle(fontSize: 11, color: Colors.red)),
+                      backgroundColor: Colors.red.shade50,
+                      side: BorderSide(color: Colors.red.shade200),
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      onPressed: () => setState(() {
+                        _wingFilter = '';
+                        _blockFilter = '';
+                        _dateFilter = null;
+                      }),
+                    ),
+                ],
+              ),
+            ),
             Expanded(
               child: ListView.builder(
                 padding: EdgeInsets.fromLTRB(12, 4, 12, keyboardHeight + 80),
@@ -5410,11 +7308,61 @@ class _ActivityTabState extends State<_ActivityTab> {
                 subtitle = e['name'] as String;
                 actionRef = e['ref'] as DocumentReference?;
                 if (actionRef != null) onRestore = () => _restore(actionRef!, e);
+              case 'restored':
+                iconBg = Colors.teal.shade50; iconColor = Colors.teal.shade700;
+                icon = Icons.restore_outlined;
+                title = 'Contribution restored for ${e['flat']}';
+                subtitle = '${e['name']}  ·  ₹${_fmt(e['amt'] as double)}';
+              case 'reverted':
+                iconBg = Colors.orange.shade50; iconColor = Colors.orange.shade800;
+                icon = Icons.undo_outlined;
+                title = 'Rejection reverted for ${e['flat']}';
+                subtitle = '${e['name']}  ·  ₹${_fmt(e['amt'] as double)} moved back to pending';
               case 'submitted':
                 iconBg = Colors.orange.shade50; iconColor = Colors.orange.shade700;
                 icon = Icons.upload_outlined;
                 title = 'Resident submitted ₹${_fmt(e['amt'] as double)} from ${e['flat']}';
                 subtitle = '${e['name']}  ·  ${e['mode']}';
+              case 'vol_registered':
+                iconBg = Colors.purple.shade50; iconColor = Colors.purple.shade700;
+                icon = Icons.volunteer_activism_outlined;
+                title = '${e['name']} registered as volunteer';
+                subtitle = 'Role: ${e['role']}';
+              case 'vol_added':
+                iconBg = Colors.purple.shade50; iconColor = Colors.purple.shade700;
+                icon = Icons.person_add_outlined;
+                title = 'Volunteer added: ${e['name']}';
+                subtitle = 'Role: ${e['role']}';
+              case 'vol_approved':
+                iconBg = Colors.green.shade50; iconColor = Colors.green.shade700;
+                icon = Icons.how_to_reg_outlined;
+                title = 'Volunteer approved: ${e['name']}';
+                subtitle = 'Role: ${e['role']}';
+              case 'vol_rejected':
+                iconBg = Colors.red.shade50; iconColor = Colors.red.shade600;
+                icon = Icons.person_remove_outlined;
+                title = 'Volunteer rejected: ${e['name']}';
+                subtitle = 'Role: ${e['role']}';
+              case 'vol_waitlisted':
+                iconBg = Colors.blue.shade50; iconColor = Colors.blue.shade700;
+                icon = Icons.schedule_outlined;
+                title = 'Volunteer waitlisted: ${e['name']}';
+                subtitle = 'Role: ${e['role']}';
+              case 'vol_deleted':
+                iconBg = Colors.grey.shade100; iconColor = Colors.grey.shade600;
+                icon = Icons.person_remove_outlined;
+                title = 'Volunteer removed: ${e['name']}';
+                subtitle = 'Role: ${e['role']}';
+              case 'vol_restored':
+                iconBg = Colors.teal.shade50; iconColor = Colors.teal.shade700;
+                icon = Icons.restore_outlined;
+                title = 'Volunteer restored: ${e['name']}';
+                subtitle = 'Role: ${e['role']}';
+              case 'vol_pending':
+                iconBg = Colors.orange.shade50; iconColor = Colors.orange.shade700;
+                icon = Icons.pending_outlined;
+                title = 'Volunteer moved to pending: ${e['name']}';
+                subtitle = 'Role: ${e['role']}';
               default:
                 iconBg = Colors.blue.shade50; iconColor = Colors.blue.shade700;
                 icon = Icons.add_circle_outline;
@@ -5513,7 +7461,8 @@ class _ActivityTabState extends State<_ActivityTab> {
           ],
         );     // Column
       },
-    );
+      ),      // contributions StreamBuilder
+    );        // volunteers StreamBuilder
   }
 }
 

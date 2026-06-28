@@ -7,6 +7,7 @@ import 'event_dashboard_screen.dart';
 import 'create_event_screen.dart';
 import 'expense_categories_screen.dart';
 import 'event_types.dart';
+import 'event_type_settings_screen.dart';
 
 // Fallback color palette for events without a type
 const List<Color> _kEventColors = [
@@ -75,6 +76,16 @@ class EventListScreen extends StatelessWidget {
                       ],
                     ),
                   ),
+                  if (isAdmin)
+                    IconButton(
+                      icon: const Icon(Icons.tune, color: Colors.white70),
+                      tooltip: 'Event Settings',
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const EventTypeSettingsScreen()),
+                      ),
+                    ),
                   if (isAdmin)
                     IconButton(
                       icon: const Icon(Icons.category_outlined,
@@ -161,7 +172,8 @@ class EventListScreen extends StatelessWidget {
                           ? (collected / target).clamp(0.0, 1.0)
                           : 0.0;
                       final eventType =
-                          eventTypeById(data['eventTypeId'] as String?);
+                          eventTypeById(data['eventTypeId'] as String?) ??
+                          eventTypeByName(data['name'] as String?);
                       final List<Color> gradientColors = eventType?.gradient ??
                           [_colorFor(i), _colorFor(i).withValues(alpha: 0.75)];
                       final String typeEmoji = eventType?.emoji ?? '🎉';
@@ -529,7 +541,8 @@ class _EventPageViewState extends State<_EventPageView> {
   Widget build(BuildContext context) {
     final total = widget.events.length;
     final data = widget.events[_current].data() as Map<String, dynamic>;
-    final eventType = eventTypeById(data['eventTypeId'] as String?);
+    final eventType = eventTypeById(data['eventTypeId'] as String?) ??
+        eventTypeByName(data['name'] as String?);
     final accentColor = eventType?.gradient.first ?? Colors.deepPurple;
 
     return Scaffold(

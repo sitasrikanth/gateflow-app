@@ -5,15 +5,17 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'expense_categories_screen.dart'
-    show kDefaultCategories, expenseCategoriesRef;
+    show kDefaultCategories, expenseCategoriesRef, eventTypeCategoriesRef;
 
 class AddExpenseScreen extends StatefulWidget {
   final String eventId;
+  final String eventTypeId;
   final String? existingExpenseId;
   final Map<String, dynamic>? existingData;
   const AddExpenseScreen({
     super.key,
     required this.eventId,
+    this.eventTypeId = '',
     this.existingExpenseId,
     this.existingData,
   });
@@ -28,6 +30,10 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   final _vendorController = TextEditingController();
   final _noteController = TextEditingController();
   String _mainCategory = '';
+
+  DocumentReference get _catRef => widget.eventTypeId.isNotEmpty
+      ? eventTypeCategoriesRef(widget.eventTypeId)
+      : expenseCategoriesRef;
   String _subCategory = '';
   File? _receiptFile;
   String? _existingReceiptUrl;
@@ -212,7 +218,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     final newCat = {'name': name, 'icon': result['icon'], 'subCategories': []};
     final updated = [...currentCategories, newCat];
     try {
-      await expenseCategoriesRef.set(
+      await _catRef.set(
           {'expenseCategories': updated}, SetOptions(merge: true));
       if (mounted) setState(() => _mainCategory = name);
     } catch (e) {
@@ -266,7 +272,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
       return cat;
     }).toList();
     try {
-      await expenseCategoriesRef.set(
+      await _catRef.set(
           {'expenseCategories': updated}, SetOptions(merge: true));
       if (mounted) {
         WidgetsBinding.instance.addPostFrameCallback(
@@ -442,7 +448,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
             : null,
       ),
       body: StreamBuilder<DocumentSnapshot>(
-        stream: expenseCategoriesRef.snapshots(),
+        stream: _catRef.snapshots(),
         builder: (context, snap) {
           final data = snap.data?.data() as Map<String, dynamic>? ?? {};
           final rawCats = data['expenseCategories'];

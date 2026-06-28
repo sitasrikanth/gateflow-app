@@ -12,6 +12,7 @@ const String kTypeGaneshLaddu = 'Ganesh Laddu (Previous Year)';
 
 class AddContributionScreen extends StatefulWidget {
   final String eventId;
+  final String eventTypeId;
   final String? existingDocId;
   final Map<String, dynamic>? existingData;
   final String? prefillFlat;
@@ -22,6 +23,7 @@ class AddContributionScreen extends StatefulWidget {
   const AddContributionScreen({
     super.key,
     required this.eventId,
+    this.eventTypeId = '',
     this.existingDocId,
     this.existingData,
     this.prefillFlat,
@@ -118,15 +120,26 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
       final modes = d['paymentModes'] is List
           ? List<String>.from(d['paymentModes'] as List)
           : List<String>.from(_kDefaultPaymentModes);
-      final note = d['defaultContributionNote'] as String? ?? '';
       setState(() {
         _paymentModes = modes;
         if (!modes.contains(_paymentMode)) _paymentMode = modes.first;
-        if (widget.existingData == null && note.isNotEmpty && _noteController.text.isEmpty) {
-          _noteController.text = note;
-        }
       });
     });
+    // Load per-event-type config (default note + special descriptions)
+    if (widget.eventTypeId.isNotEmpty) {
+      FirebaseFirestore.instance
+          .collection('eventTypeConfig')
+          .doc(widget.eventTypeId)
+          .get()
+          .then((snap) {
+        if (!mounted) return;
+        final d = snap.data() as Map<String, dynamic>? ?? {};
+        final note = d['specialDefaultNote'] as String? ?? '';
+        if (widget.existingData == null && note.isNotEmpty && _noteController.text.isEmpty) {
+          setState(() => _noteController.text = note);
+        }
+      });
+    }
   }
 
   @override
@@ -288,6 +301,32 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
         foregroundColor: Colors.white,
       ),
       body: StreamBuilder<DocumentSnapshot>(
+        stream: widget.eventTypeId.isNotEmpty
+            ? FirebaseFirestore.instance
+                .collection('appSettings')
+                .doc('specialContribution')
+                .snapshots()
+            : const Stream.empty(),
+        builder: (context, specialSnap) {
+          final specialData = specialSnap.data?.data() as Map<String, dynamic>? ?? {};
+          final specialEnabledIds = List<String>.from(specialData['enabledTypeIds'] as List? ?? []);
+          // If no config yet (stream empty / loading), default to showing special for all
+          final specialAvailable = widget.eventTypeId.isEmpty ||
+              specialSnap.connectionState == ConnectionState.waiting ||
+              specialEnabledIds.contains(widget.eventTypeId);
+
+          return StreamBuilder<DocumentSnapshot>(
+        stream: widget.eventTypeId.isNotEmpty
+            ? FirebaseFirestore.instance
+                .collection('eventTypeConfig')
+                .doc(widget.eventTypeId)
+                .snapshots()
+            : const Stream.empty(),
+        builder: (context, typeSnap) {
+          final typeData = typeSnap.data?.data() as Map<String, dynamic>? ?? {};
+          final presetDescs = List<String>.from(typeData['specialDescriptions'] as List? ?? []);
+
+          return StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance
             .collection('community_settings')
             .doc('address')
@@ -328,23 +367,56 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // ── Contribution Type ────────────────────────────
-                _label('Contribution Type *'),
-                const SizedBox(height: 8),
-                _typeSelector(),
-                const SizedBox(height: 16),
+                if (specialAvailable) ...[
+                  _label('Contribution Type *'),
+                  const SizedBox(height: 8),
+                  _typeSelector(),
+                  const SizedBox(height: 16),
+                ],
 
                 // ── Special type status (received / pending) ─────
-                if (_isSpecialType) ...[
+                if (_isSpecialType && specialAvailable) ...[
                   _specialStatusCard(),
                   const SizedBox(height: 16),
                   _label('Special Contribution Description *'),
                   const SizedBox(height: 8),
+                  // Preset description chips
+                  if (presetDescs.isNotEmpty) ...[
+                    Wrap(
+                      spacing: 6, runSpacing: 6,
+                      children: presetDescs.map((desc) => GestureDetector(
+                        onTap: () => setState(() => _specialDescController.text = desc),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: _specialDescController.text == desc
+                                ? Colors.purple.shade100 : Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: _specialDescController.text == desc
+                                  ? Colors.purple.shade400 : Colors.grey.shade300,
+                            ),
+                          ),
+                          child: Text(desc,
+                              style: TextStyle(fontSize: 12,
+                                  color: _specialDescController.text == desc
+                                      ? Colors.purple.shade800 : Colors.grey.shade700,
+                                  fontWeight: _specialDescController.text == desc
+                                      ? FontWeight.w600 : FontWeight.normal)),
+                        ),
+                      )).toList(),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   TextField(
                     controller: _specialDescController,
                     maxLines: 2,
                     textCapitalization: TextCapitalization.sentences,
+                    onChanged: (_) => setState(() {}),
                     decoration: InputDecoration(
-                      hintText: 'e.g. Carry Forward from last year, Ganesh Laddu donation…',
+                      hintText: presetDescs.isEmpty
+                          ? 'e.g. Carry Forward from last year, Ganesh Laddu donation…'
+                          : 'Or type a custom description…',
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -658,7 +730,11 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
             ),
           );
         },
-      ),
+      ); // closes community_settings StreamBuilder
+        },
+      ); // closes eventTypeConfig StreamBuilder
+        },
+      ), // closes specialContribution StreamBuilder
     );
   }
 

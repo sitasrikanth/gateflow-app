@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'event_types.dart';
 
 // ── Canonical Firestore location for event expense categories ──────────────────
 // Path: event_config/categories  field: expenseCategories
@@ -7,24 +8,24 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 const List<Map<String, dynamic>> kDefaultCategories = [
   {
-    'name': 'Annadam',
-    'icon': '🍚',
-    'subCategories': ['Rice', 'Dal / Lentils', 'Vegetables', 'Cooking Oil', 'Spices', 'Plates & Cups', 'Fruits'],
+    'name': 'Food & Catering',
+    'icon': '🍽️',
+    'subCategories': ['Catering Service', 'Raw Materials', 'Snacks & Beverages', 'Plates & Cups', 'Cooking Fuel'],
   },
   {
     'name': 'Decoration',
     'icon': '🎨',
-    'subCategories': ['Flowers', 'Balloons', 'Banners & Flex', 'Rangoli'],
+    'subCategories': ['Flowers & Garlands', 'Balloons', 'Banners & Flex', 'Stage Setup', 'Lighting'],
   },
   {
-    'name': 'Ganesh Idol',
-    'icon': '🪔',
-    'subCategories': ['Idol Cost', 'Transportation', 'Visarjan Charges'],
+    'name': 'Venue & Setup',
+    'icon': '🏠',
+    'subCategories': ['Hall / Venue Rental', 'Chairs & Tables', 'Tent / Shamiana', 'Cleaning Charges'],
   },
   {
-    'name': 'Priest / Pandit',
-    'icon': '🙏',
-    'subCategories': ['Dakshina', 'Pooja Items', 'Agarbatti & Camphor'],
+    'name': 'Entertainment',
+    'icon': '🎤',
+    'subCategories': ['Performers / Artists', 'Anchor / Compere', 'Kids Activities', 'Games & Prizes'],
   },
   {
     'name': 'Music & Sound',
@@ -32,9 +33,9 @@ const List<Map<String, dynamic>> kDefaultCategories = [
     'subCategories': ['Sound System', 'DJ / Band', 'Microphone Rental'],
   },
   {
-    'name': 'Lighting',
-    'icon': '💡',
-    'subCategories': ['LED Lights', 'Candles & Diyas', 'Generator Rental'],
+    'name': 'Photography',
+    'icon': '📸',
+    'subCategories': ['Photographer', 'Videographer', 'Drone', 'Printing'],
   },
   {
     'name': 'Transport',
@@ -42,9 +43,9 @@ const List<Map<String, dynamic>> kDefaultCategories = [
     'subCategories': ['Vehicle Rental', 'Fuel', 'Parking Charges'],
   },
   {
-    'name': 'Prasad',
-    'icon': '🍬',
-    'subCategories': ['Modak', 'Laddu', 'Fruits', 'Peda', 'Dry Fruits'],
+    'name': 'Gifts & Prizes',
+    'icon': '🎁',
+    'subCategories': ['Trophies', 'Gift Hampers', 'Certificates', 'Mementos'],
   },
   {
     'name': 'Misc',
@@ -62,6 +63,28 @@ const List<String> kEmojiPicker = [
 
 DocumentReference get expenseCategoriesRef =>
     FirebaseFirestore.instance.collection('event_config').doc('categories');
+
+// Per-event-type categories stored at /eventTypeConfig/{typeId}
+DocumentReference eventTypeCategoriesRef(String typeId) =>
+    FirebaseFirestore.instance.collection('eventTypeConfig').doc(typeId);
+
+// Load categories for a specific event type, seeding defaults from event_types.dart if first use
+Future<List<Map<String, dynamic>>> loadEventTypeCategories(String typeId) async {
+  if (typeId.isEmpty) return loadExpenseCategories();
+  final snap = await eventTypeCategoriesRef(typeId).get();
+  final data = snap.data() as Map<String, dynamic>? ?? {};
+  if (data['expenseCategories'] != null) {
+    return List<Map<String, dynamic>>.from(
+        (data['expenseCategories'] as List).map((e) => Map<String, dynamic>.from(e as Map)));
+  }
+  // Seed from event_types.dart defaults for this event type
+  final evType = eventTypeById(typeId);
+  final defaults = evType != null
+      ? evType.expenseCategories.map((e) => Map<String, dynamic>.from(e)).toList()
+      : List<Map<String, dynamic>>.from(kDefaultCategories.map((e) => Map<String, dynamic>.from(e)));
+  await eventTypeCategoriesRef(typeId).set({'expenseCategories': defaults});
+  return defaults;
+}
 
 /// Loads categories from event_config/categories, migrating from
 /// community_settings/address if the new location is empty.
