@@ -40,7 +40,7 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
   void initState() {
     super.initState();
     _tabController = TabController(
-        length: widget.isAdmin ? 5 : 2, vsync: this);
+        length: widget.isAdmin ? 7 : 4, vsync: this);
     if (!widget.isAdmin) _loadFlat();
   }
 
@@ -411,9 +411,11 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                   controller: _tabController,
                   tabs: const [
                     _TabItem(icon: Icons.dashboard_outlined, label: 'Overview'),
+                    _TabItem(icon: Icons.event_note_outlined, label: 'Event'),
                     _TabItem(icon: Icons.volunteer_activism_outlined, label: 'Contributions'),
                     _TabItem(icon: Icons.receipt_long_outlined, label: 'Expenses'),
                     _TabItem(icon: Icons.pending_actions_outlined, label: 'Follow-up'),
+                    _TabItem(icon: Icons.groups_outlined, label: 'Volunteers'),
                     _TabItem(icon: Icons.history_outlined, label: 'Activity'),
                   ],
                 )
@@ -422,14 +424,18 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                   color: Colors.deepPurple,
                   child: TabBar(
                     controller: _tabController,
+                    isScrollable: true,
+                    tabAlignment: TabAlignment.start,
                     indicatorColor: Colors.white,
                     indicatorWeight: 3,
                     labelColor: Colors.white,
                     unselectedLabelColor: Colors.white60,
-                    labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                    labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                     tabs: const [
+                      Tab(text: 'Event'),
                       Tab(text: 'Overview'),
                       Tab(text: 'Expenses'),
+                      Tab(text: 'Volunteers'),
                     ],
                   ),
                 ),
@@ -438,31 +444,58 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
               Expanded(
                 child: TabBarView(
                   controller: _tabController,
-                  children: [
-                    _OverviewTab(
-                        eventId: widget.eventId,
-                        collected: collected,
-                        spent: spent,
-                        balance: balance,
-                        data: data,
-                        isAdmin: widget.isAdmin),
-                    if (widget.isAdmin)
-                      _ContributionsTab(
-                          eventId: widget.eventId,
-                          isAdmin: true,
-                          status: status,
-                          residentFlat: _residentFlat),
-                    _ExpensesTab(
-                        eventId: widget.eventId,
-                        isAdmin: widget.isAdmin,
-                        status: status),
-                    if (widget.isAdmin) ...[
-                      _FollowUpTab(
-                          eventId: widget.eventId,
-                          eventName: data['name'] ?? widget.eventName),
-                      _ActivityTab(eventId: widget.eventId),
-                    ],
-                  ],
+                  children: widget.isAdmin
+                      ? [
+                          // Admin: Overview | Event | Contributions | Expenses | Follow-up | Volunteers | Activity
+                          _OverviewTab(
+                              eventId: widget.eventId,
+                              collected: collected,
+                              spent: spent,
+                              balance: balance,
+                              data: data,
+                              isAdmin: true),
+                          _EventTab(
+                              eventId: widget.eventId,
+                              data: data,
+                              isAdmin: true),
+                          _ContributionsTab(
+                              eventId: widget.eventId,
+                              isAdmin: true,
+                              status: status,
+                              residentFlat: _residentFlat),
+                          _ExpensesTab(
+                              eventId: widget.eventId,
+                              isAdmin: true,
+                              status: status),
+                          _FollowUpTab(
+                              eventId: widget.eventId,
+                              eventName: data['name'] ?? widget.eventName),
+                          _VolunteersTab(
+                              eventId: widget.eventId,
+                              isAdmin: true),
+                          _ActivityTab(eventId: widget.eventId),
+                        ]
+                      : [
+                          // Resident: Event (default) | Overview | Expenses | Volunteers
+                          _EventTab(
+                              eventId: widget.eventId,
+                              data: data,
+                              isAdmin: false),
+                          _OverviewTab(
+                              eventId: widget.eventId,
+                              collected: collected,
+                              spent: spent,
+                              balance: balance,
+                              data: data,
+                              isAdmin: false),
+                          _ExpensesTab(
+                              eventId: widget.eventId,
+                              isAdmin: false,
+                              status: status),
+                          _VolunteersTab(
+                              eventId: widget.eventId,
+                              isAdmin: false),
+                        ],
                 ),
               ),
             ],
@@ -474,7 +507,8 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                   animation: _tabController,
                   builder: (context, _) {
                     final tab = _tabController.index;
-                    if (tab == 1) {
+                    // Admin tab order: 0=Overview, 1=Event, 2=Contributions, 3=Expenses, 4=Follow-up, 5=Volunteers, 6=Activity
+                    if (tab == 2) {
                       return FloatingActionButton.extended(
                         heroTag: 'contribution',
                         onPressed: () => Navigator.push(
@@ -490,7 +524,7 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                             style: TextStyle(color: Colors.white)),
                       );
                     }
-                    if (tab == 2) {
+                    if (tab == 3) {
                       return FloatingActionButton.extended(
                         heroTag: 'expense',
                         onPressed: () => Navigator.push(
@@ -861,45 +895,6 @@ class _OverviewTab extends StatelessWidget {
 
         const SizedBox(height: 16),
 
-        // ── Event Details ─────────────────────────────────────────
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [
-              BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.04),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2))
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Event Details',
-                  style:
-                      TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-              const SizedBox(height: 12),
-              if ((data['description'] ?? '').isNotEmpty) ...[
-                Text(data['description'],
-                    style: TextStyle(
-                        color: Colors.grey.shade600, fontSize: 13)),
-                const Divider(height: 20),
-              ],
-              if ((data['startDate'] ?? '').isNotEmpty)
-                _DetailRow(label: 'Start Date', value: data['startDate']),
-              if ((data['endDate'] ?? '').isNotEmpty)
-                _DetailRow(label: 'End Date', value: data['endDate']),
-              _DetailRow(
-                  label: 'Status',
-                  value: data['status'] == 'active'
-                      ? '🟢 Active'
-                      : '🔴 Closed'),
-            ],
-          ),
-        ),
-
         // ── Block stats (grouped by wing) — live stream ───────────
         ...[
           const SizedBox(height: 16),
@@ -1119,6 +1114,787 @@ class _BlockStatsWidgetState extends State<_BlockStatsWidget> {
           ],
         );
       },
+    );
+  }
+}
+
+// ── Event Tab ─────────────────────────────────────────────────────────────────
+
+class _EventTab extends StatefulWidget {
+  final String eventId;
+  final Map<String, dynamic> data;
+  final bool isAdmin;
+  const _EventTab({required this.eventId, required this.data, required this.isAdmin});
+  @override
+  State<_EventTab> createState() => _EventTabState();
+}
+
+class _EventTabState extends State<_EventTab> {
+  static const _sessions = ['Morning', 'Afternoon', 'Evening', 'Night'];
+  static const _sessionIcons = {
+    'Morning': Icons.wb_sunny_outlined,
+    'Afternoon': Icons.wb_cloudy_outlined,
+    'Evening': Icons.nights_stay_outlined,
+    'Night': Icons.bedtime_outlined,
+  };
+  static const _sessionColors = {
+    'Morning': Color(0xFFF59E0B),
+    'Afternoon': Color(0xFF3B82F6),
+    'Evening': Color(0xFF8B5CF6),
+    'Night': Color(0xFF1E293B),
+  };
+
+  Future<void> _showAddScheduleDialog({Map<String, dynamic>? existing, String? docId}) async {
+    final titleCtrl = TextEditingController(text: existing?['title'] ?? '');
+    final descCtrl = TextEditingController(text: existing?['description'] ?? '');
+    String session = existing?['session'] ?? 'Morning';
+    DateTime date = existing != null && existing['date'] is Timestamp
+        ? (existing['date'] as Timestamp).toDate()
+        : DateTime.now();
+
+    final startStr = widget.data['startDate'] as String? ?? '';
+    final endStr = widget.data['endDate'] as String? ?? '';
+    DateTime? firstDate, lastDate;
+    try {
+      if (startStr.isNotEmpty) {
+        final p = startStr.split('/');
+        firstDate = DateTime(int.parse(p[2]), int.parse(p[1]), int.parse(p[0]));
+      }
+      if (endStr.isNotEmpty) {
+        final p = endStr.split('/');
+        lastDate = DateTime(int.parse(p[2]), int.parse(p[1]), int.parse(p[0]));
+      }
+    } catch (_) {}
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) => AlertDialog(
+          title: Text(existing == null ? 'Add Schedule Item' : 'Edit Schedule Item'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Date picker
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.calendar_today, color: Colors.deepPurple),
+                  title: Text(
+                    '${date.day.toString().padLeft(2,'0')}/${date.month.toString().padLeft(2,'0')}/${date.year}',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: const Text('Tap to change date'),
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: ctx,
+                      initialDate: date,
+                      firstDate: firstDate ?? DateTime(2020),
+                      lastDate: lastDate ?? DateTime(2030),
+                    );
+                    if (picked != null) setSt(() => date = picked);
+                  },
+                ),
+                const Divider(),
+                const SizedBox(height: 8),
+                // Session chips
+                const Text('Session', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  children: _sessions.map((s) => ChoiceChip(
+                    label: Text(s),
+                    selected: session == s,
+                    selectedColor: _sessionColors[s]?.withOpacity(0.15),
+                    onSelected: (_) => setSt(() => session = s),
+                  )).toList(),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: titleCtrl,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: InputDecoration(
+                    labelText: 'Activity Title *',
+                    hintText: 'e.g. Ganesh Pooja, Cultural Program',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Colors.deepPurple, width: 2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: descCtrl,
+                  maxLines: 2,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: InputDecoration(
+                    labelText: 'Details (optional)',
+                    hintText: 'Venue, contact, dress code…',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Colors.deepPurple, width: 2),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            if (existing != null && docId != null)
+              TextButton(
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  await FirebaseFirestore.instance
+                      .collection('events').doc(widget.eventId)
+                      .collection('schedule').doc(docId).delete();
+                },
+                child: Text('Delete', style: TextStyle(color: Colors.red.shade600)),
+              ),
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () async {
+                final title = titleCtrl.text.trim();
+                if (title.isEmpty) return;
+                Navigator.pop(ctx);
+                final ref = FirebaseFirestore.instance
+                    .collection('events').doc(widget.eventId)
+                    .collection('schedule');
+                final payload = {
+                  'date': Timestamp.fromDate(DateTime(date.year, date.month, date.day)),
+                  'session': session,
+                  'title': title,
+                  'description': descCtrl.text.trim(),
+                  'createdAt': Timestamp.now(),
+                };
+                if (docId != null) {
+                  await ref.doc(docId).update(payload);
+                } else {
+                  await ref.add(payload);
+                }
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple),
+              child: Text(existing == null ? 'Add' : 'Save',
+                  style: const TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final data = widget.data;
+    final startStr = data['startDate'] as String? ?? '';
+    final endStr = data['endDate'] as String? ?? '';
+    final description = data['description'] as String? ?? '';
+    final status = data['status'] ?? 'active';
+    final eventType = data['eventType'] as String? ?? '';
+    final eventTypeName = data['eventTypeName'] as String? ?? eventType;
+    final eventTypeEmoji = data['eventTypeEmoji'] as String? ?? '🎉';
+
+    return Scaffold(
+      backgroundColor: Colors.grey.shade50,
+      floatingActionButton: widget.isAdmin
+          ? FloatingActionButton.extended(
+              heroTag: 'schedule_add',
+              onPressed: _showAddScheduleDialog,
+              backgroundColor: Colors.deepPurple,
+              icon: const Icon(Icons.add, color: Colors.white),
+              label: const Text('Add to Schedule', style: TextStyle(color: Colors.white)),
+            )
+          : null,
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('events').doc(widget.eventId)
+            .collection('schedule')
+            .orderBy('date')
+            .snapshots(),
+        builder: (context, snap) {
+          final docs = snap.data?.docs ?? [];
+
+          // Group schedule items by date string
+          final grouped = <String, List<Map<String, dynamic>>>{};
+          final dateOrder = <String>[];
+          for (final doc in docs) {
+            final d = doc.data() as Map<String, dynamic>;
+            final ts = d['date'];
+            final dt = ts is Timestamp ? ts.toDate() : DateTime.now();
+            final key = '${dt.year}-${dt.month.toString().padLeft(2,'0')}-${dt.day.toString().padLeft(2,'0')}';
+            if (!grouped.containsKey(key)) {
+              grouped[key] = [];
+              dateOrder.add(key);
+            }
+            grouped[key]!.add({...d, '_id': doc.id, '_dt': dt});
+          }
+
+          // Session order for sorting within a day
+          final sessionOrder = {for (var i=0; i<_sessions.length; i++) _sessions[i]: i};
+
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+            children: [
+
+              // ── Event details card ──────────────────────────────
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0,3))],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.deepPurple.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text('$eventTypeEmoji ${eventTypeName.isNotEmpty ? eventTypeName : 'Event'}',
+                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
+                                  color: Colors.deepPurple.shade700)),
+                        ),
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: status == 'active' ? Colors.green.shade50 : Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: status == 'active' ? Colors.green.shade300 : Colors.grey.shade300),
+                          ),
+                          child: Text(
+                            status == 'active' ? '🟢 Active' : '🔴 Closed',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
+                                color: status == 'active' ? Colors.green.shade700 : Colors.grey.shade600),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (description.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Text(description, style: TextStyle(color: Colors.grey.shade700, fontSize: 13, height: 1.5)),
+                    ],
+                    const Divider(height: 20),
+                    if (startStr.isNotEmpty)
+                      _EventDetailRow(icon: Icons.calendar_today_outlined, label: 'Start', value: startStr),
+                    if (endStr.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      _EventDetailRow(icon: Icons.event_outlined, label: 'End', value: endStr),
+                    ],
+                  ],
+                ),
+              ),
+
+              // ── Day-by-day schedule ────────────────────────────
+              const SizedBox(height: 20),
+              Row(children: [
+                const Icon(Icons.schedule_outlined, size: 16, color: Colors.deepPurple),
+                const SizedBox(width: 6),
+                Text('Event Schedule',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
+                        color: Colors.grey.shade800, letterSpacing: 0.3)),
+                if (widget.isAdmin) ...[
+                  const Spacer(),
+                  Text('Tap item to edit', style: TextStyle(fontSize: 11, color: Colors.grey.shade400)),
+                ],
+              ]),
+              const SizedBox(height: 10),
+
+              if (docs.isEmpty)
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Column(
+                    children: [
+                      Icon(Icons.event_note_outlined, size: 40, color: Colors.grey.shade300),
+                      const SizedBox(height: 8),
+                      Text(
+                        widget.isAdmin
+                            ? 'No schedule yet.\nTap "+ Add to Schedule" to add activities.'
+                            : 'Schedule will be posted here.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                ...dateOrder.map((dateKey) {
+                  final items = grouped[dateKey]!;
+                  // Sort items by session order
+                  items.sort((a, b) {
+                    final ai = sessionOrder[a['session']] ?? 99;
+                    final bi = sessionOrder[b['session']] ?? 99;
+                    return ai.compareTo(bi);
+                  });
+                  final dt = items.first['_dt'] as DateTime;
+                  final dayName = _dayName(dt.weekday);
+                  final monthName = _monthName(dt.month);
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Date header
+                        Row(children: [
+                          Container(
+                            width: 48, height: 48,
+                            decoration: BoxDecoration(
+                              color: Colors.deepPurple,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text('${dt.day}', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                                Text(monthName.substring(0,3).toUpperCase(),
+                                    style: const TextStyle(color: Colors.white70, fontSize: 9, letterSpacing: 0.5)),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(dayName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                              Text('$dayName, $monthName ${dt.day}',
+                                  style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                            ],
+                          ),
+                        ]),
+                        const SizedBox(height: 10),
+
+                        // Schedule items for this day
+                        ...items.map((item) {
+                          final session = item['session'] as String? ?? 'Morning';
+                          final title = item['title'] as String? ?? '';
+                          final desc = item['description'] as String? ?? '';
+                          final color = _sessionColors[session] ?? Colors.deepPurple;
+                          final icon = _sessionIcons[session] ?? Icons.schedule;
+                          final docId = item['_id'] as String;
+
+                          return GestureDetector(
+                            onTap: widget.isAdmin
+                                ? () => _showAddScheduleDialog(existing: item, docId: docId)
+                                : null,
+                            child: Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // Timeline line
+                                  Column(children: [
+                                    Container(
+                                      width: 36, height: 36,
+                                      decoration: BoxDecoration(
+                                        color: color.withOpacity(0.12),
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: Icon(icon, size: 18, color: color),
+                                    ),
+                                  ]),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Container(
+                                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(color: color.withOpacity(0.2)),
+                                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha:0.03), blurRadius: 6, offset: const Offset(0,2))],
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(children: [
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: color.withOpacity(0.1),
+                                                borderRadius: BorderRadius.circular(6),
+                                              ),
+                                              child: Text(session,
+                                                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700,
+                                                      color: color)),
+                                            ),
+                                            if (widget.isAdmin) ...[
+                                              const Spacer(),
+                                              Icon(Icons.edit_outlined, size: 14, color: Colors.grey.shade300),
+                                            ],
+                                          ]),
+                                          const SizedBox(height: 5),
+                                          Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                                          if (desc.isNotEmpty) ...[
+                                            const SizedBox(height: 3),
+                                            Text(desc, style: TextStyle(fontSize: 12, color: Colors.grey.shade600, height: 1.4)),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }),
+                      ],
+                    ),
+                  );
+                }),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  static String _dayName(int wd) => const ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][wd - 1];
+  static String _monthName(int m) => const ['January','February','March','April','May','June',
+      'July','August','September','October','November','December'][m - 1];
+}
+
+class _EventDetailRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  const _EventDetailRow({required this.icon, required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(children: [
+      Icon(icon, size: 15, color: Colors.deepPurple.shade300),
+      const SizedBox(width: 8),
+      Text('$label: ', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+      Text(value, style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
+    ]);
+  }
+}
+
+// ── Volunteers Tab ────────────────────────────────────────────────────────────
+
+class _VolunteersTab extends StatefulWidget {
+  final String eventId;
+  final bool isAdmin;
+  const _VolunteersTab({required this.eventId, required this.isAdmin});
+  @override
+  State<_VolunteersTab> createState() => _VolunteersTabState();
+}
+
+class _VolunteersTabState extends State<_VolunteersTab> {
+  static const _defaultRoles = [
+    'Coordinator', 'Decoration', 'Food & Prasad', 'Security',
+    'Music & Sound', 'Collection', 'Photography', 'Transport', 'Other',
+  ];
+  static const _roleIcons = {
+    'Coordinator': Icons.manage_accounts_outlined,
+    'Decoration': Icons.celebration_outlined,
+    'Food & Prasad': Icons.restaurant_outlined,
+    'Security': Icons.security_outlined,
+    'Music & Sound': Icons.music_note_outlined,
+    'Collection': Icons.payments_outlined,
+    'Photography': Icons.camera_alt_outlined,
+    'Transport': Icons.directions_car_outlined,
+    'Other': Icons.volunteer_activism_outlined,
+  };
+  static const _roleColors = {
+    'Coordinator': Color(0xFF7C3AED),
+    'Decoration': Color(0xFFEC4899),
+    'Food & Prasad': Color(0xFFF59E0B),
+    'Security': Color(0xFF1E40AF),
+    'Music & Sound': Color(0xFF0891B2),
+    'Collection': Color(0xFF16A34A),
+    'Photography': Color(0xFFEA580C),
+    'Transport': Color(0xFF6B7280),
+    'Other': Color(0xFF374151),
+  };
+
+  Future<void> _showAddDialog({Map<String, dynamic>? existing, String? docId}) async {
+    final nameCtrl = TextEditingController(text: existing?['name'] ?? '');
+    final flatCtrl = TextEditingController(text: existing?['flat'] ?? '');
+    final phoneCtrl = TextEditingController(text: existing?['phone'] ?? '');
+    String role = existing?['role'] ?? _defaultRoles.first;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) => AlertDialog(
+          title: Text(existing == null ? 'Add Volunteer' : 'Edit Volunteer'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: nameCtrl,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: InputDecoration(
+                    labelText: 'Name *',
+                    hintText: 'e.g. Ramesh Kumar',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Colors.deepPurple, width: 2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text('Role', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6, runSpacing: 6,
+                  children: _defaultRoles.map((r) => ChoiceChip(
+                    label: Text(r, style: const TextStyle(fontSize: 12)),
+                    selected: role == r,
+                    selectedColor: (_roleColors[r] ?? Colors.deepPurple).withOpacity(0.15),
+                    onSelected: (_) => setSt(() => role = r),
+                  )).toList(),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: flatCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'Flat / Unit (optional)',
+                    hintText: 'e.g. DA101',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Colors.deepPurple, width: 2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: phoneCtrl,
+                  keyboardType: TextInputType.phone,
+                  decoration: InputDecoration(
+                    labelText: 'Phone (optional)',
+                    hintText: 'e.g. 9876543210',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Colors.deepPurple, width: 2),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            if (existing != null && docId != null)
+              TextButton(
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  await FirebaseFirestore.instance
+                      .collection('events').doc(widget.eventId)
+                      .collection('volunteers').doc(docId).delete();
+                },
+                child: Text('Remove', style: TextStyle(color: Colors.red.shade600)),
+              ),
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () async {
+                final name = nameCtrl.text.trim();
+                if (name.isEmpty) return;
+                Navigator.pop(ctx);
+                final ref = FirebaseFirestore.instance
+                    .collection('events').doc(widget.eventId)
+                    .collection('volunteers');
+                final payload = {
+                  'name': name,
+                  'role': role,
+                  'flat': flatCtrl.text.trim(),
+                  'phone': phoneCtrl.text.trim(),
+                  'addedAt': Timestamp.now(),
+                };
+                if (docId != null) {
+                  await ref.doc(docId).update(payload);
+                } else {
+                  await ref.add(payload);
+                }
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple),
+              child: Text(existing == null ? 'Add' : 'Save',
+                  style: const TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.grey.shade50,
+      floatingActionButton: widget.isAdmin
+          ? FloatingActionButton.extended(
+              heroTag: 'volunteer_add',
+              onPressed: _showAddDialog,
+              backgroundColor: Colors.deepPurple,
+              icon: const Icon(Icons.person_add_outlined, color: Colors.white),
+              label: const Text('Add Volunteer', style: TextStyle(color: Colors.white)),
+            )
+          : null,
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('events').doc(widget.eventId)
+            .collection('volunteers')
+            .orderBy('addedAt')
+            .snapshots(),
+        builder: (context, snap) {
+          final docs = snap.data?.docs ?? [];
+
+          if (docs.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.groups_outlined, size: 56, color: Colors.grey.shade300),
+                  const SizedBox(height: 12),
+                  Text(
+                    widget.isAdmin
+                        ? 'No volunteers yet.\nTap "+ Add Volunteer" to add team members.'
+                        : 'Volunteer list will be posted here.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          // Group by role
+          final byRole = <String, List<Map<String, dynamic>>>{};
+          for (final doc in docs) {
+            final d = doc.data() as Map<String, dynamic>;
+            final role = d['role'] as String? ?? 'Other';
+            byRole.putIfAbsent(role, () => []).add({...d, '_id': doc.id});
+          }
+
+          // Sort roles by default order, unknowns at end
+          final sortedRoles = byRole.keys.toList()
+            ..sort((a, b) {
+              final ai = _defaultRoles.indexOf(a);
+              final bi = _defaultRoles.indexOf(b);
+              return (ai < 0 ? 99 : ai).compareTo(bi < 0 ? 99 : bi);
+            });
+
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+            children: [
+              // Total count chip
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Row(children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.deepPurple.shade50,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text('${docs.length} Volunteers',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
+                            color: Colors.deepPurple.shade700)),
+                  ),
+                ]),
+              ),
+
+              ...sortedRoles.map((role) {
+                final members = byRole[role]!;
+                final color = _roleColors[role] ?? const Color(0xFF374151);
+                final icon = _roleIcons[role] ?? Icons.volunteer_activism_outlined;
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Role header
+                      Row(children: [
+                        Icon(icon, size: 16, color: color),
+                        const SizedBox(width: 6),
+                        Text(role,
+                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: color)),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: color.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text('${members.length}',
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color)),
+                        ),
+                      ]),
+                      const SizedBox(height: 8),
+
+                      // Member cards
+                      ...members.map((m) {
+                        final name = m['name'] as String? ?? '';
+                        final flat = m['flat'] as String? ?? '';
+                        final phone = m['phone'] as String? ?? '';
+                        final docId = m['_id'] as String;
+
+                        return GestureDetector(
+                          onTap: widget.isAdmin
+                              ? () => _showAddDialog(existing: m, docId: docId)
+                              : null,
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 6),
+                            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: color.withOpacity(0.15)),
+                              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha:0.03), blurRadius:4, offset: const Offset(0,2))],
+                            ),
+                            child: Row(children: [
+                              CircleAvatar(
+                                radius: 18,
+                                backgroundColor: color.withOpacity(0.12),
+                                child: Text(
+                                  name.isNotEmpty ? name[0].toUpperCase() : '?',
+                                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: color),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                                    if (flat.isNotEmpty || phone.isNotEmpty)
+                                      Text(
+                                        [if (flat.isNotEmpty) flat, if (phone.isNotEmpty) phone].join('  ·  '),
+                                        style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              if (widget.isAdmin)
+                                Icon(Icons.edit_outlined, size: 16, color: Colors.grey.shade300),
+                            ]),
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          );
+        },
+      ),
     );
   }
 }
