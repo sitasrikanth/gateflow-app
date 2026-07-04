@@ -7,6 +7,7 @@ import '../auth/login_screen.dart';
 import '../events/event_dashboard_screen.dart';
 import '../events/event_types.dart';
 import '../events/self_report_sheet.dart';
+import 'contribution_history_screen.dart';
 
 const _kMonthNames = [
   '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -25,6 +26,8 @@ class _ResidentEventsScreenState extends State<ResidentEventsScreen>
     with SingleTickerProviderStateMixin {
   String _flatNumber = '';
   String _residentName = '';
+  String _wing = '';
+  String _block = '';
   late TabController _tabController;
 
   @override
@@ -45,8 +48,16 @@ class _ResidentEventsScreenState extends State<ResidentEventsScreen>
     setState(() {
       _flatNumber = prefs.getString('session_flat') ?? '';
       _residentName = prefs.getString('session_name') ?? '';
+      _wing = prefs.getString('session_wing') ?? '';
+      _block = prefs.getString('session_block') ?? '';
     });
   }
+
+  String get _addressLabel => [
+        if (_wing.isNotEmpty) _wing,
+        if (_block.isNotEmpty) 'Block $_block',
+        if (_flatNumber.isNotEmpty) 'Flat $_flatNumber',
+      ].join(' → ');
 
   @override
   Widget build(BuildContext context) {
@@ -55,12 +66,10 @@ class _ResidentEventsScreenState extends State<ResidentEventsScreen>
       body: NestedScrollView(
         headerSliverBuilder: (context, _) => [
           SliverAppBar(
-            expandedHeight: 130,
+            expandedHeight: 168,
             pinned: true,
             backgroundColor: Colors.deepPurple,
             flexibleSpace: FlexibleSpaceBar(
-              title: const Text('My Events',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
               background: Container(
                 decoration: const BoxDecoration(
                   gradient: LinearGradient(
@@ -69,13 +78,65 @@ class _ResidentEventsScreenState extends State<ResidentEventsScreen>
                     end: Alignment.bottomRight,
                   ),
                 ),
-                child: const Center(
-                  child: Icon(Icons.celebration,
-                      size: 48, color: Colors.white24),
+                child: Stack(
+                  children: [
+                    const Positioned(
+                      right: 20,
+                      top: 78,
+                      child: Icon(Icons.celebration,
+                          size: 40, color: Colors.white24),
+                    ),
+                    if (_residentName.isNotEmpty || _addressLabel.isNotEmpty)
+                      Positioned(
+                        left: 16,
+                        right: 16,
+                        top: 50,
+                        child: Row(
+                          children: [
+                            const Icon(Icons.person_outline,
+                                color: Colors.white70, size: 14),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                [
+                                  if (_residentName.isNotEmpty) _residentName,
+                                  if (_addressLabel.isNotEmpty) _addressLabel,
+                                ].join(' · '),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    const Positioned(
+                      left: 16,
+                      right: 16,
+                      top: 76,
+                      child: Text('My Events',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 19,
+                              color: Colors.white)),
+                    ),
+                  ],
                 ),
               ),
             ),
             actions: [
+              IconButton(
+                icon: const Icon(Icons.receipt_long_outlined, color: Colors.white70),
+                tooltip: 'My Contribution History',
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const ContributionHistoryScreen()),
+                ),
+              ),
               IconButton(
                 icon: const Icon(Icons.logout, color: Colors.white70),
                 tooltip: 'Logout',

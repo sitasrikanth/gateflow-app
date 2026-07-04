@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'event_types.dart' show kSuggestedContributionAmounts;
 
 const kDefaultPaymentModes = ['Cash', 'UPI', 'PhonePe', 'Google Pay', 'Bank Transfer', 'NEFT / RTGS', 'Cheque', 'Other'];
 
@@ -39,13 +40,21 @@ class _SelfReportSheetState extends State<SelfReportSheet> {
   String _contributionType = 'Regular Contribution';
   DateTime _date = DateTime.now();
   bool _submitting = false;
+  bool _isAnonymous = false;
   String? _error;
 
+  double _expectedPerFlat = 0;
+  double _paidSoFar = 0;
+  bool _balanceLoaded = false;
+
   bool get _isEditing => widget.existingDoc != null;
+  double get _remainingBalance =>
+      (_expectedPerFlat - _paidSoFar).clamp(0, double.infinity);
 
   @override
   void initState() {
     super.initState();
+    _amountCtrl.addListener(_onAmountChanged);
     if (_isEditing) {
       final d = widget.existingDoc!.data() as Map<String, dynamic>;
       _amountCtrl.text = (d['amount'] as num?)?.toStringAsFixed(0) ?? '';
@@ -53,20 +62,62 @@ class _SelfReportSheetState extends State<SelfReportSheet> {
       _specialDescCtrl.text = (d['specialDescription'] ?? '').toString();
       _mode = (d['paymentMode'] as String?) ?? kDefaultPaymentModes.first;
       _contributionType = (d['contributionType'] as String?) ?? 'Regular Contribution';
+      _isAnonymous = d['isAnonymous'] == true;
       final rawDate = d['paidAt'] as String?;
       if (rawDate != null) {
         try { _date = DateTime.parse(rawDate).toLocal(); } catch (_) {}
       }
     }
+    _loadBalance();
+  }
+
+  Future<void> _loadBalance() async {
+    try {
+      final eventDoc = await FirebaseFirestore.instance
+          .collection('events')
+          .doc(widget.eventId)
+          .get();
+      final expected =
+          (eventDoc.data()?['expectedAmountPerFlat'] as num?)?.toDouble() ?? 0;
+      if (expected <= 0) {
+        if (mounted) setState(() => _balanceLoaded = true);
+        return;
+      }
+      final contribSnap = await FirebaseFirestore.instance
+          .collection('events')
+          .doc(widget.eventId)
+          .collection('contributions')
+          .where('flatNumber', isEqualTo: widget.flatNumber)
+          .get();
+      final paid = contribSnap.docs
+          .where((d) =>
+              d.data()['amountReceived'] == true &&
+              d.data()['status'] != 'deleted' &&
+              // Don't double count the entry currently being edited
+              (widget.existingDoc == null || d.id != widget.existingDoc!.id))
+          .fold<double>(0, (total, d) => total + ((d.data()['amount'] as num?)?.toDouble() ?? 0));
+      if (mounted) {
+        setState(() {
+          _expectedPerFlat = expected;
+          _paidSoFar = paid;
+          _balanceLoaded = true;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _balanceLoaded = true);
+    }
   }
 
   @override
   void dispose() {
+    _amountCtrl.removeListener(_onAmountChanged);
     _amountCtrl.dispose();
     _refCtrl.dispose();
     _specialDescCtrl.dispose();
     super.dispose();
   }
+
+  void _onAmountChanged() => setState(() {});
 
   String _fmtDate(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
@@ -113,6 +164,7 @@ class _SelfReportSheetState extends State<SelfReportSheet> {
           'paymentMode': _mode,
           'contributionType': _contributionType,
           'specialDescription': _contributionType == 'Special Contribution' ? _specialDescCtrl.text.trim() : '',
+          'isAnonymous': _isAnonymous,
           'referenceId': _refCtrl.text.trim(),
           'paidAt': _date.toIso8601String(),
           'paidDate': _fmtDate(_date),
@@ -143,6 +195,7 @@ class _SelfReportSheetState extends State<SelfReportSheet> {
           'amount': amount,
           'contributionType': _contributionType,
           'specialDescription': _contributionType == 'Special Contribution' ? _specialDescCtrl.text.trim() : '',
+          'isAnonymous': _isAnonymous,
           'paymentMode': _mode,
           'referenceId': _refCtrl.text.trim(),
           'note': '',
@@ -226,6 +279,51 @@ class _SelfReportSheetState extends State<SelfReportSheet> {
             ]),
             const SizedBox(height: 16),
 
+            if (_balanceLoaded && _expectedPerFlat > 0) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: _remainingBalance > 0
+                      ? Colors.blue.shade50
+                      : Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                      color: _remainingBalance > 0
+                          ? Colors.blue.shade100
+                          : Colors.green.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      _remainingBalance > 0
+                          ? Icons.account_balance_wallet_outlined
+                          : Icons.check_circle_outline,
+                      size: 18,
+                      color: _remainingBalance > 0
+                          ? Colors.blue.shade700
+                          : Colors.green.shade700,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        _remainingBalance > 0
+                            ? '₹${_paidSoFar.toStringAsFixed(0)} of ₹${_expectedPerFlat.toStringAsFixed(0)} contributed · ₹${_remainingBalance.toStringAsFixed(0)} remaining'
+                            : 'You\'ve fully contributed the suggested ₹${_expectedPerFlat.toStringAsFixed(0)} for this event 🎉',
+                        style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: _remainingBalance > 0
+                                ? Colors.blue.shade800
+                                : Colors.green.shade800),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
             // Contribution type selector
             const Text('Contribution Type',
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
@@ -304,6 +402,26 @@ class _SelfReportSheetState extends State<SelfReportSheet> {
                 fillColor: Colors.grey.shade50,
               ),
             ),
+            if (_contributionType == 'Regular Contribution') ...[
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (_remainingBalance > 0)
+                    _amountChip(
+                      label: 'Pay Remaining (₹${_remainingBalance.toStringAsFixed(0)})',
+                      value: _remainingBalance.toStringAsFixed(0),
+                      color: Colors.blue,
+                    ),
+                  ...kSuggestedContributionAmounts.map((amt) => _amountChip(
+                        label: '₹$amt',
+                        value: '$amt',
+                        color: Colors.green,
+                      )),
+                ],
+              ),
+            ],
             const SizedBox(height: 14),
 
             // Payment mode chips
@@ -350,6 +468,55 @@ class _SelfReportSheetState extends State<SelfReportSheet> {
                   }).toList(),
                 );
               },
+            ),
+            const SizedBox(height: 14),
+
+            // Anonymous toggle
+            GestureDetector(
+              onTap: () => setState(() => _isAnonymous = !_isAnonymous),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: _isAnonymous ? Colors.indigo.shade50 : Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                      color: _isAnonymous
+                          ? Colors.indigo.shade200
+                          : Colors.grey.shade300),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.visibility_off_outlined,
+                        size: 18,
+                        color: _isAnonymous
+                            ? Colors.indigo.shade600
+                            : Colors.grey.shade500),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Contribute Anonymously',
+                              style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: _isAnonymous
+                                      ? Colors.indigo.shade700
+                                      : Colors.grey.shade700)),
+                          Text('Your name won\'t be shown to other residents',
+                              style: TextStyle(
+                                  fontSize: 11, color: Colors.grey.shade500)),
+                        ],
+                      ),
+                    ),
+                    Switch(
+                      value: _isAnonymous,
+                      activeThumbColor: Colors.indigo,
+                      onChanged: (v) => setState(() => _isAnonymous = v),
+                    ),
+                  ],
+                ),
+              ),
             ),
             const SizedBox(height: 14),
 
@@ -456,6 +623,30 @@ class _SelfReportSheetState extends State<SelfReportSheet> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _amountChip({
+    required String label,
+    required String value,
+    required MaterialColor color,
+  }) {
+    final sel = _amountCtrl.text.trim() == value;
+    return GestureDetector(
+      onTap: () => setState(() => _amountCtrl.text = value),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: sel ? color.shade600 : color.shade50,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: sel ? color.shade600 : color.shade200),
+        ),
+        child: Text(label,
+            style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: sel ? Colors.white : color.shade700)),
       ),
     );
   }

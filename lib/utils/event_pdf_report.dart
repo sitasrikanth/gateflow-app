@@ -698,3 +698,181 @@ String _fmtDate(dynamic d) {
     return d.toString();
   }
 }
+
+// ── Single-Contribution Receipt ───────────────────────────────────────────────
+
+Future<void> exportContributionReceipt({
+  required BuildContext context,
+  required String eventName,
+  required String docId,
+  required Map<String, dynamic> contribution,
+}) async {
+  final messenger = ScaffoldMessenger.of(context);
+  messenger.showSnackBar(const SnackBar(
+    content: Text('Generating receipt...'),
+    duration: Duration(seconds: 30),
+    backgroundColor: Colors.deepPurple,
+  ));
+
+  try {
+    final results = await Future.wait([
+      PdfGoogleFonts.notoSansRegular(),
+      PdfGoogleFonts.notoSansBold(),
+    ]);
+    final font = results[0] as pw.Font;
+    final fontBold = results[1] as pw.Font;
+
+    final isAnonymous = contribution['isAnonymous'] == true;
+    final residentName = (contribution['residentName'] as String?)?.trim() ?? '';
+    final payerName = isAnonymous
+        ? 'Anonymous Donor'
+        : (residentName.isNotEmpty ? residentName : 'Resident');
+    final flat = (contribution['flatNumber'] as String?) ?? '';
+    final wing = (contribution['wing'] as String?) ?? '';
+    final block = (contribution['block'] as String?) ?? '';
+    final addressParts = [
+      if (wing.isNotEmpty) '$wing Wing',
+      if (block.isNotEmpty) 'Block $block',
+      if (flat.isNotEmpty) 'Flat $flat',
+    ];
+    final amount = (contribution['amount'] as num?)?.toDouble() ?? 0;
+    final mode = (contribution['paymentMode'] as String?) ?? 'Cash';
+    final ref = (contribution['referenceId'] as String?)?.trim() ?? '';
+    final type = (contribution['contributionType'] as String?) ?? 'Regular Contribution';
+    final isSpecial = type != 'Regular Contribution' && type != 'Regular';
+    final specialDesc = (contribution['specialDescription'] as String?)?.trim() ?? '';
+    final note = (contribution['note'] as String?)?.trim() ?? '';
+    final paidDate = (contribution['paidDate'] as String?) ?? '';
+    final receiptNo = 'GF-${docId.length >= 6 ? docId.substring(0, 6).toUpperCase() : docId.toUpperCase()}';
+
+    final now = DateTime.now();
+    final generatedStr =
+        '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
+
+    final doc = pw.Document();
+    doc.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a5,
+        margin: const pw.EdgeInsets.all(28),
+        theme: pw.ThemeData.withFont(base: font, bold: fontBold),
+        build: (ctx) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Container(
+              color: _kPurple,
+              padding: const pw.EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text('GateFlow',
+                          style: pw.TextStyle(
+                              color: PdfColors.white,
+                              fontSize: 16,
+                              fontWeight: pw.FontWeight.bold)),
+                      pw.Text('Payment Receipt',
+                          style: const pw.TextStyle(color: PdfColors.grey, fontSize: 9)),
+                    ],
+                  ),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: [
+                      pw.Text(receiptNo,
+                          style: pw.TextStyle(
+                              color: PdfColors.white,
+                              fontSize: 12,
+                              fontWeight: pw.FontWeight.bold)),
+                      pw.Text('Generated: $generatedStr',
+                          style: const pw.TextStyle(color: PdfColors.grey, fontSize: 9)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 18),
+            pw.Text(eventName,
+                style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold)),
+            pw.SizedBox(height: 14),
+            pw.Container(
+              width: double.infinity,
+              padding: const pw.EdgeInsets.all(14),
+              decoration: pw.BoxDecoration(
+                color: const PdfColor(0.910, 0.961, 0.914),
+                borderRadius: pw.BorderRadius.circular(8),
+              ),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text('Amount Received',
+                      style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey700)),
+                  pw.SizedBox(height: 2),
+                  pw.Text('₹${amount.toStringAsFixed(0)}',
+                      style: pw.TextStyle(
+                          fontSize: 26, fontWeight: pw.FontWeight.bold, color: _kGreen)),
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 16),
+            _receiptRow('Paid By', payerName),
+            if (addressParts.isNotEmpty)
+              _receiptRow('Address', addressParts.join(' • ')),
+            _receiptRow('Date Paid', paidDate.isNotEmpty ? paidDate : generatedStr),
+            _receiptRow('Payment Mode', mode),
+            if (ref.isNotEmpty) _receiptRow('Reference / Txn ID', ref),
+            _receiptRow('Contribution Type', isSpecial ? 'Special Contribution' : 'Regular Contribution'),
+            if (isSpecial && specialDesc.isNotEmpty) _receiptRow('Details', specialDesc),
+            if (note.isNotEmpty) _receiptRow('Note', note),
+            pw.Spacer(),
+            pw.Divider(color: PdfColors.grey300),
+            pw.Center(
+              child: pw.Text('Thank you for your contribution!',
+                  style: pw.TextStyle(
+                      fontSize: 11, fontWeight: pw.FontWeight.bold, color: _kPurple)),
+            ),
+            pw.SizedBox(height: 4),
+            pw.Center(
+              child: pw.Text('GateFlow — Confidential',
+                  style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final bytes = Uint8List.fromList(await doc.save());
+    final safeEvent = eventName.replaceAll(RegExp(r'[^\w\s]'), '').trim().replaceAll(' ', '_');
+    final filename = 'Receipt_${safeEvent}_$receiptNo.pdf';
+
+    messenger.hideCurrentSnackBar();
+
+    if (context.mounted) {
+      await _showSaveDialog(context, bytes, filename, messenger);
+    }
+  } catch (e) {
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(SnackBar(
+      content: Text('Receipt generation failed: $e'),
+      backgroundColor: Colors.red,
+    ));
+  }
+}
+
+pw.Widget _receiptRow(String label, String value) => pw.Padding(
+      padding: const pw.EdgeInsets.only(bottom: 8),
+      child: pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.SizedBox(
+            width: 110,
+            child: pw.Text(label,
+                style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
+          ),
+          pw.Expanded(
+            child: pw.Text(value,
+                style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
+          ),
+        ],
+      ),
+    );

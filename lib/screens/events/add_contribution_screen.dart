@@ -2,10 +2,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'event_types.dart' show kSuggestedContributionAmounts;
 
 // Contribution types
 const String kTypeRegular = 'Regular Contribution';
 const String kTypeSpecial = 'Special Contribution';
+const String kTypeSponsor = 'Sponsorship';
+const String kTypeExternal = 'External Donation';
 // Legacy types (kept for backward-compat read; no longer shown in UI)
 const String kTypeCarryForward = 'Carry Forward (Previous Year)';
 const String kTypeGaneshLaddu = 'Ganesh Laddu (Previous Year)';
@@ -52,16 +55,27 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
   bool _amountReceived = true;
   String _paymentMode = 'Cash';
   DateTime _paidDate = DateTime.now();
+  bool _isAnonymous = false;
   bool _saving = false;
   String _error = '';
   StreamSubscription<DocumentSnapshot>? _settingsSub;
   List<String> _paymentModes = ['Cash', 'UPI', 'Bank Transfer', 'Cheque'];
+
+  double _expectedPerFlat = 0;
+  double _paidSoFarForFlat = 0;
+  String _balanceFlat = '';
+  String _sponsorPackageName = '';
 
   bool get _isEditing => widget.existingDocId != null;
   bool get _isSpecialType =>
       _contributionType == kTypeSpecial ||
       _contributionType == kTypeCarryForward ||
       _contributionType == kTypeGaneshLaddu;
+  // External donors (broadband company, builder, store, etc.) have no flat —
+  // wing/block/flat selection is skipped entirely for this type.
+  bool get _isExternalType => _contributionType == kTypeExternal;
+  double get _remainingBalance =>
+      (_expectedPerFlat - _paidSoFarForFlat).clamp(0, double.infinity);
 
   static const _kDefaultPaymentModes = ['Cash', 'UPI', 'PhonePe', 'Google Pay', 'Bank Transfer', 'NEFT / RTGS', 'Cheque', 'Other'];
   final Set<String> _requiresReference = {'UPI', 'PhonePe', 'Google Pay', 'Bank Transfer', 'NEFT / RTGS', 'Cheque'};
@@ -76,6 +90,7 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
   @override
   void initState() {
     super.initState();
+    _amountController.addListener(_onAmountChanged);
     final d = widget.existingData;
     if (d != null) {
       _wing = d['wing'] ?? '';
@@ -103,6 +118,8 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
       }
       _amountReceived = d['amountReceived'] ?? true;
       _paymentMode = d['paymentMode'] ?? 'Cash';
+      _isAnonymous = d['isAnonymous'] == true;
+      _sponsorPackageName = d['sponsorPackageName'] ?? '';
       _referenceController.text = d['referenceId'] ?? '';
       _noteController.text = d['note'] ?? '';
       _specialDescController.text = d['specialDescription'] ?? '';
@@ -140,10 +157,48 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
         }
       });
     }
+    // Remaining-balance tracking (new entries only — editing shouldn't nudge
+    // toward a "remaining" amount computed against itself).
+    if (!_isEditing) {
+      _flatController.addListener(_onFlatChanged);
+      FirebaseFirestore.instance
+          .collection('events')
+          .doc(widget.eventId)
+          .get()
+          .then((snap) {
+        if (!mounted) return;
+        final expected = (snap.data()?['expectedAmountPerFlat'] as num?)?.toDouble() ?? 0;
+        if (expected > 0) {
+          setState(() => _expectedPerFlat = expected);
+          _onFlatChanged();
+        }
+      });
+    }
+  }
+
+  void _onFlatChanged() {
+    final flat = _flatController.text.trim();
+    if (_expectedPerFlat <= 0 || flat.isEmpty || flat == _balanceFlat) return;
+    _balanceFlat = flat;
+    FirebaseFirestore.instance
+        .collection('events')
+        .doc(widget.eventId)
+        .collection('contributions')
+        .where('flatNumber', isEqualTo: flat)
+        .get()
+        .then((snap) {
+      if (!mounted || _flatController.text.trim() != flat) return;
+      final paid = snap.docs
+          .where((d) => d.data()['amountReceived'] == true && d.data()['status'] != 'deleted')
+          .fold<double>(0, (total, d) => total + ((d.data()['amount'] as num?)?.toDouble() ?? 0));
+      setState(() => _paidSoFarForFlat = paid);
+    });
   }
 
   @override
   void dispose() {
+    _flatController.removeListener(_onFlatChanged);
+    _amountController.removeListener(_onAmountChanged);
     _settingsSub?.cancel();
     _flatController.dispose();
     _nameController.dispose();
@@ -153,6 +208,8 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
     _specialDescController.dispose();
     super.dispose();
   }
+
+  void _onAmountChanged() => setState(() {});
 
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
@@ -178,17 +235,24 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
   }
 
   Future<void> _save() async {
-    if (_wing.isEmpty) {
-      setState(() => _error = 'Please select a Wing');
-      return;
-    }
-    if (_block.isEmpty) {
-      setState(() => _error = 'Please select a Block');
-      return;
-    }
-    if (_flatController.text.trim().isEmpty) {
-      setState(() => _error = 'Please enter flat number');
-      return;
+    if (_isExternalType) {
+      if (_nameController.text.trim().isEmpty) {
+        setState(() => _error = 'Please enter donor / organization name');
+        return;
+      }
+    } else {
+      if (_wing.isEmpty) {
+        setState(() => _error = 'Please select a Wing');
+        return;
+      }
+      if (_block.isEmpty) {
+        setState(() => _error = 'Please select a Block');
+        return;
+      }
+      if (_flatController.text.trim().isEmpty) {
+        setState(() => _error = 'Please enter flat number');
+        return;
+      }
     }
     if (_amountController.text.trim().isEmpty) {
       setState(() => _error = 'Please enter amount');
@@ -204,12 +268,14 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
 
     try {
       final firestore = FirebaseFirestore.instance;
-      final flat = _flatController.text.trim();
-      final fullAddress = '$_wing Wing - $_block Block - Flat $flat';
+      final flat = _isExternalType ? '' : _flatController.text.trim();
+      final fullAddress = _isExternalType
+          ? 'External Donation'
+          : '$_wing Wing - $_block Block - Flat $flat';
 
       final payload = {
-        'wing': _wing,
-        'block': _block,
+        'wing': _isExternalType ? '' : _wing,
+        'block': _isExternalType ? '' : _block,
         'flatNumber': flat,
         'fullAddress': fullAddress,
         'residentName': _nameController.text.trim(),
@@ -218,6 +284,12 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
         // For carry forward / Ganesh Laddu: track if the amount was received
         'amountReceived': _isSpecialType ? _amountReceived : true,
         'paymentMode': _isSpecialType && !_amountReceived ? 'Pending' : _paymentMode,
+        // Identity (flat/name) is still recorded for accounting & block-wise
+        // tracking; isAnonymous only hides the name in resident-facing views
+        // like the future Leaderboard and admin's contribution list badge.
+        'isAnonymous': _isAnonymous,
+        'sponsorPackageName':
+            _contributionType == kTypeSponsor ? _sponsorPackageName : '',
         'referenceId': _referenceController.text.trim(),
         'note': _noteController.text.trim(),
         'specialDescription': _isSpecialType ? _specialDescController.text.trim() : '',
@@ -318,6 +390,30 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
           return StreamBuilder<DocumentSnapshot>(
         stream: widget.eventTypeId.isNotEmpty
             ? FirebaseFirestore.instance
+                .collection('appSettings')
+                .doc('sponsorPackages')
+                .snapshots()
+            : const Stream.empty(),
+        builder: (context, sponsorSettingsSnap) {
+          final sponsorSettingsData =
+              sponsorSettingsSnap.data?.data() as Map<String, dynamic>? ?? {};
+          final sponsorEnabledIds =
+              List<String>.from(sponsorSettingsData['enabledTypeIds'] as List? ?? []);
+          final sponsorTypeAvailable = sponsorEnabledIds.contains(widget.eventTypeId);
+
+          return StreamBuilder<DocumentSnapshot>(
+        stream: FirebaseFirestore.instance.collection('events').doc(widget.eventId).snapshots(),
+        builder: (context, eventSnap) {
+          final eventRaw = (eventSnap.data?.data() as Map<String, dynamic>?)?['sponsorPackages'];
+          final sponsorPackages = eventRaw != null
+              ? List<Map<String, dynamic>>.from(
+                  (eventRaw as List).map((e) => Map<String, dynamic>.from(e as Map)))
+              : <Map<String, dynamic>>[];
+          final sponsorAvailable = sponsorTypeAvailable && sponsorPackages.isNotEmpty;
+
+          return StreamBuilder<DocumentSnapshot>(
+        stream: widget.eventTypeId.isNotEmpty
+            ? FirebaseFirestore.instance
                 .collection('eventTypeConfig')
                 .doc(widget.eventTypeId)
                 .snapshots()
@@ -367,10 +463,58 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // ── Contribution Type ────────────────────────────
-                if (specialAvailable) ...[
-                  _label('Contribution Type *'),
+                // Always shown now — External Donation is always available
+                // to admin regardless of the Special/Sponsor settings.
+                _label('Contribution Type *'),
+                const SizedBox(height: 8),
+                _typeSelector(sponsorAvailable: sponsorAvailable, specialAvailable: specialAvailable),
+                const SizedBox(height: 16),
+
+                // ── Sponsor tier picker ────────────────────────────
+                if (_contributionType == kTypeSponsor && sponsorAvailable) ...[
+                  _label('Sponsor Tier *'),
                   const SizedBox(height: 8),
-                  _typeSelector(),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: sponsorPackages.map((p) {
+                      final name = p['name'] as String? ?? '';
+                      final pAmount = (p['amount'] as num?)?.toDouble() ?? 0;
+                      final sel = _sponsorPackageName == name;
+                      return GestureDetector(
+                        onTap: () => setState(() {
+                          _sponsorPackageName = name;
+                          _amountController.text = pAmount.toStringAsFixed(0);
+                        }),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: sel ? Colors.amber.shade600 : Colors.amber.shade50,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                                color: sel ? Colors.amber.shade600 : Colors.amber.shade200),
+                          ),
+                          child: Text('$name · ₹${pAmount.toStringAsFixed(0)}',
+                              style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: sel ? Colors.white : Colors.amber.shade800)),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  if (_sponsorPackageName.isNotEmpty)
+                    Builder(builder: (_) {
+                      final perks = sponsorPackages.firstWhere(
+                          (p) => p['name'] == _sponsorPackageName,
+                          orElse: () => {})['perks'] as String? ?? '';
+                      if (perks.isEmpty) return const SizedBox();
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text('Perks: $perks',
+                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                      );
+                    }),
                   const SizedBox(height: 16),
                 ],
 
@@ -427,6 +571,7 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
                   const SizedBox(height: 16),
                 ],
 
+                if (!_isExternalType) ...[
                 // ── Wing ─────────────────────────────────────────
                 _label('Wing *'),
                 const SizedBox(height: 8),
@@ -526,16 +671,78 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
                       );
                     },
                   ),
+                if (_expectedPerFlat > 0 && _flatController.text.trim().isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: _remainingBalance > 0
+                          ? Colors.blue.shade50
+                          : Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color: _remainingBalance > 0
+                              ? Colors.blue.shade100
+                              : Colors.green.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          _remainingBalance > 0
+                              ? Icons.account_balance_wallet_outlined
+                              : Icons.check_circle_outline,
+                          size: 18,
+                          color: _remainingBalance > 0
+                              ? Colors.blue.shade700
+                              : Colors.green.shade700,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            _remainingBalance > 0
+                                ? 'Flat ${_flatController.text.trim()}: ₹${_paidSoFarForFlat.toStringAsFixed(0)} of ₹${_expectedPerFlat.toStringAsFixed(0)} paid · ₹${_remainingBalance.toStringAsFixed(0)} remaining'
+                                : 'Flat ${_flatController.text.trim()} has fully paid the suggested ₹${_expectedPerFlat.toStringAsFixed(0)}',
+                            style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: _remainingBalance > 0
+                                    ? Colors.blue.shade800
+                                    : Colors.green.shade800),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 20),
+                ], // end !_isExternalType
 
-                // ── Resident name ─────────────────────────────────
-                _label('Resident Name (Optional)'),
+                // ── Resident / sponsor / donor name ────────────────
+                _label(_contributionType == kTypeSponsor
+                    ? 'Sponsor / Business Name'
+                    : _isExternalType
+                        ? 'Donor / Organization Name *'
+                        : 'Resident Name (Optional)'),
+                if (_isExternalType) ...[
+                  const SizedBox(height: 4),
+                  Text('e.g. Broadband provider, builder, store operator',
+                      style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
+                ],
                 const SizedBox(height: 8),
                 TextField(
                   controller: _nameController,
                   textCapitalization: TextCapitalization.words,
-                  decoration: _dec('Optional', Icons.person_outlined),
+                  decoration: _dec(
+                      _contributionType == kTypeSponsor
+                          ? 'e.g. Sharma Electronics'
+                          : _isExternalType
+                              ? 'e.g. ACT Broadband'
+                              : 'Optional',
+                      Icons.person_outlined),
                 ),
+                const SizedBox(height: 12),
+                _anonymousToggle(),
                 const SizedBox(height: 20),
 
                 // ── Amount ────────────────────────────────────────
@@ -572,6 +779,26 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
                     ),
                   ),
                 ),
+                if (!_isSpecialType && _contributionType != kTypeSponsor) ...[
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      if (_remainingBalance > 0)
+                        _amountChip(
+                          label: 'Pay Remaining (₹${_remainingBalance.toStringAsFixed(0)})',
+                          value: _remainingBalance.toStringAsFixed(0),
+                          color: Colors.blue,
+                        ),
+                      ...kSuggestedContributionAmounts.map((amt) => _amountChip(
+                            label: '₹$amt',
+                            value: '$amt',
+                            color: Colors.green,
+                          )),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 20),
 
                 // ── Payment mode (only when received) ────────────
@@ -734,18 +961,28 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
         },
       ); // closes eventTypeConfig StreamBuilder
         },
+      ); // closes event(sponsorPackages list) StreamBuilder
+        },
+      ); // closes sponsorPackages settings StreamBuilder
+        },
       ), // closes specialContribution StreamBuilder
     );
   }
 
   // ── Type selector ──────────────────────────────────────────────────────────
 
-  Widget _typeSelector() {
+  Widget _typeSelector({bool sponsorAvailable = false, bool specialAvailable = true}) {
     final types = [
       {'type': kTypeRegular, 'icon': Icons.payments_outlined, 'color': Colors.green,
        'desc': 'Standard contribution for this event'},
-      {'type': kTypeSpecial, 'icon': Icons.star_outline, 'color': Colors.purple,
-       'desc': 'Carry forward, Ganesh Laddu, or other special amount'},
+      if (specialAvailable)
+        {'type': kTypeSpecial, 'icon': Icons.star_outline, 'color': Colors.purple,
+         'desc': 'Carry forward, Ganesh Laddu, or other special amount'},
+      if (sponsorAvailable)
+        {'type': kTypeSponsor, 'icon': Icons.workspace_premium_outlined, 'color': Colors.amber.shade800,
+         'desc': 'Business or individual sponsor at a defined tier'},
+      {'type': kTypeExternal, 'icon': Icons.corporate_fare_outlined, 'color': Colors.teal.shade700,
+       'desc': 'Broadband company, builder, store, or other external donor'},
     ];
     return Column(
       children: types.map((t) {
@@ -902,6 +1139,74 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _amountChip({
+    required String label,
+    required String value,
+    required MaterialColor color,
+  }) {
+    final sel = _amountController.text.trim() == value;
+    return GestureDetector(
+      onTap: () => setState(() => _amountController.text = value),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: sel ? color.shade600 : color.shade50,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: sel ? color.shade600 : color.shade200),
+        ),
+        child: Text(label,
+            style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: sel ? Colors.white : color.shade700)),
+      ),
+    );
+  }
+
+  Widget _anonymousToggle() {
+    return GestureDetector(
+      onTap: () => setState(() => _isAnonymous = !_isAnonymous),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: _isAnonymous ? Colors.indigo.shade50 : Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+              color: _isAnonymous ? Colors.indigo.shade200 : Colors.grey.shade200),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.visibility_off_outlined,
+                size: 18,
+                color: _isAnonymous ? Colors.indigo.shade600 : Colors.grey.shade500),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Anonymous Contribution',
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: _isAnonymous
+                              ? Colors.indigo.shade700
+                              : Colors.grey.shade700)),
+                  Text('Name hidden from other residents; admins can still see it',
+                      style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                ],
+              ),
+            ),
+            Switch(
+              value: _isAnonymous,
+              activeThumbColor: Colors.indigo,
+              onChanged: (v) => setState(() => _isAnonymous = v),
+            ),
+          ],
+        ),
       ),
     );
   }

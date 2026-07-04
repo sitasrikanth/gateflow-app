@@ -568,6 +568,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: [
               _DefaultNoteCard(ref: _ref, data: data),
               const SizedBox(height: 16),
+              _ResidentLandingScreenCard(ref: _ref, data: data),
+              const SizedBox(height: 16),
               _PaymentModesCard(ref: _ref, data: data),
               const SizedBox(height: 16),
               _SectionCard(
@@ -756,6 +758,127 @@ class _DefaultNoteCardState extends State<_DefaultNoteCard> {
               ),
               onSubmitted: (_) => _save(),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Resident Landing Screen Card ──────────────────────────────────────────────
+// Controls what residents see immediately after logging in: the full Home
+// dashboard (visitors, quick actions, profile) or straight into My Events.
+
+class _ResidentLandingScreenCard extends StatelessWidget {
+  final DocumentReference ref;
+  final Map<String, dynamic> data;
+  const _ResidentLandingScreenCard({required this.ref, required this.data});
+
+  String get _current => (data['residentLandingScreen'] as String?) ?? 'home';
+
+  Future<void> _save(String value) =>
+      ref.set({'residentLandingScreen': value}, SetOptions(merge: true));
+
+  @override
+  Widget build(BuildContext context) {
+    final current = _current;
+    return Card(
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      elevation: 0,
+      color: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              const Icon(Icons.home_outlined, color: Colors.deepPurple, size: 22),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text('Resident Landing Screen',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+              ),
+            ]),
+            const SizedBox(height: 4),
+            Text('What residents see right after logging in.',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+            const SizedBox(height: 12),
+            Row(children: [
+              Expanded(
+                child: _LandingOption(
+                  label: 'Home Screen',
+                  subtitle: 'Visitors, quick actions, profile',
+                  icon: Icons.dashboard_outlined,
+                  selected: current == 'home',
+                  onTap: () => _save('home'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _LandingOption(
+                  label: 'My Events',
+                  subtitle: 'Straight into events & contributions',
+                  icon: Icons.celebration_outlined,
+                  selected: current == 'events',
+                  onTap: () => _save('events'),
+                ),
+              ),
+            ]),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LandingOption extends StatelessWidget {
+  final String label;
+  final String subtitle;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+  const _LandingOption({
+    required this.label,
+    required this.subtitle,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: selected ? Colors.deepPurple.shade50 : Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+              color: selected ? Colors.deepPurple.shade300 : Colors.grey.shade200,
+              width: selected ? 1.5 : 1),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Icon(icon,
+                  size: 18,
+                  color: selected ? Colors.deepPurple : Colors.grey.shade500),
+              const Spacer(),
+              if (selected)
+                Icon(Icons.check_circle, size: 16, color: Colors.deepPurple.shade400),
+            ]),
+            const SizedBox(height: 6),
+            Text(label,
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: selected ? Colors.deepPurple.shade700 : Colors.grey.shade700)),
+            const SizedBox(height: 2),
+            Text(subtitle,
+                style: TextStyle(fontSize: 10.5, color: Colors.grey.shade500)),
           ],
         ),
       ),

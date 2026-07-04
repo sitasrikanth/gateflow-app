@@ -1,5 +1,5 @@
 # GateFlow — 12-Week Progress Tracker
-> Last updated: 2026-06-28 (Session 6) | Tell Claude what you completed and this file gets updated automatically.
+> Last updated: 2026-07-04 (Session 7) | Tell Claude what you completed and this file gets updated automatically.
 
 ---
 
@@ -557,6 +557,28 @@ Phase 4 — Testing & Launch       ░░░░░░░░░░░░  Week 9�
 
 ---
 
+## CONTRIBUTION & DONATIONS ROADMAP
+
+Feature set for events like Ganesh Chaturthi, Navratri, Independence Day. Audited existing code on 2026-07-04 against a 9-item wishlist; two were already built. Build order below is MVP-first (low effort / high value first, and items that other items depend on go before their dependents).
+
+| # | Feature | Status | Notes |
+|---|---|---|---|
+| 1 | Custom Contribution | ✅ Built | Admin ("Record Contribution") and resident ("Report Payment") both accept any free-form amount. |
+| 2 | Multiple Payment Methods | ✅ Built | Cash, UPI, PhonePe, Google Pay, Bank Transfer, NEFT/RTGS, Cheque, Other — configurable in Admin Settings. |
+| 3 | Suggested Contribution | ✅ Built (2026-07-04) | Quick-amount chips (₹500/₹1000/₹2000/₹5000) added beside the amount field in both Record Contribution and Report Payment. |
+| 4 | Anonymous Donation | ✅ Built (2026-07-04) | Toggle in both flows; `isAnonymous` stored on the doc, flat/name kept for admin accounting, name hidden + "ANONYMOUS" badge shown in admin's Contributions tab and pending-verification queue. |
+| 5 | Contribution History | ✅ Built (2026-07-04) | New "My Contribution History" screen (receipt icon in My Events AppBar) — cross-event list with total-paid summary card. Queries each event's contributions subcollection per-flat rather than a Firestore collectionGroup query, to avoid requiring a manually-created composite index. |
+| 6 | Download Receipt | ✅ Built (2026-07-04) | Per-contribution A5 PDF receipt (`exportContributionReceipt` in `event_pdf_report.dart`), downloadable from resident's Contribution History and admin's Contributions tab. Only offered for confirmed (non-pending) contributions. |
+| 7 | Pay Remaining Balance | ✅ Built (2026-07-04) | New optional `expectedAmountPerFlat` field on event create/edit. Remaining-balance banner + "Pay Remaining" quick-chip in both Report Payment and Record Contribution. No "at a glance" indicator on the event card yet (only shown when opening the contribute flow) — noted as a possible future polish item. |
+| 8 | Leaderboard | ✅ Built (2026-07-04) | Configurable per event type (new Leaderboard section in Event Settings, opt-in like Collection Status by Block). Overview tab shows "Top Contributors" ranked by flat total; anonymous contributions are summed separately as an unranked footnote, never shown with a flat number. |
+| 9 | Sponsor Packages | ✅ Built (2026-07-04) | Configurable per event type (new section in Event Settings). Admins define tiers per event via Event Tools → Manage Sponsor Packages (`sponsor_packages_screen.dart`, stored as `events/{id}.sponsorPackages`). New "Sponsorship" contribution type with tier picker in Record Contribution. Public "Our Sponsors" wall in Overview tab, respecting the Anonymous toggle. |
+
+**All 9 items shipped as of 2026-07-04.** Roadmap complete.
+
+**Status legend:** ✅ Built | 🟡 Partial (exists but needs polish) | 🔲 Planned
+
+---
+
 ## KEY DECISIONS LOG
 
 | Date | Decision | Reason |
@@ -583,6 +605,8 @@ Phase 4 — Testing & Launch       ░░░░░░░░░░░░  Week 9�
 | 2026-06-28 | Volunteer roles loaded once in `initState` (not StreamBuilder) | Roles don't change mid-event; one fetch is cheaper and simpler than a live stream on every tab |
 | 2026-06-28 | Expense category count badge shows default count before seeding | UX fix — badge was hidden until admin expanded the event type once, which felt broken |
 | 2026-06-28 | `kDefaultCategories` replaced with generic names (removed Annadam, Ganesh Idol) | Fallback defaults apply to any event type; event-type-specific defaults come from `event_types.dart` |
+| 2026-07-04 | Anonymous Donation moved up to #4 in Contribution & Donations roadmap (ahead of Contribution History/Receipt) | Deciding the anonymous-entry data shape early avoids reworking Leaderboard ranking and history display later |
+| 2026-07-04 | Sponsor Packages placed last in Contribution & Donations roadmap | Highest complexity (tiers, perks, admin config) and least essential for a resident-run festival fund vs. a corporate-sponsored event |
 
 ---
 

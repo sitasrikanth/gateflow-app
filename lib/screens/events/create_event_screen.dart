@@ -44,6 +44,7 @@ class _CreateEventScreenState extends State<CreateEventScreen>
   final _nameCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
   final _targetCtrl = TextEditingController();
+  final _perFlatCtrl = TextEditingController();
   String _startDate = '';
   String _endDate = '';
   bool _saving = false;
@@ -81,6 +82,8 @@ class _CreateEventScreenState extends State<CreateEventScreen>
     _descCtrl.text = (d['description'] as String?) ?? '';
     final target = (d['targetAmount'] as num?)?.toDouble() ?? 0;
     _targetCtrl.text = target > 0 ? target.toStringAsFixed(0) : '';
+    final perFlat = (d['expectedAmountPerFlat'] as num?)?.toDouble() ?? 0;
+    _perFlatCtrl.text = perFlat > 0 ? perFlat.toStringAsFixed(0) : '';
     _startDate = (d['startDate'] as String?) ?? '';
     _endDate = (d['endDate'] as String?) ?? '';
     _existingBannerUrl = d['bannerUrl'] as String?;
@@ -111,6 +114,7 @@ class _CreateEventScreenState extends State<CreateEventScreen>
     _nameCtrl.dispose();
     _descCtrl.dispose();
     _targetCtrl.dispose();
+    _perFlatCtrl.dispose();
     super.dispose();
   }
 
@@ -130,7 +134,14 @@ class _CreateEventScreenState extends State<CreateEventScreen>
   }
 
   void _goBack() {
-    if (_step == 1 && !widget.isEdit) {
+    if (_step == 0 && widget.isEdit) {
+      // Reached the type picker via "Change"/"Set Event Type" while
+      // editing — return to the details form instead of exiting.
+      _pageCtrl.animateToPage(1,
+          duration: const Duration(milliseconds: 380),
+          curve: Curves.easeInOut);
+      setState(() => _step = 1);
+    } else if (_step == 1 && !widget.isEdit) {
       _pageCtrl.animateToPage(0,
           duration: const Duration(milliseconds: 380),
           curve: Curves.easeInOut);
@@ -191,6 +202,7 @@ class _CreateEventScreenState extends State<CreateEventScreen>
     setState(() { _saving = true; _error = ''; });
 
     final target = double.tryParse(_targetCtrl.text) ?? 0;
+    final perFlat = double.tryParse(_perFlatCtrl.text) ?? 0;
 
     try {
       final fs = FirebaseFirestore.instance;
@@ -210,6 +222,7 @@ class _CreateEventScreenState extends State<CreateEventScreen>
         'name': _nameCtrl.text.trim(),
         'description': _descCtrl.text.trim(),
         'targetAmount': target,
+        'expectedAmountPerFlat': perFlat,
         'startDate': _startDate,
         'endDate': _endDate,
         'bannerUrl': bannerUrl ?? '',
@@ -263,10 +276,10 @@ class _CreateEventScreenState extends State<CreateEventScreen>
           onPressed: _goBack,
         ),
         title: Text(
-          widget.isEdit
-              ? 'Edit Event'
-              : _step == 0
-                  ? 'Choose Event Type'
+          _step == 0
+              ? 'Choose Event Type'
+              : widget.isEdit
+                  ? 'Edit Event'
                   : 'Event Details',
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
@@ -448,29 +461,75 @@ class _CreateEventScreenState extends State<CreateEventScreen>
                       ],
                     ),
                   ),
-                  if (!widget.isEdit)
-                    GestureDetector(
-                      onTap: () {
-                        _pageCtrl.animateToPage(0,
-                            duration: const Duration(milliseconds: 380),
-                            curve: Curves.easeInOut);
-                        setState(() => _step = 0);
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Text('Change',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600)),
+                  GestureDetector(
+                    onTap: () {
+                      _pageCtrl.animateToPage(0,
+                          duration: const Duration(milliseconds: 380),
+                          curve: Curves.easeInOut);
+                      setState(() => _step = 0);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text('Change',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+          ] else if (widget.isEdit) ...[
+            // Legacy event with no event type assigned yet — this blocks
+            // per-type settings (Delete Event, Payments, etc.) from showing.
+            GestureDetector(
+              onTap: () {
+                _pageCtrl.animateToPage(0,
+                    duration: const Duration(milliseconds: 380),
+                    curve: Curves.easeInOut);
+                setState(() => _step = 0);
+              },
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.orange.shade300),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded,
+                        color: Colors.orange.shade700),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('No Event Type Set',
+                              style: TextStyle(
+                                  color: Colors.orange.shade800,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14)),
+                          Text(
+                              'Tap to choose a type — enables Delete Event, '
+                              'Payments, and other per-type settings.',
+                              style: TextStyle(
+                                  color: Colors.orange.shade700,
+                                  fontSize: 11)),
+                        ],
                       ),
                     ),
-                ],
+                    Icon(Icons.chevron_right, color: Colors.orange.shade700),
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 20),
@@ -596,6 +655,22 @@ class _CreateEventScreenState extends State<CreateEventScreen>
             controller: _targetCtrl,
             hint: 'e.g. 50000',
             icon: Icons.track_changes_outlined,
+            accent: accent,
+            keyboard: TextInputType.number,
+            formatters: [FilteringTextInputFormatter.digitsOnly],
+          ),
+          const SizedBox(height: 18),
+
+          // Suggested amount per flat (drives "remaining balance" for residents)
+          _label('Suggested Contribution per Flat (₹)'),
+          Text('Optional — residents will see a remaining balance until they reach this',
+              style: TextStyle(
+                  color: Colors.grey.shade500, fontSize: 12)),
+          const SizedBox(height: 8),
+          _field(
+            controller: _perFlatCtrl,
+            hint: 'e.g. 1000',
+            icon: Icons.account_balance_wallet_outlined,
             accent: accent,
             keyboard: TextInputType.number,
             formatters: [FilteringTextInputFormatter.digitsOnly],

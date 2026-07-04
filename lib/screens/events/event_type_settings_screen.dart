@@ -43,6 +43,12 @@ class EventTypeSettingsScreen extends StatelessWidget {
           SizedBox(height: 12),
           _CollectionStatusByBlockSection(),
           SizedBox(height: 12),
+          _OverviewStatsSection(),
+          SizedBox(height: 12),
+          _LeaderboardSection(),
+          SizedBox(height: 12),
+          _SponsorPackagesSection(),
+          SizedBox(height: 12),
           _SpecialContributionSection(),
           SizedBox(height: 12),
           _ExpenseCategoriesSection(),
@@ -394,6 +400,446 @@ class _CollectionStatusByBlockSectionState extends State<_CollectionStatusByBloc
                 child: Text(
                   'Shows the "Diamond A: 12/15 paid" block-wise breakdown in the Overview tab. '
                   'Leave off for events like Markets or Workshops with no block-wise collection.',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade400, height: 1.4),
+                ),
+              ),
+              const SizedBox(height: 4),
+              ...categories.map((cat) {
+                final types = kAllEventTypes.where((t) => t.category == cat).toList();
+                final selectedCount = types.where((t) => enabledIds.contains(t.id)).length;
+                return _CategorySection(
+                  category: cat,
+                  types: types,
+                  enabledIds: enabledIds,
+                  selectedCount: selectedCount,
+                  onToggle: toggleId,
+                );
+              }),
+              const SizedBox(height: 8),
+            ],
+          ]),
+        );
+      },
+    );
+  }
+}
+
+// ── Top-level Overview Stats collapsable ──────────────────────────────────────
+// Lets admins choose which stat chips (Cash / Online / Collected / Spent /
+// Expected / Balance / Anonymous) show in the Overview tab, per event type.
+// Stored on eventTypeConfig/{typeId}.overviewChips — unset means "all shown"
+// so existing events keep their current behavior until explicitly changed.
+
+const List<(String, String)> kOverviewChipDefs = [
+  ('cash', 'Cash'),
+  ('online', 'Online'),
+  ('collected', 'Collected / Total'),
+  ('spent', 'Spent'),
+  ('expected', 'Expected (Target)'),
+  ('balance', 'Balance'),
+  ('anonymous', 'Anonymous'),
+  ('external', 'External Donations'),
+];
+
+List<String> defaultOverviewChips() => kOverviewChipDefs.map((c) => c.$1).toList();
+
+class _OverviewStatsSection extends StatefulWidget {
+  const _OverviewStatsSection();
+  @override
+  State<_OverviewStatsSection> createState() => _OverviewStatsSectionState();
+}
+
+class _OverviewStatsSectionState extends State<_OverviewStatsSection> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final categories = EventCategory.values
+        .where((cat) => kAllEventTypes.any((t) => t.category == cat))
+        .toList();
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        InkWell(
+          borderRadius: BorderRadius.vertical(
+            top: const Radius.circular(14),
+            bottom: _expanded ? Radius.zero : const Radius.circular(14),
+          ),
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+            child: Row(children: [
+              const Text('📊', style: TextStyle(fontSize: 20)),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Overview Stats',
+                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                  Text('Choose which stat chips show, per event type',
+                      style: TextStyle(fontSize: 11, color: Colors.grey)),
+                ]),
+              ),
+              Icon(_expanded ? Icons.expand_less : Icons.expand_more,
+                  color: Colors.grey.shade500),
+            ]),
+          ),
+        ),
+        if (_expanded) ...[
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+            child: Text(
+              'Controls the Cash/Online/Collected/Spent/Expected/Balance/Anonymous '
+              'chips in the Overview tab. All chips show by default until customized here.',
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade400, height: 1.4),
+            ),
+          ),
+          const SizedBox(height: 4),
+          ...categories.map((cat) => _OverviewStatsCategoryGroup(category: cat)),
+          const SizedBox(height: 8),
+        ],
+      ]),
+    );
+  }
+}
+
+class _OverviewStatsCategoryGroup extends StatefulWidget {
+  final EventCategory category;
+  const _OverviewStatsCategoryGroup({required this.category});
+  @override
+  State<_OverviewStatsCategoryGroup> createState() => _OverviewStatsCategoryGroupState();
+}
+
+class _OverviewStatsCategoryGroupState extends State<_OverviewStatsCategoryGroup> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final types = kAllEventTypes.where((t) => t.category == widget.category).toList();
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      InkWell(
+        onTap: () => setState(() => _expanded = !_expanded),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
+          child: Row(children: [
+            Text(widget.category.emoji, style: const TextStyle(fontSize: 16)),
+            const SizedBox(width: 10),
+            Expanded(child: Text(widget.category.label,
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13))),
+            Icon(_expanded ? Icons.expand_less : Icons.expand_more,
+                size: 18, color: Colors.grey.shade400),
+          ]),
+        ),
+      ),
+      if (_expanded)
+        ...types.map((type) => _OverviewStatsTypeEditor(eventType: type)),
+      const Divider(height: 1, indent: 16, endIndent: 16),
+    ]);
+  }
+}
+
+class _OverviewStatsTypeEditor extends StatefulWidget {
+  final EventTypeData eventType;
+  const _OverviewStatsTypeEditor({required this.eventType});
+  @override
+  State<_OverviewStatsTypeEditor> createState() => _OverviewStatsTypeEditorState();
+}
+
+class _OverviewStatsTypeEditorState extends State<_OverviewStatsTypeEditor> {
+  bool _configExpanded = false;
+
+  DocumentReference get _ref =>
+      FirebaseFirestore.instance.collection('eventTypeConfig').doc(widget.eventType.id);
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: _ref.snapshots(),
+      builder: (context, snap) {
+        final d = snap.data?.data() as Map<String, dynamic>? ?? {};
+        final raw = d['overviewChips'];
+        final enabledChips = raw != null
+            ? List<String>.from(raw as List)
+            : defaultOverviewChips();
+
+        Future<void> toggle(String key, bool on) async {
+          final updated = List<String>.from(enabledChips);
+          if (on) {
+            if (!updated.contains(key)) updated.add(key);
+          } else {
+            updated.remove(key);
+          }
+          await _ref.set({'overviewChips': updated}, SetOptions(merge: true));
+        }
+
+        final selectedCount = enabledChips.length;
+
+        return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(32, 6, 12, 6),
+            child: Row(children: [
+              Text(widget.eventType.emoji, style: const TextStyle(fontSize: 14)),
+              const SizedBox(width: 8),
+              Expanded(child: Text(widget.eventType.name,
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500))),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.deepPurple.shade50,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text('$selectedCount/${kOverviewChipDefs.length}',
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600,
+                        color: Colors.deepPurple.shade600)),
+              ),
+              const SizedBox(width: 6),
+              GestureDetector(
+                onTap: () => setState(() => _configExpanded = !_configExpanded),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Text('Configure',
+                        style: TextStyle(fontSize: 10, color: Colors.deepPurple.shade400,
+                            fontWeight: FontWeight.w600)),
+                    Icon(_configExpanded ? Icons.expand_less : Icons.expand_more,
+                        size: 14, color: Colors.deepPurple.shade400),
+                  ]),
+                ),
+              ),
+            ]),
+          ),
+          if (_configExpanded)
+            Container(
+              margin: const EdgeInsets.fromLTRB(32, 0, 16, 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.deepPurple.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.deepPurple.shade100),
+              ),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: kOverviewChipDefs.map((chip) {
+                  final key = chip.$1;
+                  final label = chip.$2;
+                  final on = enabledChips.contains(key);
+                  return GestureDetector(
+                    onTap: () => toggle(key, !on),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: on ? Colors.deepPurple.shade600 : Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                            color: on ? Colors.deepPurple.shade600 : Colors.grey.shade300),
+                      ),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        if (on) ...[
+                          const Icon(Icons.check, size: 12, color: Colors.white),
+                          const SizedBox(width: 4),
+                        ],
+                        Text(label,
+                            style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: on ? Colors.white : Colors.grey.shade700)),
+                      ]),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+        ]);
+      },
+    );
+  }
+}
+
+// ── Top-level Leaderboard collapsable ─────────────────────────────────────────
+
+class _LeaderboardSection extends StatefulWidget {
+  const _LeaderboardSection();
+  @override
+  State<_LeaderboardSection> createState() => _LeaderboardSectionState();
+}
+
+class _LeaderboardSectionState extends State<_LeaderboardSection> {
+  bool _expanded = false;
+
+  static final DocumentReference _ref = FirebaseFirestore.instance
+      .collection('appSettings')
+      .doc('leaderboard');
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: _ref.snapshots(),
+      builder: (context, snap) {
+        final d = snap.data?.data() as Map<String, dynamic>? ?? {};
+        final enabledIds = List<String>.from(d['enabledTypeIds'] as List? ?? []);
+        final totalSelected = enabledIds.length;
+
+        void toggleId(String id, bool enabled) {
+          final updated = List<String>.from(enabledIds);
+          enabled ? updated.add(id) : updated.remove(id);
+          _ref.set({'enabledTypeIds': updated});
+        }
+
+        final categories = EventCategory.values
+            .where((cat) => kAllEventTypes.any((t) => t.category == cat))
+            .toList();
+
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            InkWell(
+              borderRadius: BorderRadius.vertical(
+                top: const Radius.circular(14),
+                bottom: _expanded ? Radius.zero : const Radius.circular(14),
+              ),
+              onTap: () => setState(() => _expanded = !_expanded),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+                child: Row(children: [
+                  const Text('🏆', style: TextStyle(fontSize: 20)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const Text('Leaderboard',
+                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                      Text(
+                        totalSelected == 0
+                            ? 'Not enabled for any event'
+                            : '$totalSelected event type${totalSelected == 1 ? '' : 's'} enabled',
+                        style: TextStyle(fontSize: 11,
+                            color: totalSelected > 0 ? Colors.amber.shade700 : Colors.grey.shade400),
+                      ),
+                    ]),
+                  ),
+                  Icon(_expanded ? Icons.expand_less : Icons.expand_more,
+                      color: Colors.grey.shade500),
+                ]),
+              ),
+            ),
+            if (_expanded) ...[
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+                child: Text(
+                  'Shows a "Top Contributors" ranking in the Overview tab. Anonymous '
+                  'contributions are summed separately and never shown in the ranked list.',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade400, height: 1.4),
+                ),
+              ),
+              const SizedBox(height: 4),
+              ...categories.map((cat) {
+                final types = kAllEventTypes.where((t) => t.category == cat).toList();
+                final selectedCount = types.where((t) => enabledIds.contains(t.id)).length;
+                return _CategorySection(
+                  category: cat,
+                  types: types,
+                  enabledIds: enabledIds,
+                  selectedCount: selectedCount,
+                  onToggle: toggleId,
+                );
+              }),
+              const SizedBox(height: 8),
+            ],
+          ]),
+        );
+      },
+    );
+  }
+}
+
+// ── Top-level Sponsor Packages collapsable ────────────────────────────────────
+
+class _SponsorPackagesSection extends StatefulWidget {
+  const _SponsorPackagesSection();
+  @override
+  State<_SponsorPackagesSection> createState() => _SponsorPackagesSectionState();
+}
+
+class _SponsorPackagesSectionState extends State<_SponsorPackagesSection> {
+  bool _expanded = false;
+
+  static final DocumentReference _ref = FirebaseFirestore.instance
+      .collection('appSettings')
+      .doc('sponsorPackages');
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: _ref.snapshots(),
+      builder: (context, snap) {
+        final d = snap.data?.data() as Map<String, dynamic>? ?? {};
+        final enabledIds = List<String>.from(d['enabledTypeIds'] as List? ?? []);
+        final totalSelected = enabledIds.length;
+
+        void toggleId(String id, bool enabled) {
+          final updated = List<String>.from(enabledIds);
+          enabled ? updated.add(id) : updated.remove(id);
+          _ref.set({'enabledTypeIds': updated});
+        }
+
+        final categories = EventCategory.values
+            .where((cat) => kAllEventTypes.any((t) => t.category == cat))
+            .toList();
+
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            InkWell(
+              borderRadius: BorderRadius.vertical(
+                top: const Radius.circular(14),
+                bottom: _expanded ? Radius.zero : const Radius.circular(14),
+              ),
+              onTap: () => setState(() => _expanded = !_expanded),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+                child: Row(children: [
+                  const Text('🎖️', style: TextStyle(fontSize: 20)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const Text('Sponsor Packages',
+                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                      Text(
+                        totalSelected == 0
+                            ? 'Not enabled for any event'
+                            : '$totalSelected event type${totalSelected == 1 ? '' : 's'} enabled',
+                        style: TextStyle(fontSize: 11,
+                            color: totalSelected > 0 ? Colors.amber.shade800 : Colors.grey.shade400),
+                      ),
+                    ]),
+                  ),
+                  Icon(_expanded ? Icons.expand_less : Icons.expand_more,
+                      color: Colors.grey.shade500),
+                ]),
+              ),
+            ),
+            if (_expanded) ...[
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+                child: Text(
+                  'Lets admins define sponsorship tiers (e.g. Gold/Silver/Bronze) per '
+                  'event and shows a "Our Sponsors" recognition wall. Manage tiers from '
+                  'the Event Tools menu inside an eligible event.',
                   style: TextStyle(fontSize: 11, color: Colors.grey.shade400, height: 1.4),
                 ),
               ),

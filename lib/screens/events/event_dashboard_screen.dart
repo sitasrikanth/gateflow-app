@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../auth/login_screen.dart';
 import '../admin/admin_home_screen.dart';
 import '../resident/resident_events_screen.dart';
+import '../resident/resident_home_screen.dart';
 import 'event_type_settings_screen.dart';
 import 'add_contribution_screen.dart';
 import 'add_expense_screen.dart';
@@ -16,6 +17,9 @@ import '../../utils/event_pdf_report.dart';
 import 'import_contributions_screen.dart';
 import 'event_types.dart';
 import 'self_report_sheet.dart';
+import 'sponsor_packages_screen.dart';
+import 'task_form_screen.dart';
+import 'task_detail_sheet.dart';
 
 class EventDashboardScreen extends StatefulWidget {
   final String eventId;
@@ -47,7 +51,7 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
   void initState() {
     super.initState();
     _tabController = TabController(
-        length: widget.isAdmin ? 7 : 4, vsync: this);
+        length: widget.isAdmin ? 8 : 4, vsync: this);
     if (!widget.isAdmin) _loadSession();
   }
 
@@ -139,6 +143,37 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
     }
   }
 
+  Future<void> _reopenEvent() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reopen Event'),
+        content: const Text(
+            'Move this event back to Active? Residents and admins will be able to add contributions and expenses again.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade600),
+            child: const Text('Reopen', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      await FirebaseFirestore.instance
+          .collection('events')
+          .doc(widget.eventId)
+          .update({'status': 'active'});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Event reopened — now active')));
+      }
+    }
+  }
+
   Future<void> _deleteSubcollection(String name) async {
     final ref = FirebaseFirestore.instance
         .collection('events').doc(widget.eventId).collection(name);
@@ -181,7 +216,7 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
     );
 
     try {
-      for (final sub in ['contributions', 'expenses', 'poojaRegistrations', 'volunteers']) {
+      for (final sub in ['contributions', 'expenses', 'poojaRegistrations', 'volunteers', 'schedule']) {
         await _deleteSubcollection(sub);
       }
       await FirebaseFirestore.instance
@@ -277,15 +312,30 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                           icon: const Icon(Icons.home_rounded,
                               color: Colors.white70),
                           tooltip: 'Home',
-                          onPressed: () => Navigator.pushAndRemoveUntil(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => widget.isAdmin
-                                  ? const AdminHomeScreen()
-                                  : const ResidentEventsScreen(),
-                            ),
-                            (route) => false,
-                          ),
+                          onPressed: () async {
+                            Widget destination = const AdminHomeScreen();
+                            if (!widget.isAdmin) {
+                              String landing = 'home';
+                              try {
+                                final doc = await FirebaseFirestore.instance
+                                    .collection('community_settings')
+                                    .doc('address')
+                                    .get();
+                                landing = (doc.data()?['residentLandingScreen']
+                                        as String?) ??
+                                    'home';
+                              } catch (_) {}
+                              destination = landing == 'events'
+                                  ? const ResidentEventsScreen()
+                                  : const ResidentHomeScreen();
+                            }
+                            if (!context.mounted) return;
+                            Navigator.pushAndRemoveUntil(
+                              context,
+                              MaterialPageRoute(builder: (_) => destination),
+                              (route) => false,
+                            );
+                          },
                         ),
                         Expanded(
                           child: Row(
@@ -338,6 +388,15 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                           StreamBuilder<DocumentSnapshot>(
                             stream: FirebaseFirestore.instance
                                 .collection('appSettings')
+                                .doc('sponsorPackages')
+                                .snapshots(),
+                            builder: (context, sponsorSnap) {
+                              final sponsorData = sponsorSnap.data?.data() as Map<String, dynamic>? ?? {};
+                              final sponsorEnabledIds = List<String>.from(sponsorData['enabledTypeIds'] as List? ?? []);
+                              final sponsorEnabled = sponsorEnabledIds.contains(eventType?.id ?? '');
+                              return StreamBuilder<DocumentSnapshot>(
+                            stream: FirebaseFirestore.instance
+                                .collection('appSettings')
                                 .doc('deleteEvents')
                                 .snapshots(),
                             builder: (context, delSnap) {
@@ -374,6 +433,7 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                               }
                               if (val == 'recalculate') _recalculateTotals(context);
                               if (val == 'close') _closeEvent();
+                              if (val == 'reopen') _reopenEvent();
                               if (val == 'delete') _deleteEvent();
                               if (val == 'edit') {
                                 Navigator.push(
@@ -407,6 +467,15 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                                           ? kTypeCarryForward
                                           : kTypeGaneshLaddu,
                                     ),
+                                  ),
+                                );
+                              }
+                              if (val == 'sponsors') {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        SponsorPackagesScreen(eventId: widget.eventId),
                                   ),
                                 );
                               }
@@ -460,6 +529,17 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                                     SizedBox(width: 8),
                                     Text('Add Ganesh Laddu'),
                                   ])),
+                              if (sponsorEnabled) ...[
+                                const PopupMenuDivider(),
+                                const PopupMenuItem(
+                                    value: 'sponsors',
+                                    child: Row(children: [
+                                      Icon(Icons.workspace_premium_outlined,
+                                          color: Colors.amber),
+                                      SizedBox(width: 8),
+                                      Text('Manage Sponsor Packages'),
+                                    ])),
+                              ],
                               const PopupMenuDivider(),
                               const PopupMenuItem(
                                   value: 'edit',
@@ -478,6 +558,16 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                                       SizedBox(width: 8),
                                       Text('Close Event',
                                           style: TextStyle(color: Colors.red))
+                                    ]))
+                              else
+                                PopupMenuItem(
+                                    value: 'reopen',
+                                    child: Row(children: [
+                                      Icon(Icons.lock_open_outlined,
+                                          color: Colors.green.shade600),
+                                      const SizedBox(width: 8),
+                                      Text('Reopen Event',
+                                          style: TextStyle(color: Colors.green.shade600))
                                     ])),
                               if (deleteEnabled) ...[
                                 const PopupMenuDivider(),
@@ -493,6 +583,8 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                               ],
                             ],
                               );
+                            },
+                          );
                             },
                           ),
                       ],
@@ -570,6 +662,7 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                     _TabItem(icon: Icons.receipt_long_outlined, label: 'Expenses'),
                     _TabItem(icon: Icons.pending_actions_outlined, label: 'Follow-up'),
                     _TabItem(icon: Icons.groups_outlined, label: 'Volunteers'),
+                    _TabItem(icon: Icons.checklist_outlined, label: 'Tasks'),
                     _TabItem(icon: Icons.history_outlined, label: 'Activity'),
                   ],
                 )
@@ -618,6 +711,7 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                               residentBlock: _residentBlock),
                           _ContributionsTab(
                               eventId: widget.eventId,
+                              eventName: widget.eventName,
                               eventTypeId: data['eventTypeId'] as String? ?? '',
                               isAdmin: true,
                               status: status,
@@ -634,6 +728,7 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                               eventId: widget.eventId,
                               eventTypeId: data['eventTypeId'] as String? ?? '',
                               isAdmin: true),
+                          _TasksTab(eventId: widget.eventId),
                           _ActivityTab(eventId: widget.eventId),
                         ]
                       : [
@@ -652,7 +747,11 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                               spent: spent,
                               balance: balance,
                               data: data,
-                              isAdmin: false),
+                              isAdmin: false,
+                              residentFlat: _residentFlat,
+                              residentName: _residentName,
+                              eventName: data['name'] ?? widget.eventName,
+                              status: status),
                           _ExpensesTab(
                               eventId: widget.eventId,
                               eventTypeId: data['eventTypeId'] as String? ?? '',
@@ -687,7 +786,7 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                       animation: _tabController,
                       builder: (context, _) {
                         final tab = _tabController.index;
-                        // Admin tab order: 0=Overview, 1=Event, 2=Contributions, 3=Expenses, 4=Follow-up, 5=Volunteers, 6=Activity
+                        // Admin tab order: 0=Overview, 1=Event, 2=Contributions, 3=Expenses, 4=Follow-up, 5=Volunteers, 6=Tasks, 7=Activity
                         if (tab == 2 && paymentsEnabled) {
                           return FloatingActionButton.extended(
                             heroTag: 'contribution',
@@ -758,6 +857,9 @@ class _CustomTabBar extends StatefulWidget {
 }
 
 class _CustomTabBarState extends State<_CustomTabBar> {
+  late final List<GlobalKey> _tabKeys =
+      List.generate(widget.tabs.length, (_) => GlobalKey());
+
   @override
   void initState() {
     super.initState();
@@ -765,7 +867,24 @@ class _CustomTabBarState extends State<_CustomTabBar> {
   }
 
   void _onTabChange() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    _scrollToSelected();
+  }
+
+  void _scrollToSelected() {
+    final key = _tabKeys[widget.controller.index];
+    final ctx = key.currentContext;
+    if (ctx == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Scrollable.ensureVisible(
+        ctx,
+        alignment: 0.5,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeInOut,
+      );
+    });
   }
 
   @override
@@ -787,6 +906,7 @@ class _CustomTabBarState extends State<_CustomTabBar> {
             final tab = widget.tabs[i];
             final isSel = selected == i;
             return GestureDetector(
+              key: _tabKeys[i],
               onTap: () => widget.controller.animateTo(i),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -855,6 +975,10 @@ class _OverviewTab extends StatelessWidget {
   final double balance;
   final Map<String, dynamic> data;
   final bool isAdmin;
+  final String residentFlat;
+  final String residentName;
+  final String eventName;
+  final String status;
 
   const _OverviewTab({
     required this.eventId,
@@ -863,6 +987,10 @@ class _OverviewTab extends StatelessWidget {
     required this.balance,
     required this.data,
     this.isAdmin = false,
+    this.residentFlat = '',
+    this.residentName = '',
+    this.eventName = 'Event',
+    this.status = 'active',
   });
 
   String _fmt(double v) {
@@ -881,6 +1009,18 @@ class _OverviewTab extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+
+        // ── My Contribution (resident only) ─────────────────────────
+        if (!isAdmin && residentFlat.isNotEmpty) ...[
+          _MyContributionWidget(
+            eventId: eventId,
+            eventName: eventName,
+            flatNumber: residentFlat,
+            residentName: residentName,
+            isEventActive: status == 'active',
+          ),
+          const SizedBox(height: 16),
+        ],
 
         // ── Budget vs Actual Card ──────────────────────────────────
         Container(
@@ -1014,13 +1154,31 @@ class _OverviewTab extends StatelessWidget {
 
         const SizedBox(height: 16),
 
-        // ── Stat chips ────────────────────────────────────────────
-        StreamBuilder<QuerySnapshot>(
+        // ── Stat chips — visibility configurable per event type ─────
+        StreamBuilder<DocumentSnapshot>(
+          stream: () {
+            final resolvedType = eventTypeById(data['eventTypeId'] as String?) ??
+                eventTypeByName(data['name'] as String?);
+            return resolvedType != null
+                ? FirebaseFirestore.instance
+                    .collection('eventTypeConfig')
+                    .doc(resolvedType.id)
+                    .snapshots()
+                : const Stream<DocumentSnapshot>.empty();
+          }(),
+          builder: (context, configSnap) {
+            final configData = configSnap.data?.data() as Map<String, dynamic>? ?? {};
+            final rawChips = configData['overviewChips'];
+            final enabledChips = rawChips != null
+                ? List<String>.from(rawChips as List)
+                : defaultOverviewChips();
+
+            return StreamBuilder<QuerySnapshot>(
           stream: FirebaseFirestore.instance
               .collection('events').doc(eventId)
               .collection('contributions').snapshots(),
           builder: (context, snap) {
-            double cash = 0, online = 0;
+            double cash = 0, online = 0, anonymous = 0, external = 0;
             for (final doc in snap.data?.docs ?? []) {
               final d = doc.data() as Map<String, dynamic>;
               if (d['status'] == 'deleted') continue;
@@ -1029,55 +1187,112 @@ class _OverviewTab extends StatelessWidget {
               final amt = (d['amount'] as num? ?? 0).toDouble();
               final mode = (d['paymentMode'] as String? ?? '').toLowerCase();
               if (mode == 'cash') cash += amt; else online += amt;
+              if (d['isAnonymous'] == true) anonymous += amt;
+              if (d['contributionType'] == kTypeExternal) external += amt;
             }
-            final hasBoth = cash > 0 && online > 0;
+            final hasBoth = cash > 0 && online > 0 &&
+                enabledChips.contains('cash') && enabledChips.contains('online');
+            final rowsOnTop = <Widget>[];
+            final rowsBottom = <Widget>[];
+            if (hasBoth) {
+              if (enabledChips.contains('cash')) {
+                rowsOnTop.add(_StatChip(label: 'Cash', value: '₹${_fmt(cash)}',
+                    icon: Icons.arrow_downward_rounded, color: Colors.amber.shade700));
+              }
+              if (enabledChips.contains('online')) {
+                rowsOnTop.add(_StatChip(label: 'Online', value: '₹${_fmt(online)}',
+                    icon: Icons.arrow_downward_rounded, color: Colors.blue));
+              }
+              if (enabledChips.contains('collected')) {
+                rowsOnTop.add(_StatChip(label: 'Total', value: '₹${_fmt(collected)}',
+                    icon: Icons.arrow_downward_rounded, color: Colors.green));
+              }
+              if (enabledChips.contains('spent')) {
+                rowsBottom.add(_StatChip(label: 'Spent', value: '₹${_fmt(spent)}',
+                    icon: Icons.arrow_upward_rounded, color: Colors.red));
+              }
+              if (enabledChips.contains('expected')) {
+                rowsBottom.add(_StatChip(label: 'Expected',
+                    value: target > 0 ? '₹${_fmt(target)}' : '—',
+                    icon: Icons.flag_outlined, color: Colors.blue.shade800));
+              }
+              if (enabledChips.contains('balance')) {
+                rowsBottom.add(_StatChip(label: 'Balance',
+                    value: '₹${_fmt(balance.abs())}',
+                    icon: balance >= 0
+                        ? Icons.account_balance_wallet
+                        : Icons.warning_rounded,
+                    color: balance >= 0 ? Colors.teal : Colors.red));
+              }
+            } else {
+              if (enabledChips.contains('collected')) {
+                rowsOnTop.add(_StatChip(label: 'Collected', value: '₹${_fmt(collected)}',
+                    icon: Icons.arrow_downward_rounded, color: Colors.green));
+              }
+              if (enabledChips.contains('spent')) {
+                rowsOnTop.add(_StatChip(label: 'Spent', value: '₹${_fmt(spent)}',
+                    icon: Icons.arrow_upward_rounded, color: Colors.red));
+              }
+              if (enabledChips.contains('expected')) {
+                rowsOnTop.add(_StatChip(label: 'Expected',
+                    value: target > 0 ? '₹${_fmt(target)}' : '—',
+                    icon: Icons.flag_outlined, color: Colors.blue));
+              }
+              if (enabledChips.contains('balance')) {
+                rowsBottom.add(_StatChip(label: 'Balance',
+                    value: '₹${_fmt(balance.abs())}',
+                    icon: balance >= 0
+                        ? Icons.account_balance_wallet
+                        : Icons.warning_rounded,
+                    color: balance >= 0 ? Colors.teal : Colors.red));
+              }
+            }
+
+            Widget spaced(List<Widget> chips) => Row(
+                  children: chips
+                      .expand((c) => [c, const SizedBox(width: 8)])
+                      .toList()
+                    ..removeLast(),
+                );
+
             return Column(
               children: [
-                if (hasBoth) ...[
-                  Row(children: [
-                    _StatChip(label: 'Cash', value: '₹${_fmt(cash)}',
-                        icon: Icons.arrow_downward_rounded, color: Colors.amber.shade700),
-                    const SizedBox(width: 8),
-                    _StatChip(label: 'Online', value: '₹${_fmt(online)}',
-                        icon: Icons.arrow_downward_rounded, color: Colors.blue),
-                    const SizedBox(width: 8),
-                    _StatChip(label: 'Total', value: '₹${_fmt(collected)}',
-                        icon: Icons.arrow_downward_rounded, color: Colors.green),
-                  ]),
+                if (rowsOnTop.isNotEmpty) spaced(rowsOnTop),
+                if (rowsBottom.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  spaced(rowsBottom),
+                ],
+                if ((anonymous > 0 && enabledChips.contains('anonymous')) ||
+                    (external > 0 && enabledChips.contains('external'))) ...[
                   const SizedBox(height: 8),
                   Row(children: [
-                    _StatChip(label: 'Spent', value: '₹${_fmt(spent)}',
-                        icon: Icons.arrow_upward_rounded, color: Colors.red),
-                    const SizedBox(width: 8),
-                    _StatChip(label: 'Expected',
-                        value: target > 0 ? '₹${_fmt(target)}' : '—',
-                        icon: Icons.flag_outlined, color: Colors.blue.shade800),
-                    const SizedBox(width: 8),
-                    _StatChip(label: 'Balance',
-                        value: '₹${_fmt(balance.abs())}',
-                        icon: balance >= 0
-                            ? Icons.account_balance_wallet
-                            : Icons.warning_rounded,
-                        color: balance >= 0 ? Colors.teal : Colors.red),
+                    if (anonymous > 0 && enabledChips.contains('anonymous'))
+                      _StatChip(label: 'Anonymous', value: '₹${_fmt(anonymous)}',
+                          icon: Icons.visibility_off_outlined, color: Colors.indigo),
+                    if (anonymous > 0 && enabledChips.contains('anonymous') &&
+                        external > 0 && enabledChips.contains('external'))
+                      const SizedBox(width: 8),
+                    if (external > 0 && enabledChips.contains('external'))
+                      _StatChip(label: 'External', value: '₹${_fmt(external)}',
+                          icon: Icons.corporate_fare_outlined, color: Colors.teal.shade700),
                   ]),
-                ] else
-                  Row(children: [
-                    _StatChip(label: 'Collected', value: '₹${_fmt(collected)}',
-                        icon: Icons.arrow_downward_rounded, color: Colors.green),
-                    const SizedBox(width: 8),
-                    _StatChip(label: 'Spent', value: '₹${_fmt(spent)}',
-                        icon: Icons.arrow_upward_rounded, color: Colors.red),
-                    const SizedBox(width: 8),
-                    _StatChip(label: 'Expected',
-                        value: target > 0 ? '₹${_fmt(target)}' : '—',
-                        icon: Icons.flag_outlined, color: Colors.blue),
-                  ]),
+                ],
               ],
+            );
+          },
             );
           },
         ),
 
         const SizedBox(height: 16),
+
+        // ── Special vs Regular contribution breakdown (admin only) ──────────
+        if (isAdmin) ...[
+          _SpecialContributionsWidget(eventId: eventId),
+          const SizedBox(height: 16),
+          _ExternalDonationsWidget(eventId: eventId),
+          const SizedBox(height: 16),
+        ],
 
         // ── Block stats (grouped by wing) — live stream, gated by settings ──
         StreamBuilder<DocumentSnapshot>(
@@ -1098,6 +1313,50 @@ class _OverviewTab extends StatelessWidget {
           },
         ),
 
+        // ── Leaderboard — always visible to admin; gated by settings for
+        // residents, since admin needs contribution rankings for oversight
+        // even on event types where the public leaderboard is turned off ──
+        if (isAdmin) ...[
+          const SizedBox(height: 16),
+          _LeaderboardWidget(eventId: eventId),
+        ] else
+          StreamBuilder<DocumentSnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('appSettings')
+                .doc('leaderboard')
+                .snapshots(),
+            builder: (context, snap) {
+              final d = snap.data?.data() as Map<String, dynamic>? ?? {};
+              final enabledTypeIds = List<String>.from(d['enabledTypeIds'] as List? ?? []);
+              final resolvedType = eventTypeById(data['eventTypeId'] as String?) ??
+                  eventTypeByName(data['name'] as String?);
+              if (!enabledTypeIds.contains(resolvedType?.id ?? '')) return const SizedBox.shrink();
+              return Column(children: [
+                const SizedBox(height: 16),
+                _LeaderboardWidget(eventId: eventId),
+              ]);
+            },
+          ),
+
+        // ── Our Sponsors — live stream, gated by settings ──────────────────
+        StreamBuilder<DocumentSnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('appSettings')
+              .doc('sponsorPackages')
+              .snapshots(),
+          builder: (context, snap) {
+            final d = snap.data?.data() as Map<String, dynamic>? ?? {};
+            final enabledTypeIds = List<String>.from(d['enabledTypeIds'] as List? ?? []);
+            final resolvedType = eventTypeById(data['eventTypeId'] as String?) ??
+                eventTypeByName(data['name'] as String?);
+            if (!enabledTypeIds.contains(resolvedType?.id ?? '')) return const SizedBox.shrink();
+            return Column(children: [
+              const SizedBox(height: 16),
+              _SponsorsWidget(eventId: eventId),
+            ]);
+          },
+        ),
+
         const SizedBox(height: 24),
       ],
     );
@@ -1109,6 +1368,644 @@ class _OverviewTab extends StatelessWidget {
     return v.toStringAsFixed(0);
   }
 
+}
+
+// ── Special vs Regular Contributions Widget (admin) ───────────────────────────
+
+// ── My Contribution Widget (resident) ─────────────────────────────────────────
+// Summary stat shown at the top of the resident Overview tab. Tapping opens a
+// sheet listing every contribution this flat made to the event, with the
+// ability to edit or delete entries that haven't been approved by admin yet
+// (once approved, the record is locked — matches admin-side accounting needs).
+
+class _MyContributionWidget extends StatelessWidget {
+  final String eventId;
+  final String eventName;
+  final String flatNumber;
+  final String residentName;
+  final bool isEventActive;
+
+  const _MyContributionWidget({
+    required this.eventId,
+    required this.eventName,
+    required this.flatNumber,
+    required this.residentName,
+    required this.isEventActive,
+  });
+
+  static String _fmt(double v) {
+    if (v >= 100000) return '${(v / 100000).toStringAsFixed(1)}L';
+    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
+    return v.toStringAsFixed(0);
+  }
+
+  void _showDetail(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.55,
+        minChildSize: 0.3,
+        maxChildSize: 0.9,
+        builder: (ctx, ctrl) => _MyContributionSheet(
+          eventId: eventId,
+          eventName: eventName,
+          flatNumber: flatNumber,
+          residentName: residentName,
+          isEventActive: isEventActive,
+          scrollController: ctrl,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('events')
+          .doc(eventId)
+          .collection('contributions')
+          .where('flatNumber', isEqualTo: flatNumber)
+          .snapshots(),
+      builder: (context, snap) {
+        final docs = (snap.data?.docs ?? [])
+            .where((d) => (d.data() as Map<String, dynamic>)['status'] != 'deleted')
+            .toList();
+        double confirmed = 0;
+        double pending = 0;
+        bool hasRejected = false;
+        String rejectReason = '';
+        for (final doc in docs) {
+          final d = doc.data() as Map<String, dynamic>;
+          final amt = (d['amount'] as num?)?.toDouble() ?? 0;
+          if (d['amountReceived'] == true) {
+            confirmed += amt;
+          } else if (d['status'] == 'rejected') {
+            hasRejected = true;
+            rejectReason = (d['rejectionReason'] as String?)?.trim() ?? '';
+          } else {
+            pending += amt;
+          }
+        }
+
+        final subtitleParts = <String>[
+          if (pending > 0) '₹${_fmt(pending)} pending review',
+        ];
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Prominent rejection notice — easy to miss as just a small badge.
+            if (hasRejected)
+              GestureDetector(
+                onTap: () => _showDetail(context),
+                child: Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.red.shade300, width: 1.5),
+                  ),
+                  child: Row(children: [
+                    Icon(Icons.error_outline, color: Colors.red.shade700, size: 22),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('⚠️ A contribution was rejected',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.red.shade800,
+                                  fontSize: 13)),
+                          Text(
+                              rejectReason.isNotEmpty
+                                  ? 'Reason: $rejectReason — tap to view & resubmit'
+                                  : 'Tap to view details & resubmit',
+                              style: TextStyle(color: Colors.red.shade700, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                    Icon(Icons.chevron_right, color: Colors.red.shade400),
+                  ]),
+                ),
+              ),
+            GestureDetector(
+              onTap: () => _showDetail(context),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.deepPurple.shade600, Colors.deepPurple.shade400],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.volunteer_activism_rounded,
+                          color: Colors.white, size: 22),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('My Contribution',
+                              style: TextStyle(
+                                  color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600)),
+                          Text('₹${_fmt(confirmed)}',
+                              style: const TextStyle(
+                                  color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+                          if (subtitleParts.isNotEmpty)
+                            Text(subtitleParts.join(' · '),
+                                style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.chevron_right, color: Colors.white70),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _MyContributionSheet extends StatelessWidget {
+  final String eventId;
+  final String eventName;
+  final String flatNumber;
+  final String residentName;
+  final bool isEventActive;
+  final ScrollController scrollController;
+
+  const _MyContributionSheet({
+    required this.eventId,
+    required this.eventName,
+    required this.flatNumber,
+    required this.residentName,
+    required this.isEventActive,
+    required this.scrollController,
+  });
+
+  Future<void> _deleteMine(BuildContext context, DocumentReference ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Contribution'),
+        content: const Text(
+            'Remove this pending contribution? This cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade600, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await ref.delete();
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Contribution deleted')));
+    }
+  }
+
+  void _editMine(BuildContext context, QueryDocumentSnapshot doc) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => SelfReportSheet(
+        eventId: eventId,
+        eventName: eventName,
+        flatNumber: flatNumber,
+        residentName: residentName,
+        existingDoc: doc,
+        onSubmitted: () {},
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Container(
+          margin: const EdgeInsets.only(top: 10),
+          width: 40, height: 4,
+          decoration: BoxDecoration(
+              color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: Row(children: [
+            Icon(Icons.volunteer_activism_rounded, color: Colors.deepPurple.shade400, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text('My Contributions — $eventName',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            ),
+          ]),
+        ),
+        const Divider(height: 1),
+        Expanded(
+          child: StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('events')
+                .doc(eventId)
+                .collection('contributions')
+                .where('flatNumber', isEqualTo: flatNumber)
+                .snapshots(),
+            builder: (context, snap) {
+              final docs = (snap.data?.docs ?? [])
+                  .where((d) => (d.data() as Map<String, dynamic>)['status'] != 'deleted')
+                  .toList()
+                ..sort((a, b) {
+                  final aT = (a.data() as Map<String, dynamic>)['paidAt'] as String? ?? '';
+                  final bT = (b.data() as Map<String, dynamic>)['paidAt'] as String? ?? '';
+                  return bT.compareTo(aT);
+                });
+
+              if (docs.isEmpty) {
+                return Center(
+                  child: Text('No contributions yet.',
+                      style: TextStyle(color: Colors.grey.shade500, fontSize: 14)),
+                );
+              }
+
+              return ListView(
+                controller: scrollController,
+                padding: const EdgeInsets.all(12),
+                children: docs.map((doc) {
+                  final d = doc.data() as Map<String, dynamic>;
+                  final amt = (d['amount'] as num?)?.toDouble() ?? 0;
+                  final mode = d['paymentMode'] ?? '';
+                  final date = d['paidDate'] ?? '';
+                  final isConfirmed = d['amountReceived'] == true;
+                  final isRejected = d['status'] == 'rejected';
+                  final isPending = !isConfirmed && !isRejected;
+                  final reason = (d['rejectionReason'] ?? '').toString().trim();
+                  final type = (d['contributionType'] as String?) ?? 'Regular Contribution';
+                  final isSpecial = type != 'Regular Contribution' && type != 'Regular';
+
+                  Color bg, border, textCol;
+                  String label;
+                  IconData icon;
+                  if (isConfirmed) {
+                    bg = Colors.green.shade50; border = Colors.green.shade200;
+                    textCol = Colors.green.shade700; label = 'Confirmed';
+                    icon = Icons.check_circle_rounded;
+                  } else if (isRejected) {
+                    bg = Colors.red.shade50; border = Colors.red.shade200;
+                    textCol = Colors.red.shade700; label = 'Rejected';
+                    icon = Icons.cancel_rounded;
+                  } else {
+                    bg = Colors.orange.shade50; border = Colors.orange.shade200;
+                    textCol = Colors.orange.shade700; label = 'Pending';
+                    icon = Icons.hourglass_top_rounded;
+                  }
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: bg,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: border),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(icon, color: textCol, size: 18),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(children: [
+                                Text(
+                                  '₹${amt.toStringAsFixed(0)}  ·  $mode${date.isNotEmpty ? '  ·  $date' : ''}',
+                                  style: TextStyle(
+                                      fontSize: 13, fontWeight: FontWeight.w600, color: textCol),
+                                ),
+                                if (isSpecial) ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: Colors.purple.shade50,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text('Special',
+                                        style: TextStyle(
+                                            fontSize: 9, fontWeight: FontWeight.bold, color: Colors.purple.shade700)),
+                                  ),
+                                ],
+                              ]),
+                              if (isRejected && reason.isNotEmpty)
+                                Text('Reason: $reason',
+                                    style: TextStyle(fontSize: 11, color: Colors.red.shade500)),
+                            ],
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: textCol.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(label,
+                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: textCol)),
+                        ),
+                        // Edit/Delete — only while pending (not yet approved) on active events
+                        if (isPending && isEventActive) ...[
+                          const SizedBox(width: 2),
+                          IconButton(
+                            icon: Icon(Icons.edit_outlined, color: Colors.blue.shade400, size: 17),
+                            onPressed: () => _editMine(context, doc),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            tooltip: 'Edit',
+                          ),
+                          IconButton(
+                            icon: Icon(Icons.delete_outline, color: Colors.red.shade300, size: 17),
+                            onPressed: () => _deleteMine(context, doc.reference),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            tooltip: 'Delete',
+                          ),
+                        ],
+                      ],
+                    ),
+                  );
+                }).toList(),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SpecialContributionsWidget extends StatelessWidget {
+  final String eventId;
+  const _SpecialContributionsWidget({required this.eventId});
+
+  static String _fmt(double v) {
+    if (v >= 100000) return '${(v / 100000).toStringAsFixed(1)}L';
+    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
+    return v.toStringAsFixed(0);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('events')
+          .doc(eventId)
+          .collection('contributions')
+          .snapshots(),
+      builder: (context, snap) {
+        if (!snap.hasData) return const SizedBox();
+
+        double regularTotal = 0;
+        double specialTotal = 0;
+        final specialEntries = <Map<String, dynamic>>[];
+
+        for (final doc in snap.data!.docs) {
+          final d = doc.data() as Map<String, dynamic>;
+          if (d['amountReceived'] != true ||
+              d['status'] == 'rejected' ||
+              d['status'] == 'deleted') continue;
+          final amt = (d['amount'] as num?)?.toDouble() ?? 0;
+          final type = (d['contributionType'] as String?) ?? 'Regular Contribution';
+          if (type == kTypeExternal) continue;
+          final isSpecial = type != 'Regular Contribution' && type != 'Regular' && type != kTypeSponsor;
+          if (isSpecial) {
+            specialTotal += amt;
+            specialEntries.add({
+              'flat': d['flatNumber'] ?? '',
+              'name': d['residentName'] ?? '',
+              'amt': amt,
+              'desc': d['specialDescription'] ?? '',
+              'isAnonymous': d['isAnonymous'] == true,
+            });
+          } else if (type != kTypeSponsor) {
+            regularTotal += amt;
+          }
+        }
+
+        if (regularTotal <= 0 && specialTotal <= 0) return const SizedBox();
+
+        specialEntries.sort((a, b) => (b['amt'] as double).compareTo(a['amt'] as double));
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3)),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Regular vs Special Contributions',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+              const SizedBox(height: 12),
+              Row(children: [
+                _StatChip(label: 'Regular', value: '₹${_fmt(regularTotal)}',
+                    icon: Icons.payments_outlined, color: Colors.green),
+                const SizedBox(width: 8),
+                _StatChip(label: 'Special', value: '₹${_fmt(specialTotal)}',
+                    icon: Icons.star_outline, color: Colors.purple),
+              ]),
+              if (specialEntries.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                const Divider(height: 1),
+                const SizedBox(height: 10),
+                Text('Special Contributions by Flat',
+                    style: TextStyle(
+                        fontSize: 11, fontWeight: FontWeight.w600, color: Colors.grey.shade500)),
+                const SizedBox(height: 8),
+                ...specialEntries.map((e) {
+                  final isAnon = e['isAnonymous'] == true;
+                  final name = isAnon ? 'Anonymous' : (e['name'] as String);
+                  final desc = (e['desc'] as String).trim();
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.star, size: 14, color: Colors.purple.shade300),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Flat ${e['flat']}${name.isNotEmpty ? '  ·  $name' : ''}',
+                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                              ),
+                              if (desc.isNotEmpty)
+                                Text(desc,
+                                    style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                            ],
+                          ),
+                        ),
+                        Text('₹${_fmt(e['amt'] as double)}',
+                            style: TextStyle(
+                                fontSize: 13, fontWeight: FontWeight.bold, color: Colors.purple.shade700)),
+                      ],
+                    ),
+                  );
+                }),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── External Donations Widget (admin-only) — donations recorded from
+// non-resident external sources (broadband, builders, store operators, etc.) ──
+
+class _ExternalDonationsWidget extends StatelessWidget {
+  final String eventId;
+  const _ExternalDonationsWidget({required this.eventId});
+
+  static String _fmt(double v) {
+    if (v >= 100000) return '${(v / 100000).toStringAsFixed(1)}L';
+    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
+    return v.toStringAsFixed(0);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('events')
+          .doc(eventId)
+          .collection('contributions')
+          .snapshots(),
+      builder: (context, snap) {
+        if (!snap.hasData) return const SizedBox();
+
+        double total = 0;
+        final entries = <Map<String, dynamic>>[];
+
+        for (final doc in snap.data!.docs) {
+          final d = doc.data() as Map<String, dynamic>;
+          if (d['amountReceived'] != true ||
+              d['status'] == 'rejected' ||
+              d['status'] == 'deleted') continue;
+          if (d['contributionType'] != kTypeExternal) continue;
+          final amt = (d['amount'] as num?)?.toDouble() ?? 0;
+          total += amt;
+          entries.add({
+            'name': d['residentName'] ?? '',
+            'amt': amt,
+            'note': d['note'] ?? '',
+          });
+        }
+
+        if (entries.isEmpty) return const SizedBox();
+
+        entries.sort((a, b) => (b['amt'] as double).compareTo(a['amt'] as double));
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3)),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('External Donations',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+              const SizedBox(height: 12),
+              Row(children: [
+                _StatChip(label: 'Total', value: '₹${_fmt(total)}',
+                    icon: Icons.corporate_fare_outlined, color: Colors.teal.shade700),
+              ]),
+              const SizedBox(height: 14),
+              const Divider(height: 1),
+              const SizedBox(height: 10),
+              Text('Donors',
+                  style: TextStyle(
+                      fontSize: 11, fontWeight: FontWeight.w600, color: Colors.grey.shade500)),
+              const SizedBox(height: 8),
+              ...entries.map((e) {
+                final name = (e['name'] as String).trim();
+                final note = (e['note'] as String).trim();
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.corporate_fare, size: 14, color: Colors.teal.shade300),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(name.isEmpty ? 'External Donor' : name,
+                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                            if (note.isNotEmpty)
+                              Text(note,
+                                  style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                          ],
+                        ),
+                      ),
+                      Text('₹${_fmt(e['amt'] as double)}',
+                          style: TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.bold, color: Colors.teal.shade700)),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ),
+        );
+      },
+    );
+  }
 }
 
 // ── Block Stats Widget — live StreamBuilder ───────────────────────────────────
@@ -1155,6 +2052,112 @@ class _BlockStatsWidgetState extends State<_BlockStatsWidget> {
     return v.toStringAsFixed(0);
   }
 
+  void _showBlockDetail(
+    BuildContext context,
+    String wing,
+    String block,
+    List<String> flats,
+    Set<String> paidFlats,
+    Map<String, double> flatAmount,
+    Map<String, String> flatName,
+  ) {
+    // Same exact/suffix matching used for the paid counts above.
+    String? _matchedPaidFlat(String f) {
+      if (paidFlats.contains(f)) return f;
+      final match = paidFlats.firstWhere(
+          (p) => f.endsWith(p) || p.endsWith(f), orElse: () => '');
+      return match.isEmpty ? null : match;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.5,
+        minChildSize: 0.3,
+        maxChildSize: 0.9,
+        builder: (ctx, ctrl) => Column(
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: 10),
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                  color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Row(children: [
+                Icon(Icons.domain_outlined, color: Colors.indigo.shade600, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text('$wing → Block $block',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                ),
+              ]),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: ListView.builder(
+                controller: ctrl,
+                padding: const EdgeInsets.all(12),
+                itemCount: flats.length,
+                itemBuilder: (_, i) {
+                  final flat = flats[i];
+                  final matched = _matchedPaidFlat(flat);
+                  final paid = matched != null;
+                  final amt = matched != null ? (flatAmount[matched] ?? 0) : 0;
+                  final name = matched != null ? (flatName[matched] ?? '') : '';
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: paid ? Colors.green.shade50 : Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color: paid ? Colors.green.shade200 : Colors.grey.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          paid ? Icons.check_circle_rounded : Icons.hourglass_top_rounded,
+                          size: 18,
+                          color: paid ? Colors.green.shade600 : Colors.grey.shade400,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Flat $flat',
+                                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                              if (name.isNotEmpty)
+                                Text(name,
+                                    style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                            ],
+                          ),
+                        ),
+                        Text(
+                          paid ? '₹${_fmt(amt.toDouble())}' : 'Pending',
+                          style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: paid ? Colors.green.shade700 : Colors.grey.shade500),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_settingsLoaded) return const SizedBox();
@@ -1175,6 +2178,7 @@ class _BlockStatsWidgetState extends State<_BlockStatsWidget> {
         // tab) to avoid wing/block naming mismatches between docs and structure.
         final paidFlats = <String>{};
         final flatAmount = <String, double>{};
+        final flatName = <String, String>{};
         for (final doc in contribDocs) {
           final d = doc.data() as Map<String, dynamic>;
           if (d['amountReceived'] == true &&
@@ -1185,6 +2189,8 @@ class _BlockStatsWidgetState extends State<_BlockStatsWidget> {
             if (f.isNotEmpty) {
               paidFlats.add(f);
               flatAmount[f] = (flatAmount[f] ?? 0) + amt;
+              final name = (d['residentName'] ?? '').toString().trim();
+              if (name.isNotEmpty && d['isAnonymous'] != true) flatName[f] = name;
             }
           }
         }
@@ -1192,12 +2198,12 @@ class _BlockStatsWidgetState extends State<_BlockStatsWidget> {
         // For each wing/block in community structure, count paid flats and
         // sum amounts using the flat list as the source of truth.
         final wings = _wings.isNotEmpty ? _wings : (wingBlocks.keys.toList()..sort());
-        final byWing = <String, ({double collected, List<({String block, int total, int paid})> blocks})>{};
+        final byWing = <String, ({double collected, List<({String block, int total, int paid, List<String> flats})> blocks})>{};
         for (final wing in wings) {
           final blocks = Map<String, dynamic>.from(wingBlocks[wing] as Map? ?? {});
           if (blocks.isEmpty) continue;
           final sortedBlocks = blocks.keys.toList()..sort();
-          final blockList = <({String block, int total, int paid})>[];
+          final blockList = <({String block, int total, int paid, List<String> flats})>[];
           double wingAmt = 0;
           for (final block in sortedBlocks) {
             final flats = List<String>.from((blocks[block] as List?) ?? []);
@@ -1219,7 +2225,7 @@ class _BlockStatsWidgetState extends State<_BlockStatsWidget> {
                 }
               }
             }
-            blockList.add((block: block, total: flats.length, paid: paid));
+            blockList.add((block: block, total: flats.length, paid: paid, flats: flats));
           }
           if (blockList.isNotEmpty) {
             byWing[wing] = (
@@ -1273,33 +2279,37 @@ class _BlockStatsWidgetState extends State<_BlockStatsWidget> {
                       children: blocks.map((s) {
                         final allPaid = s.paid == s.total;
                         final nonePaid = s.paid == 0;
-                        return Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: allPaid
-                                ? Colors.green.shade50
-                                : nonePaid
-                                    ? Colors.grey.shade100
-                                    : Colors.orange.shade50,
-                            borderRadius: BorderRadius.circular(7),
-                            border: Border.all(
-                                color: allPaid
-                                    ? Colors.green.shade300
-                                    : nonePaid
-                                        ? Colors.grey.shade300
-                                        : Colors.orange.shade300),
-                          ),
-                          child: Text(
-                            '${s.block}  ${s.paid}/${s.total}',
-                            style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: allPaid
-                                    ? Colors.green.shade700
-                                    : nonePaid
-                                        ? Colors.grey.shade600
-                                        : Colors.orange.shade700),
+                        return GestureDetector(
+                          onTap: () => _showBlockDetail(
+                              context, wing, s.block, s.flats, paidFlats, flatAmount, flatName),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: allPaid
+                                  ? Colors.green.shade50
+                                  : nonePaid
+                                      ? Colors.grey.shade100
+                                      : Colors.orange.shade50,
+                              borderRadius: BorderRadius.circular(7),
+                              border: Border.all(
+                                  color: allPaid
+                                      ? Colors.green.shade300
+                                      : nonePaid
+                                          ? Colors.grey.shade300
+                                          : Colors.orange.shade300),
+                            ),
+                            child: Text(
+                              '${s.block}  ${s.paid}/${s.total}',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: allPaid
+                                      ? Colors.green.shade700
+                                      : nonePaid
+                                          ? Colors.grey.shade600
+                                          : Colors.orange.shade700),
+                            ),
                           ),
                         );
                       }).toList(),
@@ -1309,6 +2319,264 @@ class _BlockStatsWidgetState extends State<_BlockStatsWidget> {
               );
             }),
           ],
+        );
+      },
+    );
+  }
+}
+
+// ── Leaderboard Widget — top contributors by flat, respecting anonymity ──────
+// Anonymous contributions are excluded from the ranked (identified) list and
+// summed separately as a single unranked footnote — this avoids leaking a
+// flat number (which residents can usually match to a household) alongside
+// an "anonymous" amount, which would defeat the point of anonymity.
+
+class _LeaderboardWidget extends StatelessWidget {
+  final String eventId;
+  const _LeaderboardWidget({required this.eventId});
+
+  static String _fmt(double v) {
+    if (v >= 100000) return '${(v / 100000).toStringAsFixed(1)}L';
+    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
+    return v.toStringAsFixed(0);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('events')
+          .doc(eventId)
+          .collection('contributions')
+          .snapshots(),
+      builder: (context, snap) {
+        if (!snap.hasData) return const SizedBox();
+
+        final flatTotals = <String, double>{};
+        final flatNames = <String, String>{};
+        double anonymousTotal = 0;
+        int anonymousCount = 0;
+
+        for (final doc in snap.data!.docs) {
+          final d = doc.data() as Map<String, dynamic>;
+          if (d['amountReceived'] != true ||
+              d['status'] == 'rejected' ||
+              d['status'] == 'deleted') continue;
+          final amt = (d['amount'] as num?)?.toDouble() ?? 0;
+          if (amt <= 0) continue;
+          if (d['isAnonymous'] == true) {
+            anonymousTotal += amt;
+            anonymousCount++;
+            continue;
+          }
+          final flat = (d['flatNumber'] ?? '').toString().trim();
+          if (flat.isEmpty) continue;
+          flatTotals[flat] = (flatTotals[flat] ?? 0) + amt;
+          final name = (d['residentName'] ?? '').toString().trim();
+          if (name.isNotEmpty) flatNames[flat] = name;
+        }
+
+        if (flatTotals.isEmpty && anonymousTotal <= 0) return const SizedBox();
+
+        final ranked = flatTotals.entries.toList()
+          ..sort((a, b) => b.value.compareTo(a.value));
+        final top = ranked.take(10).toList();
+
+        const medalColors = [Color(0xFFFFD700), Color(0xFFC0C0C0), Color(0xFFCD7F32)];
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3)),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                const Text('🏆', style: TextStyle(fontSize: 18)),
+                const SizedBox(width: 8),
+                const Text('Top Contributors',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+              ]),
+              const SizedBox(height: 12),
+              ...top.asMap().entries.map((entry) {
+                final rank = entry.key;
+                final flat = entry.value.key;
+                final amount = entry.value.value;
+                final name = flatNames[flat] ?? '';
+                final isMedal = rank < 3;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 26,
+                        height: 26,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: isMedal
+                              ? medalColors[rank].withValues(alpha: 0.18)
+                              : Colors.grey.shade100,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Text(
+                          isMedal ? ['🥇', '🥈', '🥉'][rank] : '${rank + 1}',
+                          style: TextStyle(
+                              fontSize: isMedal ? 13 : 12,
+                              fontWeight: FontWeight.bold,
+                              color: isMedal ? null : Colors.grey.shade600),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          [
+                            'Flat $flat',
+                            if (name.isNotEmpty) name,
+                          ].join(' · '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: rank == 0 ? FontWeight.bold : FontWeight.w600),
+                        ),
+                      ),
+                      Text('₹${_fmt(amount)}',
+                          style: const TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.bold, color: Colors.green)),
+                    ],
+                  ),
+                );
+              }),
+              if (anonymousTotal > 0) ...[
+                const Divider(height: 20),
+                Row(children: [
+                  Icon(Icons.visibility_off_outlined, size: 15, color: Colors.indigo.shade400),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                        '$anonymousCount anonymous contribution${anonymousCount == 1 ? '' : 's'}',
+                        style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                  ),
+                  Text('₹${_fmt(anonymousTotal)}',
+                      style: TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.bold, color: Colors.indigo.shade400)),
+                ]),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── Sponsors Widget — "Our Sponsors" recognition wall ─────────────────────────
+// Sponsors are shown publicly by name/tier (that's the point of sponsorship —
+// unlike regular contributions, which stay private between resident and
+// admin). isAnonymous is still respected for sponsors who explicitly asked
+// not to be named.
+
+class _SponsorsWidget extends StatelessWidget {
+  final String eventId;
+  const _SponsorsWidget({required this.eventId});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('events')
+          .doc(eventId)
+          .collection('contributions')
+          .snapshots(),
+      builder: (context, snap) {
+        if (!snap.hasData) return const SizedBox();
+
+        final sponsors = snap.data!.docs
+            .map((doc) => doc.data() as Map<String, dynamic>)
+            .where((d) =>
+                d['contributionType'] == kTypeSponsor &&
+                d['amountReceived'] == true &&
+                d['status'] != 'rejected' &&
+                d['status'] != 'deleted')
+            .toList()
+          ..sort((a, b) =>
+              ((b['amount'] as num?)?.toDouble() ?? 0)
+                  .compareTo((a['amount'] as num?)?.toDouble() ?? 0));
+
+        if (sponsors.isEmpty) return const SizedBox();
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3)),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                const Text('🎖️', style: TextStyle(fontSize: 18)),
+                const SizedBox(width: 8),
+                const Text('Our Sponsors',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+              ]),
+              const SizedBox(height: 12),
+              ...sponsors.map((d) {
+                final tier = (d['sponsorPackageName'] as String? ?? '').trim();
+                final isAnon = d['isAnonymous'] == true;
+                final name = isAnon
+                    ? 'Anonymous Sponsor'
+                    : ((d['residentName'] as String?)?.trim().isNotEmpty == true
+                        ? d['residentName'] as String
+                        : 'Sponsor');
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      Icon(Icons.workspace_premium_outlined,
+                          size: 16, color: Colors.amber.shade700),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                      ),
+                      if (tier.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.shade50,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(tier,
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.amber.shade800)),
+                        ),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ),
         );
       },
     );
@@ -3082,6 +4350,11 @@ class _VolunteersTabState extends State<_VolunteersTab> {
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
                 children: [
 
+                // ── RESIDENT: my assigned tasks (only shown if any exist) ────
+                if (!widget.isAdmin) ...[
+                  _MyTasksSection(eventId: widget.eventId, flat: _flat, name: _name),
+                ],
+
                 // ── RESIDENT: volunteer invitation / appreciation ────
                 if (!widget.isAdmin) ...[
                   if (!hasRegistered) ...[
@@ -3810,6 +5083,7 @@ class _StatChip extends StatelessWidget {
 
 class _ContributionsTab extends StatefulWidget {
   final String eventId;
+  final String eventName;
   final String eventTypeId;
   final bool isAdmin;
   final String status;
@@ -3817,6 +5091,7 @@ class _ContributionsTab extends StatefulWidget {
 
   const _ContributionsTab(
       {required this.eventId,
+      this.eventName = 'Event',
       this.eventTypeId = '',
       required this.isAdmin,
       required this.status,
@@ -3953,6 +5228,7 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                       final cType = d['contributionType'] ?? kTypeRegular;
                       final amt = (d['amount'] as num?)?.toDouble() ?? 0;
                       final rejReason = (d['rejectionReason'] ?? '').toString().trim();
+                      final isAnonymous = d['isAnonymous'] == true;
 
                       Color cardColor, borderColor, amtColor, iconColor, avatarBg;
                       if (isRejected) {
@@ -4009,6 +5285,10 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                                       _typeBadge(cType),
                                       const SizedBox(width: 4),
                                     ],
+                                    if (isAnonymous) ...[
+                                      _anonymousBadge(),
+                                      const SizedBox(width: 4),
+                                    ],
                                     if (isRejected)
                                       Container(
                                         padding: const EdgeInsets.symmetric(
@@ -4030,6 +5310,9 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                               ),
                               subtitle: Text(
                                 [
+                                  // Admins always see the real name — the
+                                  // ANONYMOUS badge above is enough to remind
+                                  // them not to share it with other residents.
                                   if ((d['residentName'] ?? '').isNotEmpty)
                                     d['residentName'],
                                   d['paymentMode'] ?? 'Cash',
@@ -4051,6 +5334,21 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                                           fontSize: 14)),
                                   if (widget.isAdmin) ...[
                                     const SizedBox(width: 2),
+                                    if (!isRejected && !isPending)
+                                      IconButton(
+                                        icon: Icon(Icons.download_rounded,
+                                            color: Colors.deepPurple.shade300,
+                                            size: 17),
+                                        onPressed: () => exportContributionReceipt(
+                                          context: context,
+                                          eventName: widget.eventName,
+                                          docId: doc.id,
+                                          contribution: d,
+                                        ),
+                                        tooltip: 'Download Receipt',
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                      ),
                                     if (!isRejected)
                                       IconButton(
                                         icon: Icon(Icons.edit_outlined,
@@ -4458,6 +5756,7 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                           final pWing = (d['wing'] ?? '').toString().trim();
                           final pBlock = (d['block'] ?? '').toString().trim();
                           final isAdditional = d['isAdditional'] == true;
+                          final isAnonymous = d['isAnonymous'] == true;
                           final locationParts = [
                             if (pWing.isNotEmpty) pWing,
                             if (pBlock.isNotEmpty) 'Block $pBlock',
@@ -4498,12 +5797,22 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                                             ),
                                           ]),
                                         ),
-                                      Text(
-                                        '$locationStr${name.isNotEmpty ? '  ·  $name' : ''}',
-                                        style: const TextStyle(
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 13),
-                                      ),
+                                      Row(children: [
+                                        Flexible(
+                                          // Admins always see the real name here too —
+                                          // the ANONYMOUS badge is the reminder, not a mask.
+                                          child: Text(
+                                            '$locationStr${name.isNotEmpty ? '  ·  $name' : ''}',
+                                            style: const TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 13),
+                                          ),
+                                        ),
+                                        if (isAnonymous) ...[
+                                          const SizedBox(width: 4),
+                                          _anonymousBadge(),
+                                        ],
+                                      ]),
                                       Text(
                                         '₹${amt.toStringAsFixed(0)}  ·  $mode${ref.isNotEmpty ? '  ·  $ref' : ''}',
                                         style: TextStyle(
@@ -5224,6 +6533,24 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                 fontSize: 9,
                 fontWeight: FontWeight.bold,
                 color: Colors.orange.shade800)),
+      );
+
+  Widget _anonymousBadge() => Container(
+        margin: const EdgeInsets.only(left: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+        decoration: BoxDecoration(
+          color: Colors.indigo.shade50,
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.visibility_off_outlined, size: 9, color: Colors.indigo.shade700),
+          const SizedBox(width: 2),
+          Text('ANONYMOUS',
+              style: TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.indigo.shade700)),
+        ]),
       );
 
   static Future<void> _deleteContribution(BuildContext context,
@@ -5971,7 +7298,7 @@ class _ResidentContributeButton extends StatelessWidget {
             final hasAny = (contribSnap.data?.docs ?? []).any(
                 (d) => (d.data() as Map<String, dynamic>)['status'] != 'deleted');
             return hasAny
-                ? _pill(context, 'Contribute More', Colors.teal.shade600,
+                ? _pill(context, 'Contribute More', Colors.blue.shade700,
                     onTap: () => _openSheet(context))
                 : _pill(context, 'Contribute Now', Colors.green.shade600,
                     onTap: () => _openSheet(context));
@@ -6801,6 +8128,316 @@ class _FollowUpFlatCard extends StatelessWidget {
   }
 }
 
+// ── My Tasks Section (resident) — tasks assigned to this resident's flat,
+// shown inside the Volunteers tab since residents have no dedicated Tasks tab ──
+
+class _MyTasksSection extends StatelessWidget {
+  final String eventId;
+  final String flat;
+  final String name;
+  const _MyTasksSection({required this.eventId, required this.flat, required this.name});
+
+  @override
+  Widget build(BuildContext context) {
+    if (flat.isEmpty) return const SizedBox();
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('events')
+          .doc(eventId)
+          .collection('tasks')
+          .where('assigneeFlats', arrayContains: flat)
+          .snapshots(),
+      builder: (context, snap) {
+        if (!snap.hasData || snap.data!.docs.isEmpty) return const SizedBox();
+        final docs = snap.data!.docs;
+        final pending = docs.where((d) => (d.data() as Map)['status'] != kTaskStatusDone).length;
+        return Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                const Icon(Icons.checklist, size: 18, color: Colors.deepPurple),
+                const SizedBox(width: 8),
+                const Text('My Tasks', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                const Spacer(),
+                if (pending > 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(20)),
+                    child: Text('$pending pending', style: TextStyle(fontSize: 11, color: Colors.orange.shade800, fontWeight: FontWeight.w600)),
+                  ),
+              ]),
+              const SizedBox(height: 10),
+              ...docs.map((doc) => _TaskCard(
+                    eventId: eventId,
+                    taskId: doc.id,
+                    data: doc.data() as Map<String, dynamic>,
+                    isAdmin: false,
+                    viewerFlat: flat,
+                    viewerName: name,
+                  )),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── Tasks Tab (admin only) — birds-eye view of task management ──────────────
+
+class _TasksTab extends StatefulWidget {
+  final String eventId;
+  const _TasksTab({required this.eventId});
+  @override
+  State<_TasksTab> createState() => _TasksTabState();
+}
+
+class _TasksTabState extends State<_TasksTab> {
+  String _statusFilter = 'all'; // all | pending | in_progress | done
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.grey.shade50,
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('events')
+            .doc(widget.eventId)
+            .collection('tasks')
+            .orderBy('createdAt', descending: true)
+            .snapshots(),
+        builder: (context, snap) {
+          if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+          final allTasks = snap.data!.docs;
+
+          if (allTasks.isEmpty) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.checklist_outlined, size: 56, color: Colors.grey.shade300),
+                  const SizedBox(height: 12),
+                  Text('No tasks yet',
+                      style: TextStyle(color: Colors.grey.shade600, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  Text('Create tasks and assign them to your volunteers.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
+                ]),
+              ),
+            );
+          }
+
+          int pending = 0, inProgress = 0, done = 0, overdue = 0;
+          final now = DateTime.now();
+          for (final doc in allTasks) {
+            final d = doc.data() as Map<String, dynamic>;
+            final status = d['status'] as String? ?? kTaskStatusPending;
+            if (status == kTaskStatusPending) {
+              pending++;
+            } else if (status == kTaskStatusInProgress) {
+              inProgress++;
+            } else if (status == kTaskStatusDone) {
+              done++;
+            }
+            final due = d['dueDate'];
+            if (due is Timestamp && status != kTaskStatusDone && due.toDate().isBefore(now)) overdue++;
+          }
+
+          final filtered = _statusFilter == 'all'
+              ? allTasks
+              : allTasks.where((doc) => (doc.data() as Map<String, dynamic>)['status'] == _statusFilter).toList();
+
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
+            children: [
+              Row(children: [
+                Expanded(child: _TaskStat(label: 'Total', value: '${allTasks.length}', color: Colors.deepPurple)),
+                const SizedBox(width: 8),
+                Expanded(child: _TaskStat(label: 'Pending', value: '$pending', color: Colors.blueGrey)),
+                const SizedBox(width: 8),
+                Expanded(child: _TaskStat(label: 'In Progress', value: '$inProgress', color: Colors.orange)),
+                const SizedBox(width: 8),
+                Expanded(child: _TaskStat(label: 'Done', value: '$done', color: Colors.green)),
+              ]),
+              if (overdue > 0) ...[
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(10)),
+                  child: Row(children: [
+                    Icon(Icons.warning_amber_rounded, size: 16, color: Colors.red.shade700),
+                    const SizedBox(width: 8),
+                    Text('$overdue task${overdue == 1 ? '' : 's'} overdue',
+                        style: TextStyle(color: Colors.red.shade700, fontSize: 12, fontWeight: FontWeight.w600)),
+                  ]),
+                ),
+              ],
+              const SizedBox(height: 16),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(children: [
+                  _filterChip('all', 'All'),
+                  const SizedBox(width: 8),
+                  _filterChip(kTaskStatusPending, 'Pending'),
+                  const SizedBox(width: 8),
+                  _filterChip(kTaskStatusInProgress, 'In Progress'),
+                  const SizedBox(width: 8),
+                  _filterChip(kTaskStatusDone, 'Done'),
+                ]),
+              ),
+              const SizedBox(height: 12),
+              ...filtered.map((doc) => _TaskCard(
+                    eventId: widget.eventId,
+                    taskId: doc.id,
+                    data: doc.data() as Map<String, dynamic>,
+                    isAdmin: true,
+                  )),
+            ],
+          );
+        },
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'create_task',
+        onPressed: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => TaskFormScreen(eventId: widget.eventId)),
+        ),
+        backgroundColor: Colors.deepPurple,
+        icon: const Icon(Icons.add, color: Colors.white),
+        label: const Text('Create Task', style: TextStyle(color: Colors.white)),
+      ),
+    );
+  }
+
+  Widget _filterChip(String value, String label) {
+    final selected = _statusFilter == value;
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => setState(() => _statusFilter = value),
+    );
+  }
+}
+
+class _TaskStat extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+  const _TaskStat({required this.label, required this.value, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
+      child: Column(children: [
+        Text(value, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: color)),
+        Text(label, style: TextStyle(fontSize: 10, color: Colors.grey.shade600)),
+      ]),
+    );
+  }
+}
+
+class _TaskCard extends StatelessWidget {
+  final String eventId;
+  final String taskId;
+  final Map<String, dynamic> data;
+  final bool isAdmin;
+  final String viewerFlat;
+  final String viewerName;
+  const _TaskCard({
+    required this.eventId,
+    required this.taskId,
+    required this.data,
+    required this.isAdmin,
+    this.viewerFlat = '',
+    this.viewerName = '',
+  });
+
+  static String _fmtDate(DateTime d) => '${d.day}/${d.month}/${d.year}';
+
+  @override
+  Widget build(BuildContext context) {
+    final title = data['title'] as String? ?? '';
+    final status = data['status'] as String? ?? kTaskStatusPending;
+    final due = data['dueDate'];
+    final dueDate = due is Timestamp ? due.toDate() : null;
+    final overdue = dueDate != null && status != kTaskStatusDone && dueDate.isBefore(DateTime.now());
+    final assignees = List<Map<String, dynamic>>.from(data['assignees'] as List? ?? []);
+    final checklist = List<dynamic>.from(data['checklist'] as List? ?? []);
+    final checklistDone = checklist.where((c) => (c as Map)['done'] == true).length;
+    final dependsOn = List<String>.from(data['dependsOn'] as List? ?? []);
+
+    return GestureDetector(
+      onTap: () => showTaskDetailSheet(context,
+          eventId: eventId, taskId: taskId, isAdmin: isAdmin, viewerFlat: viewerFlat, viewerName: viewerName),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 3))],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Expanded(
+                child: Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                    color: taskStatusColor(status).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(20)),
+                child: Text(taskStatusLabel(status),
+                    style: TextStyle(fontSize: 11, color: taskStatusColor(status), fontWeight: FontWeight.w600)),
+              ),
+            ]),
+            const SizedBox(height: 8),
+            Wrap(spacing: 12, runSpacing: 4, children: [
+              if (assignees.isNotEmpty)
+                _metaRow(Icons.person_outline,
+                    assignees.map((a) => a['name']).join(', '), Colors.grey.shade600),
+              if (dueDate != null)
+                _metaRow(Icons.calendar_today_outlined, _fmtDate(dueDate),
+                    overdue ? Colors.red : Colors.grey.shade600),
+              if (checklist.isNotEmpty)
+                _metaRow(Icons.checklist, '$checklistDone/${checklist.length}', Colors.grey.shade600),
+              if (dependsOn.isNotEmpty)
+                _metaRow(Icons.link, '${dependsOn.length} dependency', Colors.grey.shade600),
+            ]),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _metaRow(IconData icon, String text, Color color) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: color),
+          const SizedBox(width: 4),
+          Text(text, style: TextStyle(fontSize: 12, color: color)),
+        ],
+      );
+}
+
 // ── Activity Tab ───────────────────────────────────────────────────────────────
 
 class _ActivityTab extends StatefulWidget {
@@ -6821,6 +8458,14 @@ class _ActivityTabState extends State<_ActivityTab> {
   DateTime? _dateFilter;
   String _wingFilter = '';
   String _blockFilter = '';
+  String _statusFilter = ''; // '', 'confirmed', 'rejected', 'deleted', 'submitted'
+
+  static const Map<String, String> _statusLabels = {
+    'confirmed': 'Confirmed / Approved',
+    'rejected': 'Rejected',
+    'deleted': 'Deleted',
+    'submitted': 'Submitted (Pending)',
+  };
 
   @override
   void initState() {
@@ -6909,6 +8554,37 @@ class _ActivityTabState extends State<_ActivityTab> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Rejection reverted — contribution is pending again')));
+    }
+  }
+
+  Future<void> _deleteRejected(DocumentReference ref, Map<String, dynamic> e) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Rejected Contribution'),
+        content: Text(
+            'Permanently remove this rejected ₹${(e['amt'] as double).toStringAsFixed(0)} entry for ${e['flat']}? '
+            'It was never counted toward total collected, so nothing else is affected.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade600, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await ref.update({
+      'status': 'deleted',
+      'deletedAt': DateTime.now().toIso8601String(),
+      'preDeleteStatus': 'rejected',
+      'preDeleteAmountReceived': false,
+    });
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Rejected contribution deleted')));
     }
   }
 
@@ -7122,9 +8798,23 @@ class _ActivityTabState extends State<_ActivityTab> {
             if (dt == null) return false;
             if (dt.year != _dateFilter!.year || dt.month != _dateFilter!.month || dt.day != _dateFilter!.day) return false;
           }
+          if (_statusFilter.isNotEmpty) {
+            final type = e['type'] as String;
+            switch (_statusFilter) {
+              case 'confirmed':
+                if (type != 'confirmed' && type != 'added') return false;
+              case 'rejected':
+                if (type != 'rejected') return false;
+              case 'deleted':
+                if (type != 'deleted') return false;
+              case 'submitted':
+                if (type != 'submitted') return false;
+            }
+          }
           return true;
         }
-        final displayEntries = (_flatFilter.isEmpty && _wingFilter.isEmpty && _blockFilter.isEmpty && _dateFilter == null)
+        final displayEntries = (_flatFilter.isEmpty && _wingFilter.isEmpty && _blockFilter.isEmpty &&
+                _dateFilter == null && _statusFilter.isEmpty)
             ? entries
             : entries.where(_matchEntry).toList();
         displayEntries.sort((a, b) {
@@ -7143,7 +8833,7 @@ class _ActivityTabState extends State<_ActivityTab> {
               children: [
                 Icon(Icons.history, size: 48, color: Colors.grey.shade300),
                 const SizedBox(height: 12),
-                Text((_flatFilter.isEmpty && _wingFilter.isEmpty && _blockFilter.isEmpty && _dateFilter == null) ? 'No activity yet' : 'No matching activity',
+                Text((_flatFilter.isEmpty && _wingFilter.isEmpty && _blockFilter.isEmpty && _dateFilter == null && _statusFilter.isEmpty) ? 'No activity yet' : 'No matching activity',
                     style: TextStyle(color: Colors.grey.shade400, fontSize: 15)),
               ],
             ),
@@ -7405,8 +9095,54 @@ class _ActivityTabState extends State<_ActivityTab> {
                       if (picked != null) setState(() => _dateFilter = picked);
                     },
                   ),
+                  // Status filter chip
+                  ActionChip(
+                    avatar: Icon(Icons.filter_alt_outlined, size: 14,
+                        color: _statusFilter.isNotEmpty ? Colors.purple.shade700 : Colors.grey.shade500),
+                    label: Text(_statusFilter.isEmpty ? 'Status' : _statusLabels[_statusFilter]!,
+                        style: TextStyle(fontSize: 11,
+                            color: _statusFilter.isNotEmpty ? Colors.purple.shade700 : Colors.grey.shade600)),
+                    backgroundColor: _statusFilter.isNotEmpty ? Colors.purple.shade50 : Colors.grey.shade100,
+                    side: BorderSide(color: _statusFilter.isNotEmpty ? Colors.purple.shade200 : Colors.grey.shade300),
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    onPressed: () async {
+                      final val = await showModalBottomSheet<String>(
+                        context: context,
+                        shape: const RoundedRectangleBorder(
+                            borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+                        builder: (ctx) => SafeArea(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Padding(
+                                padding: EdgeInsets.all(16),
+                                child: Text('Filter by Status',
+                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                              ),
+                              ..._statusLabels.entries.map((entry) => ListTile(
+                                    title: Text(entry.value),
+                                    trailing: _statusFilter == entry.key
+                                        ? const Icon(Icons.check, color: Colors.purple)
+                                        : null,
+                                    onTap: () => Navigator.pop(ctx, entry.key),
+                                  )),
+                              ListTile(
+                                title: const Text('All'),
+                                trailing: _statusFilter.isEmpty
+                                    ? const Icon(Icons.check, color: Colors.purple)
+                                    : null,
+                                onTap: () => Navigator.pop(ctx, ''),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                      if (val != null) setState(() => _statusFilter = val);
+                    },
+                  ),
                   // Clear all filters
-                  if (_wingFilter.isNotEmpty || _blockFilter.isNotEmpty || _dateFilter != null)
+                  if (_wingFilter.isNotEmpty || _blockFilter.isNotEmpty || _dateFilter != null || _statusFilter.isNotEmpty)
                     ActionChip(
                       avatar: const Icon(Icons.clear_all, size: 14, color: Colors.red),
                       label: const Text('Clear', style: TextStyle(fontSize: 11, color: Colors.red)),
@@ -7418,6 +9154,7 @@ class _ActivityTabState extends State<_ActivityTab> {
                         _wingFilter = '';
                         _blockFilter = '';
                         _dateFilter = null;
+                        _statusFilter = '';
                       }),
                     ),
                 ],
@@ -7521,6 +9258,7 @@ class _ActivityTabState extends State<_ActivityTab> {
 
             DocumentReference? actionRef;
             VoidCallback? onRestore;
+            VoidCallback? onDelete;
 
             switch (type) {
               case 'confirmed':
@@ -7534,7 +9272,10 @@ class _ActivityTabState extends State<_ActivityTab> {
                 title = 'Rejected payment from ${e['flat']}';
                 subtitle = '${e['name']}  ·  Reason: ${e['reason']}';
                 actionRef = e['ref'] as DocumentReference?;
-                if (actionRef != null) onRestore = () => _restoreRejected(actionRef!, e);
+                if (actionRef != null) {
+                  onRestore = () => _restoreRejected(actionRef!, e);
+                  onDelete = () => _deleteRejected(actionRef!, e);
+                }
               case 'deleted':
                 iconBg = Colors.grey.shade100; iconColor = Colors.grey.shade600;
                 icon = Icons.delete_outline;
@@ -7680,6 +9421,26 @@ class _ActivityTabState extends State<_ActivityTab> {
                                         ? Colors.blue.shade700
                                         : Colors.orange.shade700),
                               ),
+                            ),
+                          ),
+                        ],
+                        if (onDelete != null) ...[
+                          const SizedBox(height: 4),
+                          GestureDetector(
+                            onTap: onDelete,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: Colors.red.shade50,
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: Colors.red.shade200),
+                              ),
+                              child: Text('Delete',
+                                  style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.red.shade700)),
                             ),
                           ),
                         ],

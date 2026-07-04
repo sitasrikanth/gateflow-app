@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+// Quick-select preset amounts shown beside the custom contribution field.
+const List<int> kSuggestedContributionAmounts = [500, 1000, 2000, 5000];
+
 // ── Event Type Catalog ────────────────────────────────────────────────────────
 
 enum EventCategory {
