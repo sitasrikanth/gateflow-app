@@ -14,7 +14,7 @@ import 'add_expense_screen.dart';
 import 'send_notification_screen.dart';
 import 'create_event_screen.dart';
 import '../../utils/event_pdf_report.dart';
-import 'import_contributions_screen.dart';
+import 'import_export_screen.dart';
 import 'event_types.dart';
 import 'self_report_sheet.dart';
 import 'sponsor_packages_screen.dart';
@@ -408,27 +408,21 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                                 color: Colors.white),
                             tooltip: 'Event Tools',
                             onSelected: (val) {
-                              if (val == 'import') {
+                              if (val == 'import_export') {
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (_) => ImportContributionsScreen(
+                                    builder: (_) => ImportExportScreen(
                                       eventId: widget.eventId,
                                       eventName: data['name'] ??
                                           widget.eventName,
+                                      eventData: data,
+                                      collected: collected,
+                                      spent: spent,
+                                      balance: balance,
+                                      target: target,
                                     ),
                                   ),
-                                );
-                              }
-                              if (val == 'pdf') {
-                                exportEventPdfReport(
-                                  context: context,
-                                  eventId: widget.eventId,
-                                  eventData: data,
-                                  collected: collected,
-                                  spent: spent,
-                                  balance: balance,
-                                  target: target,
                                 );
                               }
                               if (val == 'recalculate') _recalculateTotals(context);
@@ -482,20 +476,12 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                             },
                             itemBuilder: (_) => [
                               const PopupMenuItem(
-                                  value: 'import',
+                                  value: 'import_export',
                                   child: Row(children: [
-                                    Icon(Icons.upload_file_rounded,
-                                        color: Colors.teal),
+                                    Icon(Icons.import_export_rounded,
+                                        color: Colors.blueGrey),
                                     SizedBox(width: 8),
-                                    Text('Import Contributions'),
-                                  ])),
-                              const PopupMenuItem(
-                                  value: 'pdf',
-                                  child: Row(children: [
-                                    Icon(Icons.picture_as_pdf,
-                                        color: Colors.deepPurple),
-                                    SizedBox(width: 8),
-                                    Text('Export PDF Report'),
+                                    Text('Import / Export'),
                                   ])),
                               const PopupMenuItem(
                                   value: 'recalculate',
@@ -1290,8 +1276,6 @@ class _OverviewTab extends StatelessWidget {
         if (isAdmin) ...[
           _SpecialContributionsWidget(eventId: eventId),
           const SizedBox(height: 16),
-          _ExternalDonationsWidget(eventId: eventId),
-          const SizedBox(height: 16),
         ],
 
         // ── Block stats (grouped by wing) — live stream, gated by settings ──
@@ -1931,6 +1915,8 @@ class _ExternalDonationsWidget extends StatelessWidget {
           final amt = (d['amount'] as num?)?.toDouble() ?? 0;
           total += amt;
           entries.add({
+            'doc': doc,
+            'data': d,
             'name': d['residentName'] ?? '',
             'amt': amt,
             'note': d['note'] ?? '',
@@ -1974,6 +1960,8 @@ class _ExternalDonationsWidget extends StatelessWidget {
               ...entries.map((e) {
                 final name = (e['name'] as String).trim();
                 final note = (e['note'] as String).trim();
+                final doc = e['doc'] as QueryDocumentSnapshot;
+                final data = e['data'] as Map<String, dynamic>;
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Row(
@@ -1996,6 +1984,30 @@ class _ExternalDonationsWidget extends StatelessWidget {
                       Text('₹${_fmt(e['amt'] as double)}',
                           style: TextStyle(
                               fontSize: 13, fontWeight: FontWeight.bold, color: Colors.teal.shade700)),
+                      IconButton(
+                        icon: Icon(Icons.edit_outlined, color: Colors.green.shade400, size: 16),
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => AddContributionScreen(
+                              eventId: eventId,
+                              existingDocId: doc.id,
+                              existingData: data,
+                            ),
+                          ),
+                        ),
+                        tooltip: 'Edit',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                      const SizedBox(width: 6),
+                      IconButton(
+                        icon: Icon(Icons.delete_outline, color: Colors.red.shade300, size: 16),
+                        onPressed: () => _ContributionsTabState._deleteContribution(context, doc, data),
+                        tooltip: 'Delete',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
                     ],
                   ),
                 );
@@ -3052,6 +3064,7 @@ class _EventTabState extends State<_EventTab> {
                       eventTypeByName(widget.data['name'] as String?);
                   if (!enabledIds.contains(resolvedType?.id ?? '')) return const SizedBox.shrink();
                   final defaultMorning = (catData['morningCapacity'] as int?) ?? 2;
+                  final defaultAfternoon = (catData['afternoonCapacity'] as int?) ?? 2;
                   final defaultEvening = (catData['eveningCapacity'] as int?) ?? 2;
                   return Column(children: [
                     const SizedBox(height: 28),
@@ -3064,6 +3077,7 @@ class _EventTabState extends State<_EventTab> {
                       residentWing: widget.residentWing,
                       residentBlock: widget.residentBlock,
                       defaultMorningCap: defaultMorning,
+                      defaultAfternoonCap: defaultAfternoon,
                       defaultEveningCap: defaultEvening,
                     ),
                   ]);
@@ -3242,6 +3256,7 @@ class _PoojaScheduleSection extends StatefulWidget {
   final String residentWing;
   final String residentBlock;
   final int defaultMorningCap;
+  final int defaultAfternoonCap;
   final int defaultEveningCap;
   const _PoojaScheduleSection({
     required this.eventId,
@@ -3252,6 +3267,7 @@ class _PoojaScheduleSection extends StatefulWidget {
     this.residentWing = '',
     this.residentBlock = '',
     this.defaultMorningCap = 2,
+    this.defaultAfternoonCap = 2,
     this.defaultEveningCap = 2,
   });
   @override
@@ -3271,9 +3287,11 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
     try { final p = s.split('/'); return DateTime(int.parse(p[2]), int.parse(p[1]), int.parse(p[0])); } catch (_) { return null; }
   }
 
-  List<DateTime> _eventDates() {
-    final start = _parseDate(widget.data['startDate'] as String? ?? '');
-    final end = _parseDate(widget.data['endDate'] as String? ?? '');
+  List<DateTime> _eventDates([Map<String, dynamic>? poojaConfig]) {
+    final start = _parseDate(poojaConfig?['startDate'] as String? ??
+        widget.data['startDate'] as String? ?? '');
+    final end = _parseDate(poojaConfig?['endDate'] as String? ??
+        widget.data['endDate'] as String? ?? '');
     if (start == null) return [];
     final e = end ?? start;
     return List.generate(
@@ -3291,14 +3309,23 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
     return '${days[dt.weekday-1]}, ${months[dt.month-1]} ${dt.day}';
   }
 
+  String _fmtDDMMYYYY(DateTime dt) =>
+      '${dt.day.toString().padLeft(2,'0')}/${dt.month.toString().padLeft(2,'0')}/${dt.year}';
+
   Future<void> _showConfigDialog(Map<String, dynamic> currentConfig) async {
     int morning = (currentConfig['morningCapacity'] as int?) ?? widget.defaultMorningCap;
+    int afternoon = (currentConfig['afternoonCapacity'] as int?) ?? widget.defaultAfternoonCap;
     int evening = (currentConfig['eveningCapacity'] as int?) ?? widget.defaultEveningCap;
+    DateTime? startDate = _parseDate(currentConfig['startDate'] as String? ??
+        widget.data['startDate'] as String? ?? '');
+    DateTime? endDate = _parseDate(currentConfig['endDate'] as String? ??
+        widget.data['endDate'] as String? ?? '');
     await showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(builder: (ctx, setSt) => AlertDialog(
         title: const Text('Pooja Slot Configuration'),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
+        content: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           const Text('Set max participants per shift per day:',
               style: TextStyle(fontSize: 13, color: Colors.grey)),
           const SizedBox(height: 16),
@@ -3314,6 +3341,17 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
                 onPressed: () => setSt(() => morning++)),
           ]),
           Row(children: [
+            const Icon(Icons.light_mode_outlined, color: Color(0xFFFB923C), size: 20),
+            const SizedBox(width: 8),
+            const Text('Afternoon capacity:', style: TextStyle(fontWeight: FontWeight.w500)),
+            const Spacer(),
+            IconButton(icon: const Icon(Icons.remove_circle_outline), iconSize: 20,
+                onPressed: afternoon > 1 ? () => setSt(() => afternoon--) : null),
+            Text('$afternoon', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            IconButton(icon: const Icon(Icons.add_circle_outline), iconSize: 20,
+                onPressed: () => setSt(() => afternoon++)),
+          ]),
+          Row(children: [
             const Icon(Icons.nights_stay_outlined, color: Color(0xFF8B5CF6), size: 20),
             const SizedBox(width: 8),
             const Text('Evening capacity:', style: TextStyle(fontWeight: FontWeight.w500)),
@@ -3324,12 +3362,60 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
             IconButton(icon: const Icon(Icons.add_circle_outline), iconSize: 20,
                 onPressed: () => setSt(() => evening++)),
           ]),
+          const SizedBox(height: 16),
+          const Divider(height: 1),
+          const SizedBox(height: 12),
+          const Text('Pooja schedule date range (optional — defaults to event dates):',
+              style: TextStyle(fontSize: 13, color: Colors.grey)),
+          const SizedBox(height: 10),
+          Row(children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.calendar_today_outlined, size: 15),
+                label: Text(startDate == null ? 'Start date' : _fmtDDMMYYYY(startDate!),
+                    style: const TextStyle(fontSize: 12)),
+                onPressed: () async {
+                  final picked = await showDatePicker(
+                    context: ctx,
+                    initialDate: startDate ?? DateTime.now(),
+                    firstDate: DateTime.now().subtract(const Duration(days: 365)),
+                    lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
+                  );
+                  if (picked != null) setSt(() => startDate = picked);
+                },
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.calendar_today_outlined, size: 15),
+                label: Text(endDate == null ? 'End date' : _fmtDDMMYYYY(endDate!),
+                    style: const TextStyle(fontSize: 12)),
+                onPressed: () async {
+                  final picked = await showDatePicker(
+                    context: ctx,
+                    initialDate: endDate ?? startDate ?? DateTime.now(),
+                    firstDate: DateTime.now().subtract(const Duration(days: 365)),
+                    lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
+                  );
+                  if (picked != null) setSt(() => endDate = picked);
+                },
+              ),
+            ),
+          ]),
         ]),
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () async {
-              await _eventRef.update({'poojaConfig': {'morningCapacity': morning, 'eveningCapacity': evening}});
+              await _eventRef.update({'poojaConfig': {
+                'morningCapacity': morning,
+                'afternoonCapacity': afternoon,
+                'eveningCapacity': evening,
+                if (startDate != null) 'startDate': _fmtDDMMYYYY(startDate!),
+                if (endDate != null) 'endDate': _fmtDDMMYYYY(endDate!),
+              }});
               if (ctx.mounted) Navigator.pop(ctx);
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple),
@@ -3340,13 +3426,17 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
     );
   }
 
+  static const _shiftLabels = {
+    'morning': '☀ Morning', 'afternoon': '🌤 Afternoon', 'evening': '🌙 Evening',
+  };
+
   Future<void> _showRegisterDialog(DateTime date, String shift,
       List<Map<String, dynamic>> existingRegs, int capacity,
-      {Map<String, dynamic>? myReg, String? myRegId}) async {
+      {Map<String, dynamic>? myReg, String? myRegId, List<DateTime>? registrableDates}) async {
     // If resident already has an approved reg, allow date change
     if (myReg != null && myReg['status'] == 'approved') {
       // Show date change dialog
-      final dates = _eventDates();
+      final dates = registrableDates ?? _eventDates();
       if (dates.isEmpty) return;
       DateTime? picked;
       String pickedShift = shift;
@@ -3361,10 +3451,9 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
             DropdownButtonFormField<String>(
               value: pickedShift,
               decoration: const InputDecoration(labelText: 'Shift', isDense: true),
-              items: const [
-                DropdownMenuItem(value: 'morning', child: Text('☀ Morning')),
-                DropdownMenuItem(value: 'evening', child: Text('🌙 Evening')),
-              ],
+              items: _shiftLabels.entries
+                  .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
+                  .toList(),
               onChanged: (v) => setSt(() => pickedShift = v!),
             ),
             const SizedBox(height: 12),
@@ -3414,7 +3503,7 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Register for ${shift == 'morning' ? '☀ Morning' : '🌙 Evening'} Pooja'),
+        title: Text('Register for ${_shiftLabels[shift] ?? shift} Pooja'),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('Date: ${_fmtDate(date)}',
               style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
@@ -3451,20 +3540,35 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
     await _col.doc(docId).update({'status': status, '${status}At': Timestamp.now()});
   }
 
+  Future<void> _toggleNoSchedule(String dateKey, Set<String> current) async {
+    final updated = Set<String>.from(current);
+    updated.contains(dateKey) ? updated.remove(dateKey) : updated.add(dateKey);
+    await _eventRef.update({'poojaConfig.noScheduleDates': updated.toList()});
+  }
+
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<DocumentSnapshot>(
-      stream: _eventRef.snapshots(),
-      builder: (context, eventSnap) {
-        final poojaConfig = (eventSnap.data?.data() as Map<String, dynamic>?)?['poojaConfig']
-            as Map<String, dynamic>? ?? {};
-        final morningCap = (poojaConfig['morningCapacity'] as int?) ?? widget.defaultMorningCap;
-        final eveningCap = (poojaConfig['eveningCapacity'] as int?) ?? widget.defaultEveningCap;
-        final dates = _eventDates();
+    // poojaConfig comes straight from widget.data (already kept fresh by the
+    // single event-doc listener owned by EventDashboardScreen/_EventTab) —
+    // this used to re-subscribe to the whole event doc a second time here,
+    // which caused this entire (potentially large) day/shift widget tree to
+    // rebuild on every unrelated event-doc write (e.g. any contribution or
+    // expense added anywhere in the event), making the Event tab feel slow.
+    final poojaConfig = widget.data['poojaConfig'] as Map<String, dynamic>? ?? {};
+    final morningCap = (poojaConfig['morningCapacity'] as int?) ?? widget.defaultMorningCap;
+    final afternoonCap = (poojaConfig['afternoonCapacity'] as int?) ?? widget.defaultAfternoonCap;
+    final eveningCap = (poojaConfig['eveningCapacity'] as int?) ?? widget.defaultEveningCap;
+    final dates = _eventDates(poojaConfig);
+    final noScheduleDates = Set<String>.from(poojaConfig['noScheduleDates'] as List? ?? []);
+    final visibleDates = widget.isAdmin
+        ? dates
+        : dates.where((d) => !noScheduleDates.contains(_dateKey(d))).toList();
+    final registrableDates =
+        dates.where((d) => !noScheduleDates.contains(_dateKey(d))).toList();
 
-        return StreamBuilder<QuerySnapshot>(
-          stream: _col.orderBy('requestedAt').snapshots(),
-          builder: (context, snap) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _col.orderBy('requestedAt').snapshots(),
+      builder: (context, snap) {
             final allRegs = (snap.data?.docs ?? []).map((d) {
               return {...(d.data() as Map<String, dynamic>), '_id': d.id};
             }).toList();
@@ -3504,11 +3608,11 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
                   ),
               ]),
               const SizedBox(height: 4),
-              Text('Capacity: ☀ Morning ${morningCap}p  ·  🌙 Evening ${eveningCap}p per day',
+              Text('Capacity: ☀ Morning ${morningCap}p  ·  🌤 Afternoon ${afternoonCap}p  ·  🌙 Evening ${eveningCap}p per day',
                   style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
               const SizedBox(height: 14),
 
-              if (dates.isEmpty)
+              if (visibleDates.isEmpty)
                 Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
@@ -3519,13 +3623,16 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
                       style: TextStyle(color: Colors.grey.shade400, fontSize: 13), textAlign: TextAlign.center)),
                 )
               else
-                ...dates.map((date) {
+                ...visibleDates.map((date) {
                   final dk = _dateKey(date);
+                  final isNoSchedule = noScheduleDates.contains(dk);
                   final dayRegs = grouped[dk] ?? {};
                   final morningRegs = dayRegs['morning'] ?? [];
+                  final afternoonRegs = dayRegs['afternoon'] ?? [];
                   final eveningRegs = dayRegs['evening'] ?? [];
 
                   final myMorning = myRegs.where((r) => r['date'] == dk && r['shift'] == 'morning').firstOrNull;
+                  final myAfternoon = myRegs.where((r) => r['date'] == dk && r['shift'] == 'afternoon').firstOrNull;
                   final myEvening = myRegs.where((r) => r['date'] == dk && r['shift'] == 'evening').firstOrNull;
 
                   return Container(
@@ -3540,14 +3647,14 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
                       Container(
                         padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
                         decoration: BoxDecoration(
-                          color: Colors.deepPurple.shade50,
+                          color: isNoSchedule ? Colors.grey.shade100 : Colors.deepPurple.shade50,
                           borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
                         ),
                         child: Row(children: [
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                             decoration: BoxDecoration(
-                              color: Colors.deepPurple,
+                              color: isNoSchedule ? Colors.grey.shade400 : Colors.deepPurple,
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text('${date.day}',
@@ -3555,52 +3662,92 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
                           ),
                           const SizedBox(width: 8),
                           Text(_fmtDate(date),
-                              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Colors.deepPurple.shade800)),
+                              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13,
+                                  color: isNoSchedule ? Colors.grey.shade600 : Colors.deepPurple.shade800)),
                           const Spacer(),
-                          // Day number label
-                          Text('Day ${dates.indexOf(date) + 1}',
-                              style: TextStyle(fontSize: 11, color: Colors.deepPurple.shade300)),
+                          if (widget.isAdmin)
+                            GestureDetector(
+                              onTap: () => _toggleNoSchedule(dk, noScheduleDates),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: isNoSchedule ? Colors.deepPurple.withValues(alpha: 0.1) : Colors.grey.shade200,
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(isNoSchedule ? 'Enable' : 'No Schedule',
+                                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600,
+                                        color: isNoSchedule ? Colors.deepPurple : Colors.grey.shade600)),
+                              ),
+                            )
+                          else
+                            Text('Day ${dates.indexOf(date) + 1}',
+                                style: TextStyle(fontSize: 11, color: Colors.deepPurple.shade300)),
                         ]),
                       ),
-                      // Morning shift
-                      _PoojaShift(
-                        shift: 'morning',
-                        label: 'Morning',
-                        icon: Icons.wb_sunny_outlined,
-                        color: const Color(0xFFF59E0B),
-                        regs: morningRegs,
-                        capacity: morningCap,
-                        isAdmin: widget.isAdmin,
-                        myReg: myMorning,
-                        onRegister: () => _showRegisterDialog(date, 'morning', morningRegs, morningCap,
-                            myReg: myMorning, myRegId: myMorning?['_id'] as String?),
-                        onApprove: (id) => _updateStatus(id, 'approved'),
-                        onReject: (id) => _updateStatus(id, 'rejected'),
-                      ),
-                      const Divider(height: 1, indent: 14, endIndent: 14),
-                      // Evening shift
-                      _PoojaShift(
-                        shift: 'evening',
-                        label: 'Evening',
-                        icon: Icons.nights_stay_outlined,
-                        color: const Color(0xFF8B5CF6),
-                        regs: eveningRegs,
-                        capacity: eveningCap,
-                        isAdmin: widget.isAdmin,
-                        myReg: myEvening,
-                        onRegister: () => _showRegisterDialog(date, 'evening', eveningRegs, eveningCap,
-                            myReg: myEvening, myRegId: myEvening?['_id'] as String?),
-                        onApprove: (id) => _updateStatus(id, 'approved'),
-                        onReject: (id) => _updateStatus(id, 'rejected'),
-                      ),
+                      if (isNoSchedule)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+                          child: Text('No pooja scheduled on this day',
+                              style: TextStyle(fontSize: 12, color: Colors.grey.shade500, fontStyle: FontStyle.italic)),
+                        )
+                      else ...[
+                        // Morning shift
+                        _PoojaShift(
+                          shift: 'morning',
+                          label: 'Morning',
+                          icon: Icons.wb_sunny_outlined,
+                          color: const Color(0xFFF59E0B),
+                          regs: morningRegs,
+                          capacity: morningCap,
+                          isAdmin: widget.isAdmin,
+                          myReg: myMorning,
+                          onRegister: () => _showRegisterDialog(date, 'morning', morningRegs, morningCap,
+                              myReg: myMorning, myRegId: myMorning?['_id'] as String?,
+                              registrableDates: registrableDates),
+                          onApprove: (id) => _updateStatus(id, 'approved'),
+                          onReject: (id) => _updateStatus(id, 'rejected'),
+                        ),
+                        const Divider(height: 1, indent: 14, endIndent: 14),
+                        // Afternoon shift
+                        _PoojaShift(
+                          shift: 'afternoon',
+                          label: 'Afternoon',
+                          icon: Icons.light_mode_outlined,
+                          color: const Color(0xFFFB923C),
+                          regs: afternoonRegs,
+                          capacity: afternoonCap,
+                          isAdmin: widget.isAdmin,
+                          myReg: myAfternoon,
+                          onRegister: () => _showRegisterDialog(date, 'afternoon', afternoonRegs, afternoonCap,
+                              myReg: myAfternoon, myRegId: myAfternoon?['_id'] as String?,
+                              registrableDates: registrableDates),
+                          onApprove: (id) => _updateStatus(id, 'approved'),
+                          onReject: (id) => _updateStatus(id, 'rejected'),
+                        ),
+                        const Divider(height: 1, indent: 14, endIndent: 14),
+                        // Evening shift
+                        _PoojaShift(
+                          shift: 'evening',
+                          label: 'Evening',
+                          icon: Icons.nights_stay_outlined,
+                          color: const Color(0xFF8B5CF6),
+                          regs: eveningRegs,
+                          capacity: eveningCap,
+                          isAdmin: widget.isAdmin,
+                          myReg: myEvening,
+                          onRegister: () => _showRegisterDialog(date, 'evening', eveningRegs, eveningCap,
+                              myReg: myEvening, myRegId: myEvening?['_id'] as String?,
+                              registrableDates: registrableDates),
+                          onApprove: (id) => _updateStatus(id, 'approved'),
+                          onReject: (id) => _updateStatus(id, 'rejected'),
+                        ),
+                      ],
                     ]),
                   );
                 }),
             ]);
           },
         );
-      },
-    );
   }
 }
 
@@ -5859,6 +6006,12 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                       ],
                     ),
                   ),
+                ],
+
+                // ── External Donations (admin only) ────────────────
+                if (widget.isAdmin) ...[
+                  _ExternalDonationsWidget(eventId: widget.eventId),
+                  const SizedBox(height: 12),
                 ],
 
                 // ── Grand total banner ────────────────────────────

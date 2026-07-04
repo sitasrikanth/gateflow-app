@@ -78,76 +78,117 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen> {
 
   Future<void> _changeCode() async {
     final ctrl = TextEditingController();
+    String currentCode = '';
+    try {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(_userId).get();
+      currentCode = doc.data()?['quickCode'] as String? ?? '';
+    } catch (_) {}
+    if (!mounted) return;
+
+    bool codeVisible = false;
+    String error = '';
+
     await showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Change My Quick Code'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Enter a new 6-digit code you can remember.',
-                style: TextStyle(fontSize: 13, color: Colors.grey)),
-            const SizedBox(height: 16),
-            TextField(
-              controller: ctrl,
-              keyboardType: TextInputType.number,
-              maxLength: 6,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                  fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 6),
-              decoration: InputDecoration(
-                counterText: '',
-                hintText: '------',
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12)),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide:
-                      const BorderSide(color: Color(0xFF1A73E8), width: 2),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Change My Quick Code'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (currentCode.isNotEmpty) ...[
+                const Text('Current code', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                const SizedBox(height: 6),
+                Row(children: [
+                  Text(
+                    codeVisible ? currentCode : '•' * currentCode.length,
+                    style: const TextStyle(
+                        fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: 4),
+                  ),
+                  const SizedBox(width: 10),
+                  GestureDetector(
+                    onTap: () => setSt(() => codeVisible = !codeVisible),
+                    child: Icon(
+                        codeVisible ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                        size: 20, color: Colors.grey.shade600),
+                  ),
+                ]),
+                const SizedBox(height: 16),
+                const Divider(height: 1),
+                const SizedBox(height: 16),
+              ],
+              const Text('Enter a new 6-digit code you can remember.',
+                  style: TextStyle(fontSize: 13, color: Colors.grey)),
+              const SizedBox(height: 16),
+              TextField(
+                controller: ctrl,
+                keyboardType: TextInputType.number,
+                maxLength: 6,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                textAlign: TextAlign.center,
+                onChanged: (_) {
+                  if (error.isNotEmpty) setSt(() => error = '');
+                },
+                style: const TextStyle(
+                    fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 6),
+                decoration: InputDecoration(
+                  counterText: '',
+                  hintText: '------',
+                  errorText: error.isEmpty ? null : error,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide:
+                        const BorderSide(color: Color(0xFF1A73E8), width: 2),
+                  ),
                 ),
               ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                WidgetsBinding.instance
+                    .addPostFrameCallback((_) => ctrl.dispose());
+                Navigator.pop(ctx);
+              },
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (ctrl.text.length != 6) {
+                  setSt(() => error = 'Code must be exactly 6 digits');
+                  return;
+                }
+                await FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(_userId)
+                    .update({'quickCode': ctrl.text});
+                WidgetsBinding.instance
+                    .addPostFrameCallback((_) => ctrl.dispose());
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Quick code updated successfully!'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1A73E8),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+              ),
+              child: const Text('Save'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              WidgetsBinding.instance
-                  .addPostFrameCallback((_) => ctrl.dispose());
-              Navigator.pop(ctx);
-            },
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              if (ctrl.text.length != 6) return;
-              await FirebaseFirestore.instance
-                  .collection('users')
-                  .doc(_userId)
-                  .update({'quickCode': ctrl.text});
-              WidgetsBinding.instance
-                  .addPostFrameCallback((_) => ctrl.dispose());
-              if (ctx.mounted) Navigator.pop(ctx);
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Quick code updated successfully!'),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF1A73E8),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
-            ),
-            child: const Text('Save'),
-          ),
-        ],
       ),
     );
   }

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -152,7 +153,13 @@ DA103,Priya Nair,1500,Bank Transfer,17/10/2025,Regular,TXN123456,Festival contri
     List<List<dynamic>> rawRows;
 
     if (ext == 'csv') {
-      final content = String.fromCharCodes(bytes);
+      // utf8.decode handles multi-byte characters correctly (unlike
+      // String.fromCharCodes, which mangles anything non-Latin1); strip a
+      // leading BOM if present (common in CSVs exported from Google Sheets/Excel).
+      var content = utf8.decode(bytes, allowMalformed: true);
+      if (content.isNotEmpty && content.codeUnitAt(0) == 0xFEFF) {
+        content = content.substring(1);
+      }
       rawRows = const CsvToListConverter(eol: '\n', shouldParseNumbers: false)
           .convert(content);
     } else {
@@ -248,15 +255,20 @@ DA103,Priya Nair,1500,Bank Transfer,17/10/2025,Regular,TXN123456,Festival contri
 
   DateTime? _parseDate(String s) {
     if (s.isEmpty) return DateTime.now();
-    // Try DD/MM/YYYY
+    // Google Sheets/Excel often export dates as ISO (YYYY-MM-DD), which uses
+    // the same '-' delimiter as DD-MM-YYYY — disambiguate by checking whether
+    // the first segment is a 4-digit year.
     final parts = s.split(RegExp(r'[/\-.]'));
     if (parts.length == 3) {
-      final d = int.tryParse(parts[0]);
-      final m = int.tryParse(parts[1]);
-      final y = int.tryParse(parts[2]);
-      if (d != null && m != null && y != null) {
+      final p0 = int.tryParse(parts[0]);
+      final p1 = int.tryParse(parts[1]);
+      final p2 = int.tryParse(parts[2]);
+      if (p0 != null && p1 != null && p2 != null) {
         try {
-          return DateTime(y < 100 ? 2000 + y : y, m, d);
+          if (parts[0].length == 4) {
+            return DateTime(p0, p1, p2); // YYYY-MM-DD
+          }
+          return DateTime(p2 < 100 ? 2000 + p2 : p2, p1, p0); // DD/MM/YYYY
         } catch (_) {}
       }
     }

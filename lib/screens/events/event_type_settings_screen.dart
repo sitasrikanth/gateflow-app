@@ -6,7 +6,7 @@ import 'expense_categories_screen.dart'
 
 // Firestore layout — all sections use the same opt-in pattern: an event type
 // is OFF for a feature unless its id is in enabledTypeIds.
-// /appSettings/poojaSchedule       { enabledTypeIds: [...], morningCapacity, eveningCapacity }
+// /appSettings/poojaSchedule       { enabledTypeIds: [...], morningCapacity, afternoonCapacity, eveningCapacity }
 // /appSettings/payments            { enabledTypeIds: [...] }
 // /appSettings/collectionStatusByBlock { enabledTypeIds: [...] }
 // /appSettings/specialContribution { enabledTypeIds: [...] }
@@ -87,17 +87,23 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
         final d = snap.data?.data() as Map<String, dynamic>? ?? {};
         final enabledIds = List<String>.from(d['enabledTypeIds'] as List? ?? []);
         final morningCap = (d['morningCapacity'] as int?) ?? 2;
+        final afternoonCap = (d['afternoonCapacity'] as int?) ?? 2;
         final eveningCap = (d['eveningCapacity'] as int?) ?? 2;
         final totalSelected = enabledIds.length;
 
-        void save(List<String> ids, int morning, int evening) {
-          _ref.set({'enabledTypeIds': ids, 'morningCapacity': morning, 'eveningCapacity': evening});
+        void save(List<String> ids, int morning, int afternoon, int evening) {
+          _ref.set({
+            'enabledTypeIds': ids,
+            'morningCapacity': morning,
+            'afternoonCapacity': afternoon,
+            'eveningCapacity': evening,
+          });
         }
 
         void toggleId(String id, bool enabled) {
           final updated = List<String>.from(enabledIds);
           enabled ? updated.add(id) : updated.remove(id);
-          save(updated, morningCap, eveningCap);
+          save(updated, morningCap, afternoonCap, eveningCap);
         }
 
         final categories = EventCategory.values
@@ -169,7 +175,15 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
                     color: const Color(0xFFF59E0B),
                     label: 'Morning slots',
                     value: morningCap,
-                    onChanged: (v) => save(enabledIds, v, eveningCap),
+                    onChanged: (v) => save(enabledIds, v, afternoonCap, eveningCap),
+                  ),
+                  const SizedBox(height: 8),
+                  _CapacityRow(
+                    icon: Icons.light_mode_outlined,
+                    color: const Color(0xFFFB923C),
+                    label: 'Afternoon slots',
+                    value: afternoonCap,
+                    onChanged: (v) => save(enabledIds, morningCap, v, eveningCap),
                   ),
                   const SizedBox(height: 8),
                   _CapacityRow(
@@ -177,7 +191,7 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
                     color: const Color(0xFF8B5CF6),
                     label: 'Evening slots',
                     value: eveningCap,
-                    onChanged: (v) => save(enabledIds, morningCap, v),
+                    onChanged: (v) => save(enabledIds, morningCap, afternoonCap, v),
                   ),
                 ]),
               ),
