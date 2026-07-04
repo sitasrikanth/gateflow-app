@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'firebase_options.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/guard/guard_home_screen.dart';
-import 'screens/resident/resident_home_screen.dart';
+import 'screens/resident/resident_events_screen.dart';
 import 'screens/admin/admin_home_screen.dart';
 
 void main() async {
@@ -59,7 +59,9 @@ class AuthWrapper extends StatelessWidget {
           case 'guard':
             return const GuardHomeScreen();
           default:
-            return const ResidentHomeScreen();
+            // Residents land directly on My Events until full Event
+            // Management (visitors, profile, etc.) is built out.
+            return const ResidentEventsScreen();
         }
       },
     );

@@ -660,6 +660,23 @@ EventTypeData? eventTypeByName(String? name) {
         (t) => lower.contains(t.name.toLowerCase()) ||
                t.name.toLowerCase().contains(lower));
   } catch (_) {}
+  // Word-overlap match — handles extra words (year, prefix) or a typo in one
+  // word of the event name, e.g. "MPR Badminton" ~ "Badminton Tournament" or
+  // "Ganesh Chathurthi 2026" ~ "Ganesh Chaturthi". Only matches on a word
+  // that is unique to a single event type, to avoid ambiguous words like
+  // "Tournament" (shared by Cricket/Badminton/Chess) picking the wrong one.
+  final nameWords = lower.split(RegExp(r'[^a-z0-9]+')).where((w) => w.length >= 4).toSet();
+  if (nameWords.isEmpty) return null;
+  final wordToTypes = <String, List<EventTypeData>>{};
+  for (final t in kAllEventTypes) {
+    for (final w in t.name.toLowerCase().split(RegExp(r'[^a-z0-9]+')).where((w) => w.length >= 4)) {
+      wordToTypes.putIfAbsent(w, () => []).add(t);
+    }
+  }
+  for (final w in nameWords) {
+    final matches = wordToTypes[w];
+    if (matches != null && matches.length == 1) return matches.first;
+  }
   return null;
 }
 

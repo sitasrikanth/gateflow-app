@@ -4,8 +4,21 @@ import 'event_types.dart';
 import 'expense_categories_screen.dart'
     show kEmojiPicker, eventTypeCategoriesRef;
 
-// Stored at /appSettings/poojaSchedule
-// { enabledTypeIds: [...], morningCapacity: 2, eveningCapacity: 2 }
+// Firestore layout — all sections use the same opt-in pattern: an event type
+// is OFF for a feature unless its id is in enabledTypeIds.
+// /appSettings/poojaSchedule       { enabledTypeIds: [...], morningCapacity, eveningCapacity }
+// /appSettings/payments            { enabledTypeIds: [...] }
+// /appSettings/collectionStatusByBlock { enabledTypeIds: [...] }
+// /appSettings/specialContribution { enabledTypeIds: [...] }
+// /appSettings/expenseCategories   { enabledTypeIds: [...] }
+// /appSettings/volunteerRoles      { enabledTypeIds: [...] }
+// /appSettings/deleteEvents        { enabledTypeIds: [...] }
+// /eventTypeConfig/{typeId}        { specialDescriptions, specialDefaultNote, expenseCategories, volunteerRoles }
+
+const List<String> _kDefaultVolRoles = [
+  'Coordinator', 'Decoration', 'Food & Catering', 'Security',
+  'Music & Sound', 'Collection', 'Photography', 'Transport', 'Other',
+];
 
 class EventTypeSettingsScreen extends StatelessWidget {
   const EventTypeSettingsScreen({super.key});
@@ -26,11 +39,17 @@ class EventTypeSettingsScreen extends StatelessWidget {
         child: Column(children: [
           _PoojaScheduleSection(),
           SizedBox(height: 12),
+          _PaymentsSection(),
+          SizedBox(height: 12),
+          _CollectionStatusByBlockSection(),
+          SizedBox(height: 12),
           _SpecialContributionSection(),
           SizedBox(height: 12),
           _ExpenseCategoriesSection(),
           SizedBox(height: 12),
           _VolunteerRolesSection(),
+          SizedBox(height: 12),
+          _DeleteEventsSection(),
           SizedBox(height: 40),
         ]),
       ),
@@ -189,7 +208,318 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
   }
 }
 
-// ── Per-category collapsable section ─────────────────────────────────────────
+// ── Top-level Payments / Contributions collapsable ────────────────────────────
+
+class _PaymentsSection extends StatefulWidget {
+  const _PaymentsSection();
+  @override
+  State<_PaymentsSection> createState() => _PaymentsSectionState();
+}
+
+class _PaymentsSectionState extends State<_PaymentsSection> {
+  bool _expanded = false;
+
+  static final DocumentReference _ref = FirebaseFirestore.instance
+      .collection('appSettings')
+      .doc('payments');
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: _ref.snapshots(),
+      builder: (context, snap) {
+        final d = snap.data?.data() as Map<String, dynamic>? ?? {};
+        final enabledIds = List<String>.from(d['enabledTypeIds'] as List? ?? []);
+        final totalSelected = enabledIds.length;
+
+        void toggleId(String id, bool enabled) {
+          final updated = List<String>.from(enabledIds);
+          enabled ? updated.add(id) : updated.remove(id);
+          _ref.set({'enabledTypeIds': updated});
+        }
+
+        final categories = EventCategory.values
+            .where((cat) => kAllEventTypes.any((t) => t.category == cat))
+            .toList();
+
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            // ── Header (tap to expand/collapse) ──
+            InkWell(
+              borderRadius: BorderRadius.vertical(
+                top: const Radius.circular(14),
+                bottom: _expanded ? Radius.zero : const Radius.circular(14),
+              ),
+              onTap: () => setState(() => _expanded = !_expanded),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+                child: Row(children: [
+                  const Text('💰', style: TextStyle(fontSize: 20)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const Text('Payments / Contributions',
+                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                      Text(
+                        totalSelected == 0
+                            ? 'Not enabled for any event'
+                            : '$totalSelected event type${totalSelected == 1 ? '' : 's'} require payment',
+                        style: TextStyle(fontSize: 11,
+                            color: totalSelected > 0 ? Colors.green.shade600 : Colors.grey.shade400),
+                      ),
+                    ]),
+                  ),
+                  Icon(
+                    _expanded ? Icons.expand_less : Icons.expand_more,
+                    color: Colors.grey.shade500,
+                  ),
+                ]),
+              ),
+            ),
+
+            if (_expanded) ...[
+              const Divider(height: 1),
+
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+                child: Text(
+                  'Tick an event type to show "Add Contribution" / "I\'ve Paid" for it — '
+                  'useful for events where residents need to pay.',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade400, height: 1.4),
+                ),
+              ),
+              const SizedBox(height: 4),
+
+              // ── Per-category collapsable sections ──
+              ...categories.map((cat) {
+                final types = kAllEventTypes.where((t) => t.category == cat).toList();
+                final selectedCount = types.where((t) => enabledIds.contains(t.id)).length;
+                return _CategorySection(
+                  category: cat,
+                  types: types,
+                  enabledIds: enabledIds,
+                  selectedCount: selectedCount,
+                  onToggle: toggleId,
+                );
+              }),
+
+              const SizedBox(height: 8),
+            ],
+          ]),
+        );
+      },
+    );
+  }
+}
+
+// ── Top-level Collection Status by Block collapsable ──────────────────────────
+
+class _CollectionStatusByBlockSection extends StatefulWidget {
+  const _CollectionStatusByBlockSection();
+  @override
+  State<_CollectionStatusByBlockSection> createState() => _CollectionStatusByBlockSectionState();
+}
+
+class _CollectionStatusByBlockSectionState extends State<_CollectionStatusByBlockSection> {
+  bool _expanded = false;
+
+  static final DocumentReference _ref = FirebaseFirestore.instance
+      .collection('appSettings')
+      .doc('collectionStatusByBlock');
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: _ref.snapshots(),
+      builder: (context, snap) {
+        final d = snap.data?.data() as Map<String, dynamic>? ?? {};
+        final enabledIds = List<String>.from(d['enabledTypeIds'] as List? ?? []);
+        final totalSelected = enabledIds.length;
+
+        void toggleId(String id, bool enabled) {
+          final updated = List<String>.from(enabledIds);
+          enabled ? updated.add(id) : updated.remove(id);
+          _ref.set({'enabledTypeIds': updated});
+        }
+
+        final categories = EventCategory.values
+            .where((cat) => kAllEventTypes.any((t) => t.category == cat))
+            .toList();
+
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            InkWell(
+              borderRadius: BorderRadius.vertical(
+                top: const Radius.circular(14),
+                bottom: _expanded ? Radius.zero : const Radius.circular(14),
+              ),
+              onTap: () => setState(() => _expanded = !_expanded),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+                child: Row(children: [
+                  const Text('🏘️', style: TextStyle(fontSize: 20)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const Text('Collection Status by Block',
+                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                      Text(
+                        totalSelected == 0
+                            ? 'Not enabled for any event'
+                            : '$totalSelected event type${totalSelected == 1 ? '' : 's'} enabled',
+                        style: TextStyle(fontSize: 11,
+                            color: totalSelected > 0 ? Colors.blue.shade600 : Colors.grey.shade400),
+                      ),
+                    ]),
+                  ),
+                  Icon(_expanded ? Icons.expand_less : Icons.expand_more,
+                      color: Colors.grey.shade500),
+                ]),
+              ),
+            ),
+            if (_expanded) ...[
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+                child: Text(
+                  'Shows the "Diamond A: 12/15 paid" block-wise breakdown in the Overview tab. '
+                  'Leave off for events like Markets or Workshops with no block-wise collection.',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade400, height: 1.4),
+                ),
+              ),
+              const SizedBox(height: 4),
+              ...categories.map((cat) {
+                final types = kAllEventTypes.where((t) => t.category == cat).toList();
+                final selectedCount = types.where((t) => enabledIds.contains(t.id)).length;
+                return _CategorySection(
+                  category: cat,
+                  types: types,
+                  enabledIds: enabledIds,
+                  selectedCount: selectedCount,
+                  onToggle: toggleId,
+                );
+              }),
+              const SizedBox(height: 8),
+            ],
+          ]),
+        );
+      },
+    );
+  }
+}
+
+// ── Top-level Delete Events collapsable ────────────────────────────────────────
+
+class _DeleteEventsSection extends StatefulWidget {
+  const _DeleteEventsSection();
+  @override
+  State<_DeleteEventsSection> createState() => _DeleteEventsSectionState();
+}
+
+class _DeleteEventsSectionState extends State<_DeleteEventsSection> {
+  bool _expanded = false;
+
+  static final DocumentReference _ref = FirebaseFirestore.instance
+      .collection('appSettings')
+      .doc('deleteEvents');
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: _ref.snapshots(),
+      builder: (context, snap) {
+        final d = snap.data?.data() as Map<String, dynamic>? ?? {};
+        final enabledIds = List<String>.from(d['enabledTypeIds'] as List? ?? []);
+        final totalSelected = enabledIds.length;
+
+        void toggleId(String id, bool enabled) {
+          final updated = List<String>.from(enabledIds);
+          enabled ? updated.add(id) : updated.remove(id);
+          _ref.set({'enabledTypeIds': updated});
+        }
+
+        final categories = EventCategory.values
+            .where((cat) => kAllEventTypes.any((t) => t.category == cat))
+            .toList();
+
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            InkWell(
+              borderRadius: BorderRadius.vertical(
+                top: const Radius.circular(14),
+                bottom: _expanded ? Radius.zero : const Radius.circular(14),
+              ),
+              onTap: () => setState(() => _expanded = !_expanded),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+                child: Row(children: [
+                  const Text('🗑️', style: TextStyle(fontSize: 20)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const Text('Delete Events (admin)',
+                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                      Text(
+                        totalSelected == 0
+                            ? 'Not enabled for any event'
+                            : '$totalSelected event type${totalSelected == 1 ? '' : 's'} enabled',
+                        style: TextStyle(fontSize: 11,
+                            color: totalSelected > 0 ? Colors.red.shade600 : Colors.grey.shade400),
+                      ),
+                    ]),
+                  ),
+                  Icon(_expanded ? Icons.expand_less : Icons.expand_more,
+                      color: Colors.grey.shade500),
+                ]),
+              ),
+            ),
+            if (_expanded) ...[
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+                child: Text(
+                  'Shows "Delete Event" in the admin Event Tools menu for these event types. '
+                  'Keep off for recurring festivals; enable for one-off or test event types.',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade400, height: 1.4),
+                ),
+              ),
+              const SizedBox(height: 4),
+              ...categories.map((cat) {
+                final types = kAllEventTypes.where((t) => t.category == cat).toList();
+                final selectedCount = types.where((t) => enabledIds.contains(t.id)).length;
+                return _CategorySection(
+                  category: cat,
+                  types: types,
+                  enabledIds: enabledIds,
+                  selectedCount: selectedCount,
+                  onToggle: toggleId,
+                );
+              }),
+              const SizedBox(height: 8),
+            ],
+          ]),
+        );
+      },
+    );
+  }
+}
+
+// ── Per-category collapsable section (simple checkbox-only sections) ──────────
 
 class _CategorySection extends StatefulWidget {
   final EventCategory category;
@@ -717,6 +1047,8 @@ class _DefaultNoteFieldState extends State<_DefaultNoteField> {
 }
 
 // ── Expense Categories Section ────────────────────────────────────────────────
+// /appSettings/expenseCategories → { enabledTypeIds: [...] }
+// /eventTypeConfig/{typeId}      → { expenseCategories: [...] }
 
 class _ExpenseCategoriesSection extends StatefulWidget {
   const _ExpenseCategoriesSection();
@@ -727,62 +1059,91 @@ class _ExpenseCategoriesSection extends StatefulWidget {
 class _ExpenseCategoriesSectionState extends State<_ExpenseCategoriesSection> {
   bool _expanded = false;
 
+  static final _ref = FirebaseFirestore.instance
+      .collection('appSettings')
+      .doc('expenseCategories');
+
   @override
   Widget build(BuildContext context) {
-    final categories = EventCategory.values
-        .where((cat) => kAllEventTypes.any((t) => t.category == cat))
-        .toList();
+    return StreamBuilder<DocumentSnapshot>(
+      stream: _ref.snapshots(),
+      builder: (context, snap) {
+        final d = snap.data?.data() as Map<String, dynamic>? ?? {};
+        final enabledIds = List<String>.from(d['enabledTypeIds'] as List? ?? []);
+        final totalSelected = enabledIds.length;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // Header
-        InkWell(
-          borderRadius: BorderRadius.vertical(
-            top: const Radius.circular(14),
-            bottom: _expanded ? Radius.zero : const Radius.circular(14),
+        void toggleId(String id, bool on) {
+          final updated = List<String>.from(enabledIds);
+          on ? updated.add(id) : updated.remove(id);
+          _ref.set({'enabledTypeIds': updated});
+        }
+
+        final categories = EventCategory.values
+            .where((cat) => kAllEventTypes.any((t) => t.category == cat))
+            .toList();
+
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
           ),
-          onTap: () => setState(() => _expanded = !_expanded),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
-            child: Row(children: [
-              const Text('📋', style: TextStyle(fontSize: 20)),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('Expense Categories',
-                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
-                  Text('Default categories & sub-categories per event type',
-                      style: TextStyle(fontSize: 11, color: Colors.grey)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            // Header
+            InkWell(
+              borderRadius: BorderRadius.vertical(
+                top: const Radius.circular(14),
+                bottom: _expanded ? Radius.zero : const Radius.circular(14),
+              ),
+              onTap: () => setState(() => _expanded = !_expanded),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+                child: Row(children: [
+                  const Text('📋', style: TextStyle(fontSize: 20)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const Text('Expense Categories',
+                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                      Text(
+                        totalSelected == 0
+                            ? 'Not enabled for any event'
+                            : '$totalSelected event type${totalSelected == 1 ? '' : 's'} enabled',
+                        style: TextStyle(fontSize: 11,
+                            color: totalSelected > 0 ? Colors.deepPurple.shade400 : Colors.grey.shade400),
+                      ),
+                    ]),
+                  ),
+                  Icon(_expanded ? Icons.expand_less : Icons.expand_more,
+                      color: Colors.grey.shade500),
                 ]),
               ),
-              Icon(_expanded ? Icons.expand_less : Icons.expand_more,
-                  color: Colors.grey.shade500),
-            ]),
-          ),
-        ),
+            ),
 
-        if (_expanded) ...[
-          const Divider(height: 1),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
-            child: Row(children: [
-              Icon(Icons.info_outline, size: 13, color: Colors.grey.shade400),
-              const SizedBox(width: 6),
-              Expanded(child: Text(
-                'Each event type has its own category list. Changes here appear when adding expenses for that event.',
-                style: TextStyle(fontSize: 11, color: Colors.grey.shade400, height: 1.4),
-              )),
-            ]),
-          ),
-          ...categories.map((cat) => _ExpCategoryGroup(category: cat)),
-          const SizedBox(height: 8),
-        ],
-      ]),
+            if (_expanded) ...[
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+                child: Row(children: [
+                  Icon(Icons.info_outline, size: 13, color: Colors.grey.shade400),
+                  const SizedBox(width: 6),
+                  Expanded(child: Text(
+                    'Select which events track expenses. Each enabled event type has its own '
+                    'category list — changes appear when adding expenses for that event.',
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade400, height: 1.4),
+                  )),
+                ]),
+              ),
+              ...categories.map((cat) => _ExpCategoryGroup(
+                    category: cat,
+                    enabledIds: enabledIds,
+                    onToggle: toggleId,
+                  )),
+              const SizedBox(height: 8),
+            ],
+          ]),
+        );
+      },
     );
   }
 }
@@ -791,7 +1152,9 @@ class _ExpenseCategoriesSectionState extends State<_ExpenseCategoriesSection> {
 
 class _ExpCategoryGroup extends StatefulWidget {
   final EventCategory category;
-  const _ExpCategoryGroup({required this.category});
+  final List<String> enabledIds;
+  final void Function(String, bool) onToggle;
+  const _ExpCategoryGroup({required this.category, required this.enabledIds, required this.onToggle});
   @override
   State<_ExpCategoryGroup> createState() => _ExpCategoryGroupState();
 }
@@ -802,6 +1165,7 @@ class _ExpCategoryGroupState extends State<_ExpCategoryGroup> {
   @override
   Widget build(BuildContext context) {
     final types = kAllEventTypes.where((t) => t.category == widget.category).toList();
+    final selectedCount = types.where((t) => widget.enabledIds.contains(t.id)).length;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       InkWell(
         onTap: () => setState(() => _expanded = !_expanded),
@@ -812,13 +1176,29 @@ class _ExpCategoryGroupState extends State<_ExpCategoryGroup> {
             const SizedBox(width: 10),
             Expanded(child: Text(widget.category.label,
                 style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13))),
+            if (selectedCount > 0)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.deepPurple.shade50,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text('$selectedCount/${types.length}',
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600,
+                        color: Colors.deepPurple.shade600)),
+              ),
+            const SizedBox(width: 4),
             Icon(_expanded ? Icons.expand_less : Icons.expand_more,
                 size: 18, color: Colors.grey.shade400),
           ]),
         ),
       ),
       if (_expanded) ...[
-        ...types.map((type) => _ExpTypeEditor(eventType: type)),
+        ...types.map((type) => _ExpTypeEditor(
+              eventType: type,
+              enabled: widget.enabledIds.contains(type.id),
+              onToggle: (on) => widget.onToggle(type.id, on),
+            )),
       ],
       const Divider(height: 1, indent: 16, endIndent: 16),
     ]);
@@ -829,18 +1209,20 @@ class _ExpCategoryGroupState extends State<_ExpCategoryGroup> {
 
 class _ExpTypeEditor extends StatefulWidget {
   final EventTypeData eventType;
-  const _ExpTypeEditor({required this.eventType});
+  final bool enabled;
+  final void Function(bool) onToggle;
+  const _ExpTypeEditor({required this.eventType, required this.enabled, required this.onToggle});
   @override
   State<_ExpTypeEditor> createState() => _ExpTypeEditorState();
 }
 
 class _ExpTypeEditorState extends State<_ExpTypeEditor> {
-  bool _expanded = false;
+  bool _configExpanded = false;
   bool _seeding = false;
 
   DocumentReference get _ref => eventTypeCategoriesRef(widget.eventType.id);
 
-  Future<List<Map<String, dynamic>>> _seed() async {
+  Future<void> _seed() async {
     setState(() => _seeding = true);
     final snap = await _ref.get();
     final data = snap.data() as Map<String, dynamic>? ?? {};
@@ -850,7 +1232,6 @@ class _ExpTypeEditorState extends State<_ExpTypeEditor> {
       await _ref.set({'expenseCategories': defaults});
     }
     if (mounted) setState(() => _seeding = false);
-    return [];
   }
 
   Future<void> _write(List<Map<String, dynamic>> cats) =>
@@ -941,16 +1322,56 @@ class _ExpTypeEditorState extends State<_ExpTypeEditor> {
     await _write(current.map((c) => c['name'] == cat['name'] ? {...c, 'subCategories': subs} : c).toList());
   }
 
+  // Adds back any missing built-in default categories/sub-categories without
+  // touching custom ones the admin already added.
   Future<void> _resetDefaults(List<Map<String, dynamic>> current) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Reset to Defaults?'),
-        content: const Text('This will replace current categories with the built-in defaults for this event type.'),
+        title: const Text('Restore Defaults?'),
+        content: const Text('This adds back any missing default categories and sub-categories. Your custom categories are kept.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           ElevatedButton(onPressed: () => Navigator.pop(ctx, true),
               style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+              child: const Text('Restore', style: TextStyle(color: Colors.white))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final defaults = widget.eventType.expenseCategories
+        .map((e) => Map<String, dynamic>.from(e)).toList();
+    final merged = List<Map<String, dynamic>>.from(current.map((c) => Map<String, dynamic>.from(c)));
+    for (final def in defaults) {
+      final defName = def['name'] as String;
+      final idx = merged.indexWhere((c) => c['name'] == defName);
+      if (idx == -1) {
+        merged.add(Map<String, dynamic>.from(def));
+      } else {
+        final existingSubs = List<String>.from(merged[idx]['subCategories'] as List? ?? []);
+        final defSubs = List<String>.from(def['subCategories'] as List? ?? []);
+        final mergedSubs = List<String>.from(existingSubs);
+        for (final s in defSubs) {
+          if (!mergedSubs.contains(s)) mergedSubs.add(s);
+        }
+        merged[idx] = {...merged[idx], 'subCategories': mergedSubs};
+      }
+    }
+    await _write(merged);
+  }
+
+  // Removes ALL custom categories/sub-categories, keeping only the built-in
+  // defaults for this event type. Destructive — used to fully start over.
+  Future<void> _resetToFactoryDefaults(List<Map<String, dynamic>> current) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reset to Factory Defaults?'),
+        content: const Text('This removes ALL custom categories and sub-categories, keeping only the built-in defaults for this event type. This cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
               child: const Text('Reset', style: TextStyle(color: Colors.white))),
         ],
       ),
@@ -1000,142 +1421,179 @@ class _ExpTypeEditorState extends State<_ExpTypeEditor> {
         final notSeeded = rawCats == null;
 
         // Auto-seed on first open
-        if (notSeeded && _expanded && !_seeding) {
+        if (widget.enabled && notSeeded && _configExpanded && !_seeding) {
           WidgetsBinding.instance.addPostFrameCallback((_) => _seed());
         }
 
         return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // Event type header
-          InkWell(
-            onTap: () => setState(() => _expanded = !_expanded),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(32, 6, 12, 6),
-              child: Row(children: [
-                Text(widget.eventType.emoji, style: const TextStyle(fontSize: 14)),
-                const SizedBox(width: 8),
-                Expanded(child: Text(widget.eventType.name,
-                    style: TextStyle(fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.grey.shade700))),
-                Text(
-                  '${notSeeded ? widget.eventType.expenseCategories.length : cats.length} categories',
-                  style: TextStyle(fontSize: 10, color: Colors.grey.shade400),
+          // Event type header: checkbox + name + config expand (if enabled)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(32, 6, 12, 6),
+            child: Row(children: [
+              Text(widget.eventType.emoji, style: const TextStyle(fontSize: 14)),
+              const SizedBox(width: 8),
+              Expanded(child: Text(widget.eventType.name,
+                  style: TextStyle(fontSize: 13,
+                      fontWeight: widget.enabled ? FontWeight.w600 : FontWeight.normal,
+                      color: widget.enabled ? Colors.grey.shade900 : Colors.grey.shade700))),
+              if (widget.enabled)
+                GestureDetector(
+                  onTap: () => setState(() => _configExpanded = !_configExpanded),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Text('Configure',
+                          style: TextStyle(fontSize: 10, color: Colors.deepPurple.shade400,
+                              fontWeight: FontWeight.w600)),
+                      Icon(_configExpanded ? Icons.expand_less : Icons.expand_more,
+                          size: 14, color: Colors.deepPurple.shade400),
+                    ]),
+                  ),
                 ),
-                const SizedBox(width: 4),
-                Icon(_expanded ? Icons.expand_less : Icons.expand_more,
-                    size: 16, color: Colors.grey.shade400),
-              ]),
-            ),
+              Checkbox(
+                value: widget.enabled,
+                activeColor: Colors.deepPurple,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                onChanged: (v) {
+                  widget.onToggle(v ?? false);
+                  if (!(v ?? false)) setState(() => _configExpanded = false);
+                },
+              ),
+            ]),
           ),
 
-          if (_expanded) ...[
+          if (widget.enabled && _configExpanded) ...[
             if (_seeding)
               const Padding(
                 padding: EdgeInsets.fromLTRB(32, 8, 16, 8),
                 child: Center(child: SizedBox(width: 20, height: 20,
                     child: CircularProgressIndicator(strokeWidth: 2))),
               )
-            else ...[
-              // Category list
-              ...cats.map((cat) {
-                final subs = List<String>.from(cat['subCategories'] as List? ?? []);
-                return Padding(
-                  padding: const EdgeInsets.fromLTRB(32, 0, 12, 0),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Row(children: [
-                      Text(cat['icon'] as String? ?? '📦',
-                          style: const TextStyle(fontSize: 14)),
-                      const SizedBox(width: 6),
-                      Expanded(child: Text(cat['name'] as String? ?? '',
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600))),
-                      IconButton(
-                        icon: Icon(Icons.delete_outline, size: 16, color: Colors.red.shade300),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        onPressed: () => _deleteCategory(cats, cat['name'] as String),
-                      ),
-                    ]),
-                    if (subs.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 20, bottom: 4),
-                        child: Wrap(
-                          spacing: 4, runSpacing: 4,
-                          children: subs.map((s) => GestureDetector(
-                            onTap: () => _deleteSub(cats, cat, s),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.grey.shade100,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                Text(s, style: TextStyle(fontSize: 10, color: Colors.grey.shade700)),
-                                const SizedBox(width: 3),
-                                Icon(Icons.close, size: 10, color: Colors.grey.shade400),
-                              ]),
+            else
+              Container(
+                margin: const EdgeInsets.fromLTRB(20, 0, 16, 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.deepPurple.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.deepPurple.shade100),
+                ),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  ...cats.map((cat) {
+                    final subs = List<String>.from(cat['subCategories'] as List? ?? []);
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Row(children: [
+                          Text(cat['icon'] as String? ?? '📦',
+                              style: const TextStyle(fontSize: 14)),
+                          const SizedBox(width: 6),
+                          Expanded(child: Text(cat['name'] as String? ?? '',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600))),
+                          IconButton(
+                            icon: Icon(Icons.delete_outline, size: 16, color: Colors.red.shade300),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            onPressed: () => _deleteCategory(cats, cat['name'] as String),
+                          ),
+                        ]),
+                        if (subs.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 20, bottom: 4),
+                            child: Wrap(
+                              spacing: 4, runSpacing: 4,
+                              children: subs.map((s) => GestureDetector(
+                                onTap: () => _deleteSub(cats, cat, s),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                    Text(s, style: TextStyle(fontSize: 10, color: Colors.grey.shade700)),
+                                    const SizedBox(width: 3),
+                                    Icon(Icons.close, size: 10, color: Colors.grey.shade400),
+                                  ]),
+                                ),
+                              )).toList(),
                             ),
-                          )).toList(),
+                          ),
+                        GestureDetector(
+                          onTap: () => _addSub(cats, cat),
+                          child: Padding(
+                            padding: const EdgeInsets.only(left: 20),
+                            child: Row(mainAxisSize: MainAxisSize.min, children: [
+                              Icon(Icons.add, size: 12, color: Colors.deepPurple.shade300),
+                              const SizedBox(width: 3),
+                              Text('Add sub-category',
+                                  style: TextStyle(fontSize: 10, color: Colors.deepPurple.shade300)),
+                            ]),
+                          ),
                         ),
-                      ),
+                      ]),
+                    );
+                  }),
+                  const SizedBox(height: 4),
+                  Wrap(spacing: 8, runSpacing: 8, children: [
                     GestureDetector(
-                      onTap: () => _addSub(cats, cat),
-                      child: Padding(
-                        padding: const EdgeInsets.only(left: 20, bottom: 6),
+                      onTap: () => _addCategory(cats),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                         child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          Icon(Icons.add, size: 12, color: Colors.deepPurple.shade300),
-                          const SizedBox(width: 3),
-                          Text('Add sub-category',
-                              style: TextStyle(fontSize: 10, color: Colors.deepPurple.shade300)),
+                          Icon(Icons.add, size: 13, color: Colors.deepPurple.shade600),
+                          const SizedBox(width: 4),
+                          Text('Add category',
+                              style: TextStyle(fontSize: 11, color: Colors.deepPurple.shade600,
+                                  fontWeight: FontWeight.w600)),
+                        ]),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => _resetDefaults(cats),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(Icons.refresh, size: 13, color: Colors.orange.shade700),
+                          const SizedBox(width: 4),
+                          Text('Reset defaults',
+                              style: TextStyle(fontSize: 11, color: Colors.orange.shade700,
+                                  fontWeight: FontWeight.w600)),
+                        ]),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => _resetToFactoryDefaults(cats),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(Icons.restart_alt, size: 13, color: Colors.red.shade700),
+                          const SizedBox(width: 4),
+                          Text('Factory Reset',
+                              style: TextStyle(fontSize: 11, color: Colors.red.shade700,
+                                  fontWeight: FontWeight.w600)),
                         ]),
                       ),
                     ),
                   ]),
-                );
-              }),
-
-              // Bottom actions
-              Padding(
-                padding: const EdgeInsets.fromLTRB(32, 4, 12, 8),
-                child: Row(children: [
-                  GestureDetector(
-                    onTap: () => _addCategory(cats),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: Colors.deepPurple.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(Icons.add, size: 13, color: Colors.deepPurple.shade600),
-                        const SizedBox(width: 4),
-                        Text('Add category',
-                            style: TextStyle(fontSize: 11, color: Colors.deepPurple.shade600,
-                                fontWeight: FontWeight.w600)),
-                      ]),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () => _resetDefaults(cats),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: Colors.orange.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(Icons.refresh, size: 13, color: Colors.orange.shade700),
-                        const SizedBox(width: 4),
-                        Text('Reset defaults',
-                            style: TextStyle(fontSize: 11, color: Colors.orange.shade700,
-                                fontWeight: FontWeight.w600)),
-                      ]),
-                    ),
-                  ),
                 ]),
               ),
-            ],
           ],
+          const Divider(height: 1, indent: 32, endIndent: 16),
         ]);
       },
     );
@@ -1143,6 +1601,8 @@ class _ExpTypeEditorState extends State<_ExpTypeEditor> {
 }
 
 // ── Volunteer Roles Section ───────────────────────────────────────────────────
+// /appSettings/volunteerRoles → { enabledTypeIds: [...] }
+// /eventTypeConfig/{typeId}   → { volunteerRoles: [...] }
 
 class _VolunteerRolesSection extends StatefulWidget {
   const _VolunteerRolesSection();
@@ -1152,59 +1612,92 @@ class _VolunteerRolesSection extends StatefulWidget {
 
 class _VolunteerRolesSectionState extends State<_VolunteerRolesSection> {
   bool _expanded = false;
+
+  static final _ref = FirebaseFirestore.instance
+      .collection('appSettings')
+      .doc('volunteerRoles');
+
   @override
   Widget build(BuildContext context) {
-    final categories = EventCategory.values;
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: Colors.grey.shade200)),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        InkWell(
-          onTap: () => setState(() => _expanded = !_expanded),
-          borderRadius: BorderRadius.circular(12),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
-            child: Row(children: [
-              Container(
-                width: 32, height: 32,
-                decoration: BoxDecoration(
-                  color: Colors.teal.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(Icons.group_outlined, size: 18, color: Colors.teal.shade600),
+    return StreamBuilder<DocumentSnapshot>(
+      stream: _ref.snapshots(),
+      builder: (context, snap) {
+        final d = snap.data?.data() as Map<String, dynamic>? ?? {};
+        final enabledIds = List<String>.from(d['enabledTypeIds'] as List? ?? []);
+        final totalSelected = enabledIds.length;
+
+        void toggleId(String id, bool on) {
+          final updated = List<String>.from(enabledIds);
+          on ? updated.add(id) : updated.remove(id);
+          _ref.set({'enabledTypeIds': updated});
+        }
+
+        final categories = EventCategory.values;
+
+        return Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: Colors.grey.shade200)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            InkWell(
+              onTap: () => setState(() => _expanded = !_expanded),
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+                child: Row(children: [
+                  Container(
+                    width: 32, height: 32,
+                    decoration: BoxDecoration(
+                      color: Colors.teal.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(Icons.group_outlined, size: 18, color: Colors.teal.shade600),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Text('Volunteer Roles',
+                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                    Text(
+                      totalSelected == 0
+                          ? 'Not enabled for any event'
+                          : '$totalSelected event type${totalSelected == 1 ? '' : 's'} enabled',
+                      style: TextStyle(fontSize: 11,
+                          color: totalSelected > 0 ? Colors.teal.shade600 : Colors.grey.shade500),
+                    ),
+                  ])),
+                  Icon(_expanded ? Icons.expand_less : Icons.expand_more,
+                      color: Colors.grey.shade400),
+                ]),
               ),
-              const SizedBox(width: 12),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('Volunteer Roles',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-                Text('Default roles per event type',
-                    style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
-              ])),
-              Icon(_expanded ? Icons.expand_less : Icons.expand_more,
-                  color: Colors.grey.shade400),
-            ]),
-          ),
-        ),
-        if (_expanded) ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Text(
-              'Roles here are the defaults when volunteers sign up for each event type.',
-              style: TextStyle(fontSize: 11, color: Colors.grey.shade400, height: 1.4),
             ),
-          ),
-          ...categories.map((cat) => _VolRoleCatGroup(category: cat)),
-          const SizedBox(height: 8),
-        ],
-      ]),
+            if (_expanded) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Text(
+                  'Select which events allow volunteer sign-ups. Roles are the defaults offered '
+                  'when volunteers sign up for each enabled event type.',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade400, height: 1.4),
+                ),
+              ),
+              ...categories.map((cat) => _VolRoleCatGroup(
+                    category: cat,
+                    enabledIds: enabledIds,
+                    onToggle: toggleId,
+                  )),
+              const SizedBox(height: 8),
+            ],
+          ]),
+        );
+      },
     );
   }
 }
 
 class _VolRoleCatGroup extends StatefulWidget {
   final EventCategory category;
-  const _VolRoleCatGroup({required this.category});
+  final List<String> enabledIds;
+  final void Function(String, bool) onToggle;
+  const _VolRoleCatGroup({required this.category, required this.enabledIds, required this.onToggle});
   @override
   State<_VolRoleCatGroup> createState() => _VolRoleCatGroupState();
 }
@@ -1214,7 +1707,9 @@ class _VolRoleCatGroupState extends State<_VolRoleCatGroup> {
   @override
   Widget build(BuildContext context) {
     final types = kAllEventTypes.where((t) => t.category == widget.category).toList();
-    final label = widget.category.name[0].toUpperCase() + widget.category.name.substring(1);
+    if (types.isEmpty) return const SizedBox.shrink();
+    final selectedCount = types.where((t) => widget.enabledIds.contains(t.id)).length;
+    final label = widget.category.label;
     return Column(children: [
       InkWell(
         onTap: () => setState(() => _expanded = !_expanded),
@@ -1225,13 +1720,29 @@ class _VolRoleCatGroupState extends State<_VolRoleCatGroup> {
             const SizedBox(width: 8),
             Expanded(child: Text(label,
                 style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
+            if (selectedCount > 0)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.teal.shade50,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text('$selectedCount/${types.length}',
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600,
+                        color: Colors.teal.shade700)),
+              ),
+            const SizedBox(width: 4),
             Icon(_expanded ? Icons.expand_less : Icons.expand_more,
                 size: 18, color: Colors.grey.shade400),
           ]),
         ),
       ),
       if (_expanded) ...[
-        ...types.map((type) => _VolRoleTypeEditor(eventType: type)),
+        ...types.map((type) => _VolRoleTypeEditor(
+              eventType: type,
+              enabled: widget.enabledIds.contains(type.id),
+              onToggle: (on) => widget.onToggle(type.id, on),
+            )),
       ],
       const Divider(height: 1, indent: 16, endIndent: 16),
     ]);
@@ -1240,31 +1751,18 @@ class _VolRoleCatGroupState extends State<_VolRoleCatGroup> {
 
 class _VolRoleTypeEditor extends StatefulWidget {
   final EventTypeData eventType;
-  const _VolRoleTypeEditor({required this.eventType});
+  final bool enabled;
+  final void Function(bool) onToggle;
+  const _VolRoleTypeEditor({required this.eventType, required this.enabled, required this.onToggle});
   @override
   State<_VolRoleTypeEditor> createState() => _VolRoleTypeEditorState();
 }
 
-const List<String> _kDefaultVolRoles = [
-  'Coordinator', 'Decoration', 'Food & Catering', 'Security',
-  'Music & Sound', 'Collection', 'Photography', 'Transport', 'Other',
-];
-
 class _VolRoleTypeEditorState extends State<_VolRoleTypeEditor> {
-  bool _expanded = false;
+  bool _configExpanded = false;
 
   DocumentReference get _ref => FirebaseFirestore.instance
       .collection('eventTypeConfig').doc(widget.eventType.id);
-
-  Future<List<String>> _getOrSeedRoles() async {
-    final snap = await _ref.get();
-    final d = snap.data() as Map<String, dynamic>? ?? {};
-    if (d['volunteerRoles'] != null) {
-      return List<String>.from(d['volunteerRoles'] as List);
-    }
-    await _ref.set({'volunteerRoles': _kDefaultVolRoles}, SetOptions(merge: true));
-    return List<String>.from(_kDefaultVolRoles);
-  }
 
   Future<void> _addRole(List<String> current) async {
     final ctrl = TextEditingController();
@@ -1362,59 +1860,73 @@ class _VolRoleTypeEditorState extends State<_VolRoleTypeEditor> {
             ? List<String>.from(rawRoles as List)
             : <String>[];
         final notSeeded = rawRoles == null;
+        final displayRoles = notSeeded ? _kDefaultVolRoles : roles;
 
-        if (notSeeded && _expanded) {
-          WidgetsBinding.instance.addPostFrameCallback((_) => _getOrSeedRoles());
+        if (widget.enabled && notSeeded && _configExpanded) {
+          WidgetsBinding.instance.addPostFrameCallback((_) =>
+              _ref.set({'volunteerRoles': _kDefaultVolRoles}, SetOptions(merge: true)));
         }
 
         return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          InkWell(
-            onTap: () => setState(() => _expanded = !_expanded),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(32, 6, 12, 6),
-              child: Row(children: [
-                Text(widget.eventType.emoji, style: const TextStyle(fontSize: 14)),
-                const SizedBox(width: 8),
-                Expanded(child: Text(widget.eventType.name,
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500,
-                        color: Colors.grey.shade700))),
-                Text(
-                  '${notSeeded ? _kDefaultVolRoles.length : roles.length} roles',
-                  style: TextStyle(fontSize: 10, color: Colors.grey.shade400),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(32, 6, 12, 6),
+            child: Row(children: [
+              Text(widget.eventType.emoji, style: const TextStyle(fontSize: 14)),
+              const SizedBox(width: 8),
+              Expanded(child: Text(widget.eventType.name,
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500,
+                      color: Colors.grey.shade700))),
+              if (widget.enabled)
+                GestureDetector(
+                  onTap: () => setState(() => _configExpanded = !_configExpanded),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Text('Configure',
+                          style: TextStyle(fontSize: 10, color: Colors.teal.shade600,
+                              fontWeight: FontWeight.w600)),
+                      Icon(_configExpanded ? Icons.expand_less : Icons.expand_more,
+                          size: 14, color: Colors.teal.shade600),
+                    ]),
+                  ),
                 ),
-                const SizedBox(width: 4),
-                Icon(_expanded ? Icons.expand_less : Icons.expand_more,
-                    size: 16, color: Colors.grey.shade400),
-              ]),
-            ),
+              Checkbox(
+                value: widget.enabled,
+                activeColor: Colors.teal,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                onChanged: (v) {
+                  widget.onToggle(v ?? false);
+                  if (!(v ?? false)) setState(() => _configExpanded = false);
+                },
+              ),
+            ]),
           ),
-          if (_expanded) ...[
-            if (snap.connectionState == ConnectionState.waiting && notSeeded)
-              const Padding(
-                padding: EdgeInsets.fromLTRB(32, 8, 16, 8),
-                child: Center(child: SizedBox(width: 20, height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2))),
-              )
-            else ...[
-              // Role chips (tap to rename, long-press to delete)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(32, 4, 12, 4),
-                child: Wrap(
+          if (widget.enabled && _configExpanded) ...[
+            Container(
+              margin: const EdgeInsets.fromLTRB(20, 0, 16, 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.teal.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.teal.shade100),
+              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Wrap(
                   spacing: 6, runSpacing: 6,
-                  children: (notSeeded ? _kDefaultVolRoles : roles).map((role) {
+                  children: displayRoles.map((role) {
                     return GestureDetector(
-                      onTap: () => _renameRole(notSeeded ? List<String>.from(_kDefaultVolRoles) : roles, role),
-                      onLongPress: () => _deleteRole(notSeeded ? List<String>.from(_kDefaultVolRoles) : roles, role),
+                      onTap: () => _renameRole(List<String>.from(displayRoles), role),
+                      onLongPress: () => _deleteRole(List<String>.from(displayRoles), role),
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
-                          color: Colors.teal.shade50,
+                          color: Colors.white,
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(color: Colors.teal.shade200),
                         ),
                         child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          Icon(Icons.drag_indicator, size: 12, color: Colors.teal.shade300),
-                          const SizedBox(width: 4),
                           Text(role, style: TextStyle(fontSize: 11,
                               color: Colors.teal.shade800, fontWeight: FontWeight.w500)),
                           const SizedBox(width: 4),
@@ -1424,16 +1936,14 @@ class _VolRoleTypeEditorState extends State<_VolRoleTypeEditor> {
                     );
                   }).toList(),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(32, 4, 12, 8),
-                child: Row(children: [
+                const SizedBox(height: 8),
+                Row(children: [
                   GestureDetector(
-                    onTap: () => _addRole(notSeeded ? List<String>.from(_kDefaultVolRoles) : roles),
+                    onTap: () => _addRole(List<String>.from(displayRoles)),
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
-                        color: Colors.teal.shade50,
+                        color: Colors.white,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -1447,7 +1957,7 @@ class _VolRoleTypeEditorState extends State<_VolRoleTypeEditor> {
                   ),
                   const SizedBox(width: 8),
                   GestureDetector(
-                    onTap: () => _resetDefaults(notSeeded ? List<String>.from(_kDefaultVolRoles) : roles),
+                    onTap: () => _resetDefaults(List<String>.from(displayRoles)),
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
@@ -1464,13 +1974,11 @@ class _VolRoleTypeEditorState extends State<_VolRoleTypeEditor> {
                     ),
                   ),
                 ]),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(32, 0, 12, 8),
-                child: Text('Tap to rename · Long press to delete',
+                const SizedBox(height: 4),
+                Text('Tap to rename · Long press to delete',
                     style: TextStyle(fontSize: 10, color: Colors.grey.shade400)),
-              ),
-            ],
+              ]),
+            ),
           ],
           const Divider(height: 1, indent: 32, endIndent: 16),
         ]);

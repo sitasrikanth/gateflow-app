@@ -6,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../auth/login_screen.dart';
 import '../admin/admin_home_screen.dart';
-import '../resident/resident_home_screen.dart';
+import '../resident/resident_events_screen.dart';
 import 'event_type_settings_screen.dart';
 import 'add_contribution_screen.dart';
 import 'add_expense_screen.dart';
@@ -15,6 +15,7 @@ import 'create_event_screen.dart';
 import '../../utils/event_pdf_report.dart';
 import 'import_contributions_screen.dart';
 import 'event_types.dart';
+import 'self_report_sheet.dart';
 
 class EventDashboardScreen extends StatefulWidget {
   final String eventId;
@@ -138,6 +139,62 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
     }
   }
 
+  Future<void> _deleteSubcollection(String name) async {
+    final ref = FirebaseFirestore.instance
+        .collection('events').doc(widget.eventId).collection(name);
+    final snap = await ref.get();
+    if (snap.docs.isEmpty) return;
+    final batch = FirebaseFirestore.instance.batch();
+    for (final doc in snap.docs) {
+      batch.delete(doc.reference);
+    }
+    await batch.commit();
+  }
+
+  Future<void> _deleteEvent() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Event?'),
+        content: const Text(
+            'This permanently deletes this event along with all its contributions, '
+            'expenses, volunteer signups, and pooja registrations. This cannot be undone.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete Event',
+                style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      for (final sub in ['contributions', 'expenses', 'poojaRegistrations', 'volunteers']) {
+        await _deleteSubcollection(sub);
+      }
+      await FirebaseFirestore.instance
+          .collection('events')
+          .doc(widget.eventId)
+          .delete();
+    } finally {
+      if (mounted) Navigator.pop(context); // dismiss loading dialog
+    }
+
+    if (mounted) Navigator.pop(context); // back to event list
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<DocumentSnapshot>(
@@ -225,20 +282,40 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                             MaterialPageRoute(
                               builder: (_) => widget.isAdmin
                                   ? const AdminHomeScreen()
-                                  : const ResidentHomeScreen(),
+                                  : const ResidentEventsScreen(),
                             ),
                             (route) => false,
                           ),
                         ),
                         Expanded(
-                          child: Text(
-                              (data['name'] as String?)?.isNotEmpty == true
-                                  ? data['name']
-                                  : widget.eventName,
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold)),
+                          child: Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                    (data['name'] as String?)?.isNotEmpty == true
+                                        ? data['name']
+                                        : widget.eventName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold)),
+                              ),
+                              if (!widget.isAdmin) ...[
+                                const SizedBox(width: 8),
+                                _ResidentContributeButton(
+                                  eventId: widget.eventId,
+                                  eventName: data['name'] ?? widget.eventName,
+                                  eventTypeId: eventType?.id ?? '',
+                                  status: status,
+                                  startDate: data['startDate'] as String? ?? '',
+                                  flatNumber: _residentFlat,
+                                  residentName: _residentName,
+                                ),
+                              ],
+                            ],
+                          ),
                         ),
                         // Logout always visible
                         IconButton(
@@ -258,7 +335,16 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                           },
                         ),
                         if (widget.isAdmin)
-                          PopupMenuButton<String>(
+                          StreamBuilder<DocumentSnapshot>(
+                            stream: FirebaseFirestore.instance
+                                .collection('appSettings')
+                                .doc('deleteEvents')
+                                .snapshots(),
+                            builder: (context, delSnap) {
+                              final delData = delSnap.data?.data() as Map<String, dynamic>? ?? {};
+                              final deleteEnabledIds = List<String>.from(delData['enabledTypeIds'] as List? ?? []);
+                              final deleteEnabled = deleteEnabledIds.contains(eventType?.id ?? '');
+                              return PopupMenuButton<String>(
                             icon: const Icon(Icons.settings_outlined,
                                 color: Colors.white),
                             tooltip: 'Event Tools',
@@ -288,6 +374,7 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                               }
                               if (val == 'recalculate') _recalculateTotals(context);
                               if (val == 'close') _closeEvent();
+                              if (val == 'delete') _deleteEvent();
                               if (val == 'edit') {
                                 Navigator.push(
                                   context,
@@ -392,7 +479,21 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                                       Text('Close Event',
                                           style: TextStyle(color: Colors.red))
                                     ])),
+                              if (deleteEnabled) ...[
+                                const PopupMenuDivider(),
+                                const PopupMenuItem(
+                                    value: 'delete',
+                                    child: Row(children: [
+                                      Icon(Icons.delete_forever,
+                                          color: Colors.red),
+                                      SizedBox(width: 8),
+                                      Text('Delete Event',
+                                          style: TextStyle(color: Colors.red))
+                                    ])),
+                              ],
                             ],
+                              );
+                            },
                           ),
                       ],
                     ),
@@ -571,48 +672,59 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
             ],
           ),
 
-          // Admin FABs — tab-aware
+          // Admin FABs — tab-aware. Resident payment entry lives in the header banner instead.
           floatingActionButton: widget.isAdmin && status == 'active'
-              ? AnimatedBuilder(
-                  animation: _tabController,
-                  builder: (context, _) {
-                    final tab = _tabController.index;
-                    // Admin tab order: 0=Overview, 1=Event, 2=Contributions, 3=Expenses, 4=Follow-up, 5=Volunteers, 6=Activity
-                    if (tab == 2) {
-                      return FloatingActionButton.extended(
-                        heroTag: 'contribution',
-                        onPressed: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => AddContributionScreen(
-                                eventId: widget.eventId,
-                                eventTypeId: data['eventTypeId'] as String? ?? ''),
-                          ),
-                        ),
-                        backgroundColor: Colors.green,
-                        icon: const Icon(Icons.add, color: Colors.white),
-                        label: const Text('Add Contribution',
-                            style: TextStyle(color: Colors.white)),
-                      );
-                    }
-                    if (tab == 3) {
-                      return FloatingActionButton.extended(
-                        heroTag: 'expense',
-                        onPressed: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => AddExpenseScreen(
-                                eventId: widget.eventId,
-                                eventTypeId: data['eventTypeId'] as String? ?? ''),
-                          ),
-                        ),
-                        backgroundColor: Colors.red.shade400,
-                        icon: const Icon(Icons.remove, color: Colors.white),
-                        label: const Text('Add Expense',
-                            style: TextStyle(color: Colors.white)),
-                      );
-                    }
-                    return const SizedBox.shrink();
+              ? StreamBuilder<DocumentSnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('appSettings')
+                      .doc('payments')
+                      .snapshots(),
+                  builder: (context, paySnap) {
+                    final payData = paySnap.data?.data() as Map<String, dynamic>? ?? {};
+                    final enabledTypeIds = List<String>.from(payData['enabledTypeIds'] as List? ?? []);
+                    final paymentsEnabled = enabledTypeIds.contains(eventType?.id ?? '');
+                    return AnimatedBuilder(
+                      animation: _tabController,
+                      builder: (context, _) {
+                        final tab = _tabController.index;
+                        // Admin tab order: 0=Overview, 1=Event, 2=Contributions, 3=Expenses, 4=Follow-up, 5=Volunteers, 6=Activity
+                        if (tab == 2 && paymentsEnabled) {
+                          return FloatingActionButton.extended(
+                            heroTag: 'contribution',
+                            onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => AddContributionScreen(
+                                    eventId: widget.eventId,
+                                    eventTypeId: data['eventTypeId'] as String? ?? ''),
+                              ),
+                            ),
+                            backgroundColor: Colors.green,
+                            icon: const Icon(Icons.add, color: Colors.white),
+                            label: const Text('Add Contribution',
+                                style: TextStyle(color: Colors.white)),
+                          );
+                        }
+                        if (tab == 3) {
+                          return FloatingActionButton.extended(
+                            heroTag: 'expense',
+                            onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => AddExpenseScreen(
+                                    eventId: widget.eventId,
+                                    eventTypeId: data['eventTypeId'] as String? ?? ''),
+                              ),
+                            ),
+                            backgroundColor: Colors.red.shade400,
+                            icon: const Icon(Icons.remove, color: Colors.white),
+                            label: const Text('Add Expense',
+                                style: TextStyle(color: Colors.white)),
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      },
+                    );
                   },
                 )
               : null,
@@ -967,11 +1079,24 @@ class _OverviewTab extends StatelessWidget {
 
         const SizedBox(height: 16),
 
-        // ── Block stats (grouped by wing) — live stream ───────────
-        ...[
-          const SizedBox(height: 16),
-          _BlockStatsWidget(eventId: eventId),
-        ],
+        // ── Block stats (grouped by wing) — live stream, gated by settings ──
+        StreamBuilder<DocumentSnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('appSettings')
+              .doc('collectionStatusByBlock')
+              .snapshots(),
+          builder: (context, snap) {
+            final d = snap.data?.data() as Map<String, dynamic>? ?? {};
+            final enabledTypeIds = List<String>.from(d['enabledTypeIds'] as List? ?? []);
+            final resolvedType = eventTypeById(data['eventTypeId'] as String?) ??
+                eventTypeByName(data['name'] as String?);
+            if (!enabledTypeIds.contains(resolvedType?.id ?? '')) return const SizedBox.shrink();
+            return Column(children: [
+              const SizedBox(height: 16),
+              _BlockStatsWidget(eventId: eventId),
+            ]);
+          },
+        ),
 
         const SizedBox(height: 24),
       ],
@@ -1375,9 +1500,15 @@ class _EventTabState extends State<_EventTab> {
     final endStr = data['endDate'] as String? ?? '';
     final description = data['description'] as String? ?? '';
     final status = data['status'] ?? 'active';
-    final eventType = data['eventType'] as String? ?? '';
-    final eventTypeName = data['eventTypeName'] as String? ?? eventType;
-    final eventTypeEmoji = data['eventTypeEmoji'] as String? ?? '🎉';
+    // Resolve robustly (falls back to name-matching for legacy events with a
+    // missing/stale eventTypeId) rather than trusting the raw stored fields.
+    final resolvedType = eventTypeById(data['eventTypeId'] as String?) ??
+        eventTypeByName(data['name'] as String?);
+    final eventTypeEmoji = resolvedType?.emoji ??
+        (data['eventTypeEmoji'] as String? ?? '🎉');
+    final eventTypeLabel = resolvedType != null
+        ? '${resolvedType.category.label} → ${resolvedType.name}'
+        : (data['eventTypeName'] as String? ?? 'Event');
 
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
@@ -1444,7 +1575,7 @@ class _EventTabState extends State<_EventTab> {
                             color: Colors.deepPurple.shade50,
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child: Text('$eventTypeEmoji ${eventTypeName.isNotEmpty ? eventTypeName : 'Event'}',
+                          child: Text('$eventTypeEmoji $eventTypeLabel',
                               style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
                                   color: Colors.deepPurple.shade700)),
                         ),
@@ -1649,8 +1780,9 @@ class _EventTabState extends State<_EventTab> {
                 builder: (context, catSnap) {
                   final catData = catSnap.data?.data() as Map<String, dynamic>? ?? {};
                   final enabledIds = List<String>.from(catData['enabledTypeIds'] as List? ?? []);
-                  final eventTypeId = widget.data['eventTypeId'] as String? ?? '';
-                  if (!enabledIds.contains(eventTypeId)) return const SizedBox.shrink();
+                  final resolvedType = eventTypeById(widget.data['eventTypeId'] as String?) ??
+                      eventTypeByName(widget.data['name'] as String?);
+                  if (!enabledIds.contains(resolvedType?.id ?? '')) return const SizedBox.shrink();
                   final defaultMorning = (catData['morningCapacity'] as int?) ?? 2;
                   final defaultEvening = (catData['eveningCapacity'] as int?) ?? 2;
                   return Column(children: [
@@ -5747,6 +5879,108 @@ class _ExpensesTab extends StatelessWidget {
 }
 
 // ── Shared Widgets ────────────────────────────────────────────────────────────
+
+// ── Resident's small "Contribute" pill — sits beside the event name ────────────
+// Label/color change based on payment-enabled state, event lifecycle, and
+// whether the resident has already contributed to this event.
+
+class _ResidentContributeButton extends StatelessWidget {
+  final String eventId;
+  final String eventName;
+  final String eventTypeId;
+  final String status; // 'active' | 'closed'
+  final String startDate; // 'd/M/yyyy' or ''
+  final String flatNumber;
+  final String residentName;
+
+  const _ResidentContributeButton({
+    required this.eventId,
+    required this.eventName,
+    required this.eventTypeId,
+    required this.status,
+    required this.startDate,
+    required this.flatNumber,
+    required this.residentName,
+  });
+
+  DateTime? _parseDate(String s) {
+    final parts = s.split('/');
+    if (parts.length != 3) return null;
+    final d = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    final y = int.tryParse(parts[2]);
+    if (d == null || m == null || y == null) return null;
+    return DateTime(y, m, d);
+  }
+
+  void _openSheet(BuildContext context) => showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => SelfReportSheet(
+          eventId: eventId,
+          eventName: eventName,
+          flatNumber: flatNumber,
+          residentName: residentName,
+          onSubmitted: () {},
+        ),
+      );
+
+  Widget _pill(BuildContext context, String label, Color color, {VoidCallback? onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance.collection('appSettings').doc('payments').snapshots(),
+      builder: (context, paySnap) {
+        final payData = paySnap.data?.data() as Map<String, dynamic>? ?? {};
+        final enabledTypeIds = List<String>.from(payData['enabledTypeIds'] as List? ?? []);
+        if (!enabledTypeIds.contains(eventTypeId)) return const SizedBox.shrink();
+
+        if (status == 'closed') {
+          return _pill(context, 'Contributions Closed', Colors.grey.shade500);
+        }
+
+        final start = _parseDate(startDate);
+        if (start != null && DateTime.now().isBefore(start)) {
+          return _pill(context, 'Contributions open soon', Colors.amber.shade700);
+        }
+
+        return StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('events').doc(eventId)
+              .collection('contributions')
+              .where('flatNumber', isEqualTo: flatNumber)
+              .snapshots(),
+          builder: (context, contribSnap) {
+            final hasAny = (contribSnap.data?.docs ?? []).any(
+                (d) => (d.data() as Map<String, dynamic>)['status'] != 'deleted');
+            return hasAny
+                ? _pill(context, 'Contribute More', Colors.teal.shade600,
+                    onTap: () => _openSheet(context))
+                : _pill(context, 'Contribute Now', Colors.green.shade600,
+                    onTap: () => _openSheet(context));
+          },
+        );
+      },
+    );
+  }
+}
 
 class _HeaderStat extends StatelessWidget {
   final String label;

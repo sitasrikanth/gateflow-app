@@ -137,7 +137,7 @@ DA103,Priya Nair,1500,Bank Transfer,17/10/2025,Regular,TXN123456,Festival contri
   // ── File picking + parsing ────────────────────────────────────────────────
 
   Future<void> _pickAndParse() async {
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['csv', 'xlsx', 'xls'],
       withData: true,
