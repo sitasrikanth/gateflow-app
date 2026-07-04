@@ -1,5 +1,5 @@
 # GateFlow — 12-Week Progress Tracker
-> Last updated: 2026-07-04 (Session 7) | Tell Claude what you completed and this file gets updated automatically.
+> Last updated: 2026-07-04 (Session 8) | Tell Claude what you completed and this file gets updated automatically.
 
 ---
 
@@ -552,6 +552,7 @@ Phase 4 — Testing & Launch       ░░░░░░░░░░░░  Week 9�
 | 14 | `type 'int' is not a subtype of Map` crash in settings_screen — old `flatGridRows` stored as int | 🔴 P0 | ✅ Fixed | Week 7 | Week 7 |
 | 15 | Flat grid rows setting not propagating to contributions tab — shallow merge replaced whole map | 🟠 P1 | ✅ Fixed | Week 7 | Week 7 |
 | 16 | Tab bar truncating labels ("Overv, Contr...") on mobile | 🟡 P2 | ✅ Fixed | Week 7 | Week 7 |
+| 17 | Event cascade-delete missing `schedule` subcollection — orphaned Pooja slot bookings on event deletion | 🟠 P1 | ✅ Fixed | Session 8 | Session 8 |
 
 **Severity:** 🔴 P0 (blocker) | 🟠 P1 (critical) | 🟡 P2 (major) | 🟢 P3 (minor)
 
@@ -576,6 +577,52 @@ Feature set for events like Ganesh Chaturthi, Navratri, Independence Day. Audite
 **All 9 items shipped as of 2026-07-04.** Roadmap complete.
 
 **Status legend:** ✅ Built | 🟡 Partial (exists but needs polish) | 🔲 Planned
+
+---
+
+## SESSION 8 — EVENT MANAGEMENT ENHANCEMENTS (2026-07-04)
+
+Follow-on polish pass after the Contribution & Donations roadmap shipped, plus a new Task Management module.
+
+| # | Feature | Status | Notes |
+|---|---|---|---|
+| 1 | Delete rejected contributions from Activity tab | ✅ Built | Admin can permanently remove rejected entries instead of only restoring them. |
+| 2 | Status filter in Activity tab | ✅ Built | Filter chips for pending/approved/rejected/deleted alongside existing wing/block/date filters. |
+| 3 | Block tap → Contributions tab | ✅ Built | Tapping a block in Block Stats jumps to the Contributions tab pre-filtered to that block. |
+| 4 | Contribute Now vs Contribute More button colors | ✅ Built | Green vs blue for clearer visual distinction (previously green vs teal, too similar). |
+| 5 | Resident "My Contribution" stat + detail sheet | ✅ Built | New Overview stat chip showing the logged-in resident's own total, with a tap-through detail/edit/delete sheet. |
+| 6 | Rejection notification banner | ✅ Built | Prominent in-app red banner shown to a resident when their contribution is rejected (no backend push infra yet, so in-app only). |
+| 7 | Admin Special vs Regular contribution breakdown | ✅ Built | New Overview widget totals Regular vs Special separately and lists each special entry by flat. Excludes External Donations (own category). |
+| 8 | Reopen a closed event | ✅ Built | Event Tools menu shows "Reopen Event" when status is closed, "Close Event" when active. |
+| 9 | Cascade-delete fix — `schedule` subcollection | ✅ Fixed | Event deletion was missing the Pooja Schedule slot-booking subcollection, leaving orphaned data. Added to the cascade-delete list. |
+| 10 | Configurable Overview Stats chips | ✅ Built | New "Overview Stats" section in Event Settings — admin chooses which of Cash / Online / Collected / Spent / Expected / Balance / Anonymous / External chips show per event type. Defaults to all shown. |
+| 11 | Admin-always-visible Leaderboard | ✅ Built | Admin now always sees "Top Contributors" on the Overview tab regardless of the per-event-type Leaderboard setting, for oversight. Residents still gated by the setting. |
+| 12 | External Donations | ✅ Built | New "External Donation" contribution type for non-resident sources (broadband company, builders, store operators). No wing/block/flat — donor/organization name instead. Admin-only entry (reuses the existing admin-only Record Contribution screen). New admin-only "External Donations" viewer card + configurable "External" Overview chip beside Anonymous. |
+| 13 | My Events header reposition | ✅ Built | Resident's "My Events" header now shows the resident name/flat info line above the "My Events" title (previously below), both moved up for better spacing above the tab bar. |
+
+**Status legend:** ✅ Built | 🟡 Partial | 🔲 Planned
+
+---
+
+## TASK MANAGEMENT MODULE (2026-07-04)
+
+New admin-only "Tasks" tab per event, scoped to that event's approved volunteers (per-event, not a community-wide board — decided since volunteers are only registered per-event). Volunteers have no separate login (they're residents), so a lightweight "My Tasks" view was added inside the resident-facing Volunteers tab instead of a second tab.
+
+| # | Feature | Status | Notes |
+|---|---|---|---|
+| 1 | Create Tasks | ✅ Built | `TaskFormScreen` (`task_form_screen.dart`) — title, description, due date. |
+| 2 | Assign Owners | ✅ Built | Multi-select picker restricted to that event's `status: approved` volunteers only. |
+| 3 | Due Dates | ✅ Built | Date picker; overdue tasks (past due, not Done) flagged red in cards and detail view. |
+| 4 | Progress Tracking | ✅ Built | Admin birds-eye view: stat chips (Total/Pending/In Progress/Done) + overdue banner + status filter chips. |
+| 5 | Checklist | ✅ Built | Add/remove text items in the form; checkboxes toggled live by admin or assigned volunteer in the detail sheet. |
+| 6 | Dependencies | ✅ Built | Tasks can depend on other tasks in the same event; detail view shows each dependency's live title + status. No cycle-detection (simple community-app scope), just self-reference is excluded. |
+| 7 | Comments | ✅ Built | `tasks/{taskId}/comments` subcollection; both admin and assigned volunteers can post; shows author name + admin/resident badge. |
+| 8 | Attach Photos | ✅ Built | Camera or gallery via `image_picker`, uploaded to Firebase Storage at `tasks/{eventId}/{taskId}/...`, shown as a thumbnail strip with delete. |
+| 9 | Status (Pending/In Progress/Done) | ✅ Built | Editable by admin or the assigned volunteer from the shared detail sheet; drives the birds-eye stat counts. |
+
+**All 9 items shipped as of 2026-07-04.**
+
+**Status legend:** ✅ Built | 🟡 Partial | 🔲 Planned
 
 ---
 
@@ -607,6 +654,13 @@ Feature set for events like Ganesh Chaturthi, Navratri, Independence Day. Audite
 | 2026-06-28 | `kDefaultCategories` replaced with generic names (removed Annadam, Ganesh Idol) | Fallback defaults apply to any event type; event-type-specific defaults come from `event_types.dart` |
 | 2026-07-04 | Anonymous Donation moved up to #4 in Contribution & Donations roadmap (ahead of Contribution History/Receipt) | Deciding the anonymous-entry data shape early avoids reworking Leaderboard ranking and history display later |
 | 2026-07-04 | Sponsor Packages placed last in Contribution & Donations roadmap | Highest complexity (tiers, perks, admin config) and least essential for a resident-run festival fund vs. a corporate-sponsored event |
+| 2026-07-04 | Admin always sees the Leaderboard; residents remain gated by the per-event-type setting | Admin needs contribution rankings for oversight even on event types where the public leaderboard is intentionally turned off |
+| 2026-07-04 | External Donations reuse the existing `contributions` subcollection (empty wing/block/flat) instead of a new collection | Downstream aggregations (Leaderboard, Block Stats) already skip empty-flat entries gracefully; avoids a parallel data model for a small feature |
+| 2026-07-04 | External Donations counted into Collected/Cash-Online totals, same as Anonymous | Money still gets deposited into the event fund; it's a labeling/reporting distinction, not a separate ledger |
+| 2026-07-04 | Task Management scoped per-event, assignable only to that event's approved volunteers | Volunteers register per-event (no community-wide volunteer pool); a global task board would let tasks be assigned to people not actually signed up for that event |
+| 2026-07-04 | Resident "My Tasks" view embedded in the existing Volunteers tab instead of a new resident-facing tab | Volunteers only have a resident login (no separate account); admin explicitly asked for the Tasks tab itself to stay admin-only |
+| 2026-07-04 | Task checklist and dependencies stored as embedded arrays on the task doc; comments as a subcollection | Checklist/dependency lists are small and bounded (whole-array rewrite is cheap); comments grow unbounded over an event's lifetime and benefit from their own live stream, consistent with how contributions/expenses/volunteers are already modeled as subcollections |
+| 2026-07-04 | Overview Stats chips configurable per event type via `eventTypeConfig/{typeId}.overviewChips` | Different event types care about different numbers (e.g. a small pooja may not need a Sponsor/External chip); unset = all shown, so existing events aren't affected by default |
 
 ---
 

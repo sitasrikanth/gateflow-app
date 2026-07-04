@@ -1,6 +1,6 @@
 # GateFlow — Product & Architecture Overview
 ### "Your community, connected."
-**Version:** 1.3 | **Date:** June 2026 | **Stage:** Active Development (Week 7 of 12)
+**Version:** 1.4 | **Date:** 2026-07-04 | **Stage:** Active Development (Week 8 of 12)
 
 ---
 
@@ -237,7 +237,8 @@ Week 1–2   ✅ Foundation (Flutter + Firebase + GitHub)
 Week 3–4   ✅ Authentication + Visitor Approval (core loop)
 Week 5–6   ✅ Event Fund Manager (core + enhancements)
 Week 7     ✅ UX Polish — flat grid, configurable payment modes, admin tab bar
-Week 8     🔜 Follow-up reminders, push notifications, Firebase Storage
+Week 8     ✅ Event type settings, Contribution & Donations roadmap (anonymous,
+              leaderboard, sponsor packages, receipts, history), Task Management
 Week 9     🔜 Alpha — 1 real society
 Week 10    🔜 Beta — 3 societies
 Week 11    🔜 Play Store listing, landing page
@@ -246,7 +247,7 @@ Week 12    🔜 PUBLIC LAUNCH 🚀
 
 ---
 
-## 13. CURRENT STATUS (Week 7 of 12)
+## 13. CURRENT STATUS (Week 8 of 12)
 
 | Milestone | Status |
 |---|---|
@@ -277,10 +278,20 @@ Week 12    🔜 PUBLIC LAUNCH 🚀
 | — Collection status by block (live updates) | ✅ Done |
 | — PDF report generation | ✅ Done |
 | — Admin grocery-style tab bar | ✅ Done |
+| — Per-event-type settings (Pooja Schedule, Special Contribution, Expense Categories, Volunteer Roles) | ✅ Done |
+| — Anonymous donations (admin always sees identity; ANONYMOUS badge) | ✅ Done |
+| — Suggested contribution quick-amount chips | ✅ Done |
+| — Contribution history + per-contribution PDF receipt | ✅ Done |
+| — Pay Remaining Balance banner | ✅ Done |
+| — Leaderboard (configurable per type; always visible to admin) | ✅ Done |
+| — Sponsor Packages + public "Our Sponsors" wall | ✅ Done |
+| — External Donations (non-resident sources) | ✅ Done |
+| — Configurable Overview Stats chips per event type | ✅ Done |
+| — Task Management (assign, checklist, dependencies, comments, photos) | ✅ Done |
 | Expense categories screen (admin) | ✅ Done |
 | Firestore rules (open for quickCode auth) | ✅ Done |
-| Firebase Storage (Blaze plan upgrade) | 🔜 In progress |
-| **Next:** Follow-up reminders + push notifications | 🔜 Next session |
+| Firebase Storage (Blaze plan upgrade) | ✅ Done — used for receipts, expense/task photos |
+| **Next:** Alpha — onboard 1 real society | 🔜 Next session |
 
 ---
 
