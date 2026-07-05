@@ -21,7 +21,6 @@ class AddContributionScreen extends StatefulWidget {
   final String? prefillFlat;
   final String? prefillWing;
   final String? prefillBlock;
-  final String? prefillContributionType;
 
   const AddContributionScreen({
     super.key,
@@ -32,7 +31,6 @@ class AddContributionScreen extends StatefulWidget {
     this.prefillFlat,
     this.prefillWing,
     this.prefillBlock,
-    this.prefillContributionType,
   });
 
   @override
@@ -51,7 +49,6 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
   String _wing = '';
   String _block = '';
   String _contributionType = kTypeRegular;
-  // For carry forward and Ganesh Laddu: was the amount received?
   bool _amountReceived = true;
   String _paymentMode = 'Cash';
   DateTime _paidDate = DateTime.now();
@@ -67,10 +64,7 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
   String _sponsorPackageName = '';
 
   bool get _isEditing => widget.existingDocId != null;
-  bool get _isSpecialType =>
-      _contributionType == kTypeSpecial ||
-      _contributionType == kTypeCarryForward ||
-      _contributionType == kTypeGaneshLaddu;
+  bool get _isSpecialType => _contributionType == kTypeSpecial;
   // External donors (broadband company, builder, store, etc.) have no flat —
   // wing/block/flat selection is skipped entirely for this type.
   bool get _isExternalType => _contributionType == kTypeExternal;
@@ -100,9 +94,6 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
       _wing = widget.prefillWing ?? '';
       _block = widget.prefillBlock ?? '';
       _flatController.text = widget.prefillFlat ?? '';
-      if (widget.prefillContributionType != null) {
-        _contributionType = widget.prefillContributionType!;
-      }
     }
     if (d != null) {
       _nameController.text = d['residentName'] ?? '';

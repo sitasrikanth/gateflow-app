@@ -1,5 +1,6 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../utils/country_codes.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -570,6 +571,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const SizedBox(height: 16),
               _ResidentLandingScreenCard(ref: _ref, data: data),
               const SizedBox(height: 16),
+              _CountryCodeCard(ref: _ref, data: data),
+              const SizedBox(height: 16),
               _PaymentModesCard(ref: _ref, data: data),
               const SizedBox(height: 16),
               _SectionCard(
@@ -708,58 +711,34 @@ class _DefaultNoteCardState extends State<_DefaultNoteCard> {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      elevation: 0,
-      color: Colors.white,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(children: [
-              const Icon(Icons.note_outlined, color: Colors.teal, size: 22),
-              const SizedBox(width: 8),
-              const Text('Default Contribution Note',
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 15)),
-            ]),
-            const SizedBox(height: 4),
-            Text(
-              'Pre-filled in the Note field when admin adds a new contribution.',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _ctrl,
-              decoration: InputDecoration(
-                hintText: 'e.g. Will pay on Chaturthi day',
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide:
-                      const BorderSide(color: Colors.teal, width: 2),
+    return _CollapsibleCard(
+      icon: Icons.note_outlined,
+      iconColor: Colors.teal,
+      title: 'Default Contribution Note',
+      subtitle: 'Pre-filled in the Note field when admin adds a new contribution.',
+      child: TextField(
+        controller: _ctrl,
+        decoration: InputDecoration(
+          hintText: 'e.g. Will pay on Chaturthi day',
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: Colors.teal, width: 2),
+          ),
+          suffixIcon: _saving
+              ? const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2)))
+              : IconButton(
+                  icon: const Icon(Icons.save_outlined, color: Colors.teal),
+                  onPressed: _save,
+                  tooltip: 'Save',
                 ),
-                suffixIcon: _saving
-                    ? const Padding(
-                        padding: EdgeInsets.all(12),
-                        child: SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2)))
-                    : IconButton(
-                        icon: const Icon(Icons.save_outlined,
-                            color: Colors.teal),
-                        onPressed: _save,
-                        tooltip: 'Save',
-                      ),
-              ),
-              onSubmitted: (_) => _save(),
-            ),
-          ],
         ),
+        onSubmitted: (_) => _save(),
       ),
     );
   }
@@ -782,52 +761,32 @@ class _ResidentLandingScreenCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final current = _current;
-    return Card(
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      elevation: 0,
-      color: Colors.white,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(children: [
-              const Icon(Icons.home_outlined, color: Colors.deepPurple, size: 22),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text('Resident Landing Screen',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-              ),
-            ]),
-            const SizedBox(height: 4),
-            Text('What residents see right after logging in.',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-            const SizedBox(height: 12),
-            Row(children: [
-              Expanded(
-                child: _LandingOption(
-                  label: 'Home Screen',
-                  subtitle: 'Visitors, quick actions, profile',
-                  icon: Icons.dashboard_outlined,
-                  selected: current == 'home',
-                  onTap: () => _save('home'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _LandingOption(
-                  label: 'My Events',
-                  subtitle: 'Straight into events & contributions',
-                  icon: Icons.celebration_outlined,
-                  selected: current == 'events',
-                  onTap: () => _save('events'),
-                ),
-              ),
-            ]),
-          ],
+    return _CollapsibleCard(
+      icon: Icons.home_outlined,
+      iconColor: Colors.deepPurple,
+      title: 'Resident Landing Screen',
+      subtitle: 'What residents see right after logging in.',
+      child: Row(children: [
+        Expanded(
+          child: _LandingOption(
+            label: 'Home Screen',
+            subtitle: 'Visitors, quick actions, profile',
+            icon: Icons.dashboard_outlined,
+            selected: current == 'home',
+            onTap: () => _save('home'),
+          ),
         ),
-      ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _LandingOption(
+            label: 'My Events',
+            subtitle: 'Straight into events & contributions',
+            icon: Icons.celebration_outlined,
+            selected: current == 'events',
+            onTap: () => _save('events'),
+          ),
+        ),
+      ]),
     );
   }
 }
@@ -886,6 +845,121 @@ class _LandingOption extends StatelessWidget {
   }
 }
 
+// ── Country Code Card ──────────────────────────────────────────────────────────
+// Sets the community's default calling code, used to normalize resident phone
+// numbers before opening a WhatsApp deep link from the Follow-up tab.
+
+class _CountryCodeCard extends StatelessWidget {
+  final DocumentReference ref;
+  final Map<String, dynamic> data;
+  const _CountryCodeCard({required this.ref, required this.data});
+
+  String get _current => (data['countryCode'] as String?) ?? kDefaultCountryDialCode;
+
+  Future<void> _pickCountry(BuildContext context) async {
+    final searchCtrl = TextEditingController();
+    var filtered = List<CountryCode>.from(kCountryCodes);
+
+    final picked = await showModalBottomSheet<CountryCode>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) => DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.7,
+          maxChildSize: 0.9,
+          builder: (ctx, scrollCtrl) => Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Select Country',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: searchCtrl,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: 'Search country or code…',
+                    prefixIcon: const Icon(Icons.search),
+                    isDense: true,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onChanged: (q) => setSt(() {
+                    final query = q.trim().toLowerCase();
+                    filtered = kCountryCodes
+                        .where((c) =>
+                            c.name.toLowerCase().contains(query) ||
+                            c.dialCode.contains(query))
+                        .toList();
+                  }),
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: filtered.isEmpty
+                      ? const Center(child: Text('No matches'))
+                      : ListView.builder(
+                          controller: scrollCtrl,
+                          itemCount: filtered.length,
+                          itemBuilder: (ctx, i) {
+                            final c = filtered[i];
+                            return ListTile(
+                              leading: Text(c.flag, style: const TextStyle(fontSize: 22)),
+                              title: Text(c.name),
+                              trailing: Text('+${c.dialCode}',
+                                  style: const TextStyle(fontWeight: FontWeight.w600)),
+                              onTap: () => Navigator.pop(ctx, c),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) => searchCtrl.dispose());
+    if (picked != null) {
+      await ref.set({'countryCode': picked.dialCode}, SetOptions(merge: true));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final current = countryByDialCode(_current);
+    return _CollapsibleCard(
+      icon: Icons.public,
+      iconColor: Colors.teal,
+      title: 'Country Code',
+      subtitle: 'Used to complete resident phone numbers for WhatsApp reminders.',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () => _pickCountry(context),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Row(children: [
+            Text(current.flag, style: const TextStyle(fontSize: 20)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text('${current.name}  (+${current.dialCode})',
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+            ),
+            Icon(Icons.chevron_right, color: Colors.grey.shade400),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
 // ── Payment Modes Card ────────────────────────────────────────────────────────
 
 const _kDefaultPaymentModes = ['Cash', 'UPI', 'PhonePe', 'Google Pay', 'Bank Transfer', 'NEFT / RTGS', 'Cheque', 'Other'];
@@ -936,70 +1010,58 @@ class _PaymentModesCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final modes = _modes;
-    return Card(
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      elevation: 0,
-      color: Colors.white,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(children: [
-              const Icon(Icons.payments_outlined, color: Colors.teal, size: 22),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text('Payment Modes',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-              ),
-              TextButton.icon(
-                onPressed: () => _addMode(context),
-                icon: const Icon(Icons.add, size: 16),
-                label: const Text('Add'),
-                style: TextButton.styleFrom(foregroundColor: Colors.teal),
-              ),
-            ]),
-            const SizedBox(height: 4),
-            Text('Shown to both admin and residents when recording payments.',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-            const SizedBox(height: 12),
-            ReorderableListView(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              onReorder: (oldIdx, newIdx) {
-                final updated = List<String>.from(modes);
-                if (newIdx > oldIdx) newIdx--;
-                updated.insert(newIdx, updated.removeAt(oldIdx));
-                _save(updated);
-              },
-              children: modes.asMap().entries.map((e) {
-                final i = e.key;
-                final mode = e.value;
-                return ListTile(
-                  key: ValueKey(mode),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-                  dense: true,
-                  leading: const Icon(Icons.drag_handle, color: Colors.grey, size: 20),
-                  title: Text(mode, style: const TextStyle(fontSize: 14)),
-                  trailing: IconButton(
-                    icon: Icon(Icons.remove_circle_outline,
-                        color: Colors.red.shade300, size: 20),
-                    onPressed: modes.length <= 1
-                        ? null
-                        : () {
-                            final updated = List<String>.from(modes)..removeAt(i);
-                            _save(updated);
-                          },
-                    tooltip: 'Remove',
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-                );
-              }).toList(),
+    return _CollapsibleCard(
+      icon: Icons.payments_outlined,
+      iconColor: Colors.teal,
+      title: 'Payment Modes',
+      subtitle: 'Shown to both admin and residents when recording payments.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () => _addMode(context),
+              icon: const Icon(Icons.add, size: 16),
+              label: const Text('Add'),
+              style: TextButton.styleFrom(foregroundColor: Colors.teal),
             ),
-          ],
-        ),
+          ),
+          ReorderableListView(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            onReorder: (oldIdx, newIdx) {
+              final updated = List<String>.from(modes);
+              if (newIdx > oldIdx) newIdx--;
+              updated.insert(newIdx, updated.removeAt(oldIdx));
+              _save(updated);
+            },
+            children: modes.asMap().entries.map((e) {
+              final i = e.key;
+              final mode = e.value;
+              return ListTile(
+                key: ValueKey(mode),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                dense: true,
+                leading: const Icon(Icons.drag_handle, color: Colors.grey, size: 20),
+                title: Text(mode, style: const TextStyle(fontSize: 14)),
+                trailing: IconButton(
+                  icon: Icon(Icons.remove_circle_outline,
+                      color: Colors.red.shade300, size: 20),
+                  onPressed: modes.length <= 1
+                      ? null
+                      : () {
+                          final updated = List<String>.from(modes)..removeAt(i);
+                          _save(updated);
+                        },
+                  tooltip: 'Remove',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
       ),
     );
   }
@@ -1618,6 +1680,51 @@ class _SectionCard extends StatelessWidget {
           ],
         ),
         children: children,
+      ),
+    );
+  }
+}
+
+// ── Generic collapsible card — every top-level settings section uses this so
+// the screen isn't a wall of always-open content; collapsed by default. ──────
+
+class _CollapsibleCard extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String subtitle;
+  final Widget child;
+
+  const _CollapsibleCard({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.subtitle,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: ExpansionTile(
+        initiallyExpanded: false,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        collapsedShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+              color: iconColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+          child: Icon(icon, color: iconColor, size: 20),
+        ),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+        subtitle: Text(subtitle, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        children: [child],
       ),
     );
   }

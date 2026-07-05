@@ -14,6 +14,7 @@ import 'add_expense_screen.dart';
 import 'send_notification_screen.dart';
 import 'create_event_screen.dart';
 import '../../utils/event_pdf_report.dart';
+import '../../utils/country_codes.dart';
 import 'import_export_screen.dart';
 import 'event_types.dart';
 import 'self_report_sheet.dart';
@@ -450,20 +451,6 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                                   ),
                                 );
                               }
-                              if (val == 'cf' || val == 'laddu') {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => AddContributionScreen(
-                                      eventId: widget.eventId,
-                                      eventTypeId: data['eventTypeId'] as String? ?? '',
-                                      prefillContributionType: val == 'cf'
-                                          ? kTypeCarryForward
-                                          : kTypeGaneshLaddu,
-                                    ),
-                                  ),
-                                );
-                              }
                               if (val == 'sponsors') {
                                 Navigator.push(
                                   context,
@@ -499,22 +486,6 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                                       Text('Send Notification')
                                     ])),
                               ],
-                              const PopupMenuDivider(),
-                              const PopupMenuItem(
-                                  value: 'cf',
-                                  child: Row(children: [
-                                    Icon(Icons.history, color: Colors.blue),
-                                    SizedBox(width: 8),
-                                    Text('Add Carry Forward'),
-                                  ])),
-                              const PopupMenuItem(
-                                  value: 'laddu',
-                                  child: Row(children: [
-                                    Icon(Icons.cookie_outlined,
-                                        color: Colors.orange),
-                                    SizedBox(width: 8),
-                                    Text('Add Ganesh Laddu'),
-                                  ])),
                               if (sponsorEnabled) ...[
                                 const PopupMenuDivider(),
                                 const PopupMenuItem(
@@ -1250,18 +1221,13 @@ class _OverviewTab extends StatelessWidget {
                 ],
                 if ((anonymous > 0 && enabledChips.contains('anonymous')) ||
                     (external > 0 && enabledChips.contains('external'))) ...[
-                  const SizedBox(height: 8),
-                  Row(children: [
-                    if (anonymous > 0 && enabledChips.contains('anonymous'))
-                      _StatChip(label: 'Anonymous', value: '₹${_fmt(anonymous)}',
-                          icon: Icons.visibility_off_outlined, color: Colors.indigo),
-                    if (anonymous > 0 && enabledChips.contains('anonymous') &&
-                        external > 0 && enabledChips.contains('external'))
-                      const SizedBox(width: 8),
-                    if (external > 0 && enabledChips.contains('external'))
-                      _StatChip(label: 'External', value: '₹${_fmt(external)}',
-                          icon: Icons.corporate_fare_outlined, color: Colors.teal.shade700),
-                  ]),
+                  const SizedBox(height: 16),
+                  _AnonymousExternalCard(
+                    anonymous: anonymous,
+                    external: external,
+                    showAnonymous: enabledChips.contains('anonymous'),
+                    showExternal: enabledChips.contains('external'),
+                  ),
                 ],
               ],
             );
@@ -1748,6 +1714,78 @@ class _MyContributionSheet extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ── Anonymous & External Contributions card — styled like the Regular vs
+// Special breakdown card below it, for a consistent Overview tab look ────────
+
+class _AnonymousExternalCard extends StatelessWidget {
+  final double anonymous;
+  final double external;
+  final bool showAnonymous;
+  final bool showExternal;
+  const _AnonymousExternalCard({
+    required this.anonymous,
+    required this.external,
+    required this.showAnonymous,
+    required this.showExternal,
+  });
+
+  static String _fmt(double v) {
+    if (v >= 100000) return '${(v / 100000).toStringAsFixed(1)}L';
+    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
+    return v.toStringAsFixed(0);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasAnonymous = showAnonymous && anonymous > 0;
+    final hasExternal = showExternal && external > 0;
+    if (!hasAnonymous && !hasExternal) return const SizedBox();
+
+    final title = hasAnonymous && hasExternal
+        ? 'Anonymous & External Contributions'
+        : hasAnonymous
+            ? 'Anonymous Contributions'
+            : 'External Contributions';
+
+    final chips = <Widget>[
+      if (hasAnonymous)
+        _StatChip(label: 'Anonymous', value: '₹${_fmt(anonymous)}',
+            icon: Icons.visibility_off_outlined, color: Colors.indigo),
+      if (hasExternal)
+        _StatChip(label: 'External', value: '₹${_fmt(external)}',
+            icon: Icons.corporate_fare_outlined, color: Colors.teal.shade700),
+    ];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 3)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+          const SizedBox(height: 12),
+          Row(
+            children: chips
+                .expand((c) => [c, const SizedBox(width: 8)])
+                .toList()
+              ..removeLast(),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -7596,34 +7634,77 @@ class _FollowUpTab extends StatelessWidget {
 
   const _FollowUpTab({required this.eventId, required this.eventName});
 
+  // Prepends the community's configured country code to a locally-stored
+  // number (e.g. "8886110823" → "918886110823"). Numbers already fully
+  // qualified are left untouched: a leading '+' (Firebase Auth's E.164
+  // format) is treated as already-complete, and so is anything longer than
+  // a typical 10-digit local mobile number.
+  String _normalizePhoneWithCountryCode(String raw, String countryCode) {
+    final digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
+    if (raw.trim().startsWith('+')) return digits;
+    if (digits.length > 10) return digits;
+    return '$countryCode$digits';
+  }
+
+  Future<void> _launchWhatsApp(BuildContext context, String message, {String? phone}) async {
+    final encoded = Uri.encodeComponent(message);
+    final digits = (phone ?? '').replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.isEmpty) return; // WhatsApp button is disabled without a registered number
+    final uri = Uri.parse('https://wa.me/$digits?text=$encoded');
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!launched && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Could not open WhatsApp. Is it installed?'),
+        backgroundColor: Colors.red,
+      ));
+    }
+  }
+
+  // scopeTitle appears in the dialog header (e.g. "A Wing", "A Wing – Block 1",
+  // "Flat A101"); scopeDescription is used inline in the reminder message text
+  // (e.g. "A Wing", "A Wing – Block 1"). isPaidFlat softens the wording for a
+  // flat that has already paid (admin explicitly selected it, so it isn't a
+  // payment-chasing reminder). The WhatsApp button only works — and is only
+  // enabled — when a registered phone number is known for the target flat;
+  // bulk wing/block reminders never have a single number, so it's always
+  // disabled there and Copy is the only option.
   void _sendReminderDialog(
     BuildContext context,
-    String wing,
-    String block,
-    List<String> unpaidFlats,
-  ) {
-    final flatList = unpaidFlats.join(', ');
-    final message =
-        'Hi, this is a reminder for your contribution to "$eventName". '
-        'The following flats in $wing Wing – Block $block are yet to pay: $flatList. '
-        'Please make the payment at the earliest. Thank you!';
+    String scopeTitle,
+    String scopeDescription,
+    List<String> flats, {
+    bool isPaidFlat = false,
+    String? phone,
+    double amountReceived = 0,
+  }) {
+    final hasPhone = (phone ?? '').replaceAll(RegExp(r'[^0-9]'), '').isNotEmpty;
+    final flatList = flats.join(', ');
+    final isSingle = flats.length == 1;
+    final message = isPaidFlat
+        ? 'Hi, thank you for your contribution to "$eventName"! We have received '
+            '₹${amountReceived.toStringAsFixed(0)} from $scopeDescription. '
+            'Please reach out to the admin if you have any questions. Thank you!'
+        : 'Hi, this is a reminder for your contribution to "$eventName". '
+            '${isSingle ? 'Your flat' : 'The following flats'} in $scopeDescription '
+            '${isSingle ? 'has' : 'are'} not yet paid: $flatList. '
+            'Please make the payment at the earliest. Thank you!';
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(children: [
-          Icon(Icons.notifications_active,
+          Icon(isPaidFlat ? Icons.chat_outlined : Icons.notifications_active,
               color: Colors.deepPurple, size: 22),
           const SizedBox(width: 8),
-          Expanded(child: Text('Reminder — $wing Block $block')),
+          Expanded(child: Text('${isPaidFlat ? 'Message' : 'Reminder'} — $scopeTitle')),
         ]),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-                '${unpaidFlats.length} flat${unpaidFlats.length == 1 ? '' : 's'}: $flatList',
+                '${flats.length} flat${flats.length == 1 ? '' : 's'}: $flatList',
                 style: const TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 12),
             Container(
@@ -7636,7 +7717,10 @@ class _FollowUpTab extends StatelessWidget {
                   style: const TextStyle(fontSize: 13, height: 1.4)),
             ),
             const SizedBox(height: 8),
-            Text('Copy and send via WhatsApp or SMS.',
+            Text(
+                hasPhone
+                    ? 'Sends directly to the resident on file for this flat.'
+                    : 'No phone number on file — WhatsApp is disabled. Copy the message instead.',
                 style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
           ],
         ),
@@ -7644,25 +7728,45 @@ class _FollowUpTab extends StatelessWidget {
           TextButton(
               onPressed: () => Navigator.pop(ctx),
               child: const Text('Cancel')),
-          ElevatedButton.icon(
+          OutlinedButton.icon(
             onPressed: () {
               Clipboard.setData(ClipboardData(text: message));
               Navigator.pop(ctx);
               ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                 content: Text(
-                    'Reminder copied for ${unpaidFlats.length} flat${unpaidFlats.length == 1 ? '' : 's'}'),
+                    'Message copied for ${flats.length} flat${flats.length == 1 ? '' : 's'}'),
                 backgroundColor: Colors.deepPurple,
                 duration: const Duration(seconds: 2),
               ));
             },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.deepPurple,
-              foregroundColor: Colors.white,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.deepPurple,
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8)),
             ),
             icon: const Icon(Icons.copy, size: 16),
-            label: const Text('Copy Message'),
+            label: const Text('Copy'),
+          ),
+          Tooltip(
+            message: hasPhone ? '' : 'No phone number on file for this flat',
+            child: ElevatedButton.icon(
+              onPressed: hasPhone
+                  ? () {
+                      Navigator.pop(ctx);
+                      _launchWhatsApp(context, message, phone: phone);
+                    }
+                  : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF25D366),
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: Colors.grey.shade300,
+                disabledForegroundColor: Colors.grey.shade500,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+              ),
+              icon: const Icon(Icons.chat, size: 16),
+              label: const Text('WhatsApp'),
+            ),
           ),
         ],
       ),
@@ -7718,13 +7822,18 @@ class _FollowUpTab extends StatelessWidget {
           builder: (context, contribSnap) {
             final contribDocs = contribSnap.data?.docs ?? [];
 
-            // flat → 'paid' | 'pending'
+            // flat → 'paid' | 'pending', and flat → total amount received
+            // (for the "thank you, we received ₹X" message on paid flats/blocks)
             final Map<String, String> flatStatus = {};
+            final Map<String, double> flatAmount = {};
             for (final doc in contribDocs) {
               final d = doc.data() as Map<String, dynamic>;
+              if (d['status'] == 'deleted' || d['status'] == 'rejected') continue;
               final flat = (d['flatNumber'] as String?)?.trim() ?? '';
               if (flat.isEmpty) continue;
               final received = d['amountReceived'] != false;
+              final amt = (d['amount'] as num?)?.toDouble() ?? 0;
+              if (received) flatAmount[flat] = (flatAmount[flat] ?? 0) + amt;
               if (flatStatus[flat] == 'paid') continue;
               flatStatus[flat] = received ? 'paid' : 'pending';
             }
@@ -7767,45 +7876,65 @@ class _FollowUpTab extends StatelessWidget {
               );
             }
 
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 80),
-              children: [
-                // Summary banner
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  margin: const EdgeInsets.only(bottom: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.shade50,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.orange.shade200),
-                  ),
-                  child: Row(children: [
-                    Icon(Icons.pending_actions,
-                        color: Colors.orange.shade700),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        '$totalUnpaid flat${totalUnpaid == 1 ? '' : 's'} need follow-up',
-                        style: TextStyle(
-                            color: Colors.orange.shade800,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 15),
-                      ),
-                    ),
-                    Text(
-                      '$totalPending pending · $totalNotRecorded not recorded',
-                      style: TextStyle(
-                          color: Colors.orange.shade600, fontSize: 12),
-                    ),
-                  ]),
-                ),
+            return StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance.collection('users').snapshots(),
+              builder: (context, usersSnap) {
+                final countryCode =
+                    (settings['countryCode'] as String?) ?? kDefaultCountryDialCode;
 
-                // Wing tiles — only wings with unpaid flats
-                for (final wing in wings) ...[
-                  _buildWingTile(
-                      context, wing, wingBlocks, flatStatus, flatsPerFloor, flatGridRows),
-                ],
-              ],
+                // flat → phone (normalized with the community's country code),
+                // for direct WhatsApp targeting
+                final Map<String, String> flatPhone = {};
+                for (final doc in usersSnap.data?.docs ?? <QueryDocumentSnapshot>[]) {
+                  final u = doc.data() as Map<String, dynamic>;
+                  final flat = (u['flatNumber'] as String?)?.trim() ?? '';
+                  final rawPhone = (u['phone'] as String?)?.trim() ?? '';
+                  if (flat.isNotEmpty && rawPhone.isNotEmpty) {
+                    flatPhone[flat] = _normalizePhoneWithCountryCode(rawPhone, countryCode);
+                  }
+                }
+
+                return ListView(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 80),
+                  children: [
+                    // Summary banner
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.orange.shade200),
+                      ),
+                      child: Row(children: [
+                        Icon(Icons.pending_actions,
+                            color: Colors.orange.shade700),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            '$totalUnpaid flat${totalUnpaid == 1 ? '' : 's'} need follow-up',
+                            style: TextStyle(
+                                color: Colors.orange.shade800,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15),
+                          ),
+                        ),
+                        Text(
+                          '$totalPending pending · $totalNotRecorded not recorded',
+                          style: TextStyle(
+                              color: Colors.orange.shade600, fontSize: 12),
+                        ),
+                      ]),
+                    ),
+
+                    // Wing tiles
+                    for (final wing in wings) ...[
+                      _buildWingTile(context, wing, wingBlocks, flatStatus,
+                          flatsPerFloor, flatGridRows, flatPhone, flatAmount),
+                    ],
+                  ],
+                );
+              },
             );
           },
         );
@@ -7820,22 +7949,34 @@ class _FollowUpTab extends StatelessWidget {
     Map<String, String> flatStatus,
     Map<String, int> flatsPerFloor,
     Map<String, int> flatGridRows,
+    Map<String, String> flatPhone,
+    Map<String, double> flatAmount,
   ) {
     final raw = wingBlocks[wing];
     final wingData =
         raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
     final blocks = wingData.keys.toList()..sort();
+    if (blocks.isEmpty) return const SizedBox.shrink();
 
-    int wingUnpaid = 0;
+    final wingUnpaidFlats = <String>[];
+    final wingAllFlats = <String>[];
+    double wingPaidAmount = 0;
     for (final block in blocks) {
       final flats = List<String>.from(
           wingData[block] is List ? wingData[block] : []);
       for (final f in flats) {
+        wingAllFlats.add(f);
         final s = flatStatus[f];
-        if (s == null || s == 'pending') wingUnpaid++;
+        if (s == null || s == 'pending') {
+          wingUnpaidFlats.add(f);
+        } else {
+          wingPaidAmount += flatAmount[f] ?? 0;
+        }
       }
     }
-    if (wingUnpaid == 0) return const SizedBox.shrink();
+    if (wingAllFlats.isEmpty) return const SizedBox.shrink();
+    final wingUnpaid = wingUnpaidFlats.length;
+    final wingFullyPaid = wingUnpaid == 0;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -7854,7 +7995,7 @@ class _FollowUpTab extends StatelessWidget {
         key: PageStorageKey('followup_wing_$wing'),
         leading: CircleAvatar(
           radius: 18,
-          backgroundColor: Colors.blue.shade600,
+          backgroundColor: wingFullyPaid ? Colors.green.shade600 : Colors.blue.shade600,
           child: Text(wing[0].toUpperCase(),
               style: const TextStyle(
                   color: Colors.white, fontWeight: FontWeight.bold)),
@@ -7862,15 +8003,37 @@ class _FollowUpTab extends StatelessWidget {
         title: Text('$wing Wing',
             style: const TextStyle(fontWeight: FontWeight.w600)),
         subtitle: Text(
-          '$wingUnpaid flat${wingUnpaid == 1 ? '' : 's'} pending',
+          wingFullyPaid
+              ? 'All flats paid ✓'
+              : '$wingUnpaid flat${wingUnpaid == 1 ? '' : 's'} pending',
           style: TextStyle(
-              color: Colors.orange.shade700,
+              color: wingFullyPaid ? Colors.green.shade700 : Colors.orange.shade700,
               fontSize: 12,
               fontWeight: FontWeight.w500),
         ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: Icon(
+                  wingFullyPaid ? Icons.celebration_outlined : Icons.notifications_active_outlined,
+                  color: wingFullyPaid ? Colors.green.shade600 : Colors.deepPurple.shade400,
+                  size: 20),
+              tooltip: wingFullyPaid ? 'Send Thank You to whole wing' : 'Send Reminder to whole wing',
+              onPressed: () => wingFullyPaid
+                  ? _sendReminderDialog(context, '$wing Wing', '$wing Wing', wingAllFlats,
+                      isPaidFlat: true, amountReceived: wingPaidAmount)
+                  : _sendReminderDialog(context, '$wing Wing', '$wing Wing', wingUnpaidFlats),
+              padding: const EdgeInsets.all(4),
+              constraints: const BoxConstraints(),
+              visualDensity: VisualDensity.compact,
+            ),
+            Icon(Icons.expand_more, color: Colors.grey.shade500),
+          ],
+        ),
         children: blocks
-            .map((block) => _buildBlockTile(
-                context, wing, block, wingData, flatStatus, flatsPerFloor, flatGridRows))
+            .map((block) => _buildBlockTile(context, wing, block, wingData,
+                flatStatus, flatsPerFloor, flatGridRows, flatPhone, flatAmount))
             .toList(),
       ),
     );
@@ -7884,6 +8047,8 @@ class _FollowUpTab extends StatelessWidget {
     Map<String, String> flatStatus,
     Map<String, int> flatsPerFloor,
     Map<String, int> flatGridRows,
+    Map<String, String> flatPhone,
+    Map<String, double> flatAmount,
   ) {
     final flats = List<String>.from(
         wingData[block] is List ? wingData[block] : [])
@@ -7891,11 +8056,15 @@ class _FollowUpTab extends StatelessWidget {
     final fpf = flatsPerFloor['${wing}_$block'];
     final gridRows = (flatGridRows['${wing}_$block'] ?? 1).clamp(1, 3);
 
+    if (flats.isEmpty) return const SizedBox.shrink();
     final unpaidFlats = flats
         .where((f) => flatStatus[f] == null || flatStatus[f] == 'pending')
         .toList();
     final blockUnpaid = unpaidFlats.length;
-    if (blockUnpaid == 0) return const SizedBox.shrink();
+    final blockFullyPaid = blockUnpaid == 0;
+    final blockPaidAmount = blockFullyPaid
+        ? flats.fold<double>(0, (s, f) => s + (flatAmount[f] ?? 0))
+        : 0.0;
 
     final pendingCount =
         flats.where((f) => flatStatus[f] == 'pending').length;
@@ -7906,9 +8075,9 @@ class _FollowUpTab extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.purple.shade50,
+          color: blockFullyPaid ? Colors.green.shade50 : Colors.purple.shade50,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: Colors.purple.shade100),
+          border: Border.all(color: blockFullyPaid ? Colors.green.shade100 : Colors.purple.shade100),
         ),
         child: ExpansionTile(
           key: PageStorageKey('followup_block_${wing}_$block'),
@@ -7918,13 +8087,13 @@ class _FollowUpTab extends StatelessWidget {
             width: 32,
             height: 32,
             decoration: BoxDecoration(
-              color: Colors.purple.shade100,
+              color: blockFullyPaid ? Colors.green.shade100 : Colors.purple.shade100,
               borderRadius: BorderRadius.circular(8),
             ),
             child: Center(
               child: Text(block,
                   style: TextStyle(
-                      color: Colors.purple.shade800,
+                      color: blockFullyPaid ? Colors.green.shade800 : Colors.purple.shade800,
                       fontWeight: FontWeight.bold,
                       fontSize: 13)),
             ),
@@ -7932,44 +8101,53 @@ class _FollowUpTab extends StatelessWidget {
           title: Text('Block $block',
               style:
                   const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-          subtitle: Row(children: [
-            if (pendingCount > 0) ...[
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                decoration: BoxDecoration(
-                  color: Colors.orange.shade100,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text('$pendingCount pending',
-                    style: TextStyle(
-                        fontSize: 9,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.orange.shade800)),
-              ),
-              const SizedBox(width: 4),
-            ],
-            if (notRecordedCount > 0)
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade200,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text('$notRecordedCount not recorded',
-                    style: TextStyle(
-                        fontSize: 9,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey.shade700)),
-              ),
-          ]),
+          subtitle: blockFullyPaid
+              ? Text('All paid ✓ · ₹${blockPaidAmount.toStringAsFixed(0)} received',
+                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.green.shade700))
+              : Row(children: [
+                  if (pendingCount > 0) ...[
+                    Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade100,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text('$pendingCount pending',
+                          style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.orange.shade800)),
+                    ),
+                    const SizedBox(width: 4),
+                  ],
+                  if (notRecordedCount > 0)
+                    Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade200,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text('$notRecordedCount not recorded',
+                          style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey.shade700)),
+                    ),
+                ]),
           trailing: IconButton(
-            icon: Icon(Icons.notifications_active_outlined,
-                color: Colors.deepPurple.shade400, size: 20),
-            tooltip: 'Send Reminder',
-            onPressed: () =>
-                _sendReminderDialog(context, wing, block, unpaidFlats),
+            icon: Icon(
+                blockFullyPaid ? Icons.celebration_outlined : Icons.notifications_active_outlined,
+                color: blockFullyPaid ? Colors.green.shade600 : Colors.deepPurple.shade400,
+                size: 20),
+            tooltip: blockFullyPaid ? 'Send Thank You' : 'Send Reminder',
+            onPressed: () => blockFullyPaid
+                ? _sendReminderDialog(
+                    context, '$wing Wing – Block $block', '$wing Wing – Block $block', flats,
+                    isPaidFlat: true, amountReceived: blockPaidAmount)
+                : _sendReminderDialog(
+                    context, '$wing Wing – Block $block', '$wing Wing – Block $block', unpaidFlats),
             padding: const EdgeInsets.all(4),
             constraints: const BoxConstraints(),
             visualDensity: VisualDensity.compact,
@@ -7977,7 +8155,8 @@ class _FollowUpTab extends StatelessWidget {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-              child: _buildFlatChips(context, flats, flatStatus, fpf, gridRows),
+              child: _buildFlatChips(context, wing, block, flats, flatStatus, fpf,
+                  gridRows, flatPhone, flatAmount),
             ),
           ],
         ),
@@ -7987,10 +8166,14 @@ class _FollowUpTab extends StatelessWidget {
 
   Widget _buildFlatChips(
     BuildContext context,
+    String wing,
+    String block,
     List<String> flats,
     Map<String, String> flatStatus,
     int? fpf,
     int gridRows,
+    Map<String, String> flatPhone,
+    Map<String, double> flatAmount,
   ) {
     Widget chip(String flat) {
       final s = flatStatus[flat];
@@ -8010,7 +8193,7 @@ class _FollowUpTab extends StatelessWidget {
         textColor = Colors.grey.shade500;
         borderColor = Colors.grey.shade300;
       }
-      return Container(
+      final container = Container(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
         decoration: BoxDecoration(
           color: chipColor,
@@ -8025,6 +8208,13 @@ class _FollowUpTab extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                   color: textColor)),
         ),
+      );
+      return GestureDetector(
+        onTap: () => _sendReminderDialog(
+            context, 'Flat $flat', '$wing Wing – Block $block', [flat],
+            isPaidFlat: s == 'paid', phone: flatPhone[flat],
+            amountReceived: flatAmount[flat] ?? 0),
+        child: container,
       );
     }
 
