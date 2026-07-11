@@ -3,6 +3,7 @@ import 'import_contributions_screen.dart';
 import 'import_expenses_screen.dart';
 import '../../utils/csv_export.dart';
 import '../../utils/event_pdf_report.dart';
+import '../../theme/app_theme.dart';
 
 // ── Import / Export — consolidated entry point for all bulk data flows ───────
 // Groups what used to be five separate items in the Event Tools menu
@@ -32,9 +33,9 @@ class ImportExportScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: Colors.deepPurple,
+        backgroundColor: AppTheme.accent,
         foregroundColor: Colors.white,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -95,7 +96,7 @@ class ImportExportScreen extends StatelessWidget {
           const _SectionLabel('Reports'),
           _ActionTile(
             icon: Icons.picture_as_pdf_rounded,
-            iconColor: Colors.deepPurple,
+            iconColor: AppTheme.accent,
             title: 'Export PDF Report',
             subtitle: 'Full event summary — collected, spent, balance',
             onTap: () => exportEventPdfReport(
@@ -150,7 +151,7 @@ class _ActionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white,
+      color: Theme.of(context).cardColor,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),

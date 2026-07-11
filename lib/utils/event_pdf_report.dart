@@ -6,6 +6,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import '../theme/app_theme.dart';
+import 'event_status.dart';
 
 Future<void> _showSaveDialog(
   BuildContext context,
@@ -81,11 +83,11 @@ Future<void> _showSaveDialog(
               leading: Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Colors.deepPurple.shade50,
+                  color: AppTheme.accent.shade50,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(Icons.share_rounded,
-                    color: Colors.deepPurple.shade700),
+                    color: AppTheme.accent.shade700),
               ),
               title: const Text('Share / Open with…',
                   style: TextStyle(fontWeight: FontWeight.w600)),
@@ -121,10 +123,10 @@ Future<void> exportEventPdfReport({
   required double target,
 }) async {
   final messenger = ScaffoldMessenger.of(context);
-  messenger.showSnackBar(const SnackBar(
-    content: Text('Generating PDF report...'),
-    duration: Duration(seconds: 60),
-    backgroundColor: Colors.deepPurple,
+  messenger.showSnackBar(SnackBar(
+    content: const Text('Generating PDF report...'),
+    duration: const Duration(seconds: 60),
+    backgroundColor: AppTheme.accent,
   ));
 
   try {
@@ -329,7 +331,7 @@ pw.Widget _buildSummary({
                 color: _kPurple)),
         pw.SizedBox(height: 10),
         pw.Row(children: [
-          _summaryBox('Status', status == 'active' ? 'Active' : 'Closed'),
+          _summaryBox('Status', eventStatusLabel(status)),
           pw.SizedBox(width: 8),
           _summaryBox('Start Date', startDate.isNotEmpty ? startDate : '-'),
           pw.SizedBox(width: 8),
@@ -708,10 +710,10 @@ Future<void> exportContributionReceipt({
   required Map<String, dynamic> contribution,
 }) async {
   final messenger = ScaffoldMessenger.of(context);
-  messenger.showSnackBar(const SnackBar(
-    content: Text('Generating receipt...'),
-    duration: Duration(seconds: 30),
-    backgroundColor: Colors.deepPurple,
+  messenger.showSnackBar(SnackBar(
+    content: const Text('Generating receipt...'),
+    duration: const Duration(seconds: 30),
+    backgroundColor: AppTheme.accent,
   ));
 
   try {

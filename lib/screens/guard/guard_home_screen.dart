@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'new_visitor_screen.dart';
 import '../auth/login_screen.dart';
+import '../settings/theme_settings_sheet.dart';
 
 class GuardHomeScreen extends StatefulWidget {
   const GuardHomeScreen({super.key});
@@ -200,7 +201,7 @@ class _GuardHomeScreenState extends State<GuardHomeScreen> {
         DateTime(today.year, today.month, today.day).toIso8601String();
 
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: CustomScrollView(
         slivers: [
           // ── Header ────────────────────────────────────────────────
@@ -266,6 +267,11 @@ class _GuardHomeScreenState extends State<GuardHomeScreen> {
                         ),
                       ),
                       const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(Icons.palette_outlined, color: Colors.white),
+                        tooltip: 'Theme',
+                        onPressed: () => showThemeSettingsSheet(context),
+                      ),
                       IconButton(
                         icon: const Icon(Icons.logout, color: Colors.white),
                         tooltip: 'Logout',
@@ -520,7 +526,7 @@ class _GuardHomeScreenState extends State<GuardHomeScreen> {
                       margin: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 5),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: Theme.of(context).cardColor,
                         borderRadius: BorderRadius.circular(12),
                         boxShadow: [
                           BoxShadow(

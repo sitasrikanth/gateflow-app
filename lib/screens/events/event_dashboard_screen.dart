@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../auth/login_screen.dart';
 import '../admin/admin_home_screen.dart';
 import '../resident/resident_events_screen.dart';
@@ -15,12 +16,16 @@ import 'send_notification_screen.dart';
 import 'create_event_screen.dart';
 import '../../utils/event_pdf_report.dart';
 import '../../utils/country_codes.dart';
+import '../../utils/event_status.dart';
 import 'import_export_screen.dart';
 import 'event_types.dart';
 import 'self_report_sheet.dart';
 import 'sponsor_packages_screen.dart';
 import 'task_form_screen.dart';
 import 'task_detail_sheet.dart';
+import 'competitions_tab.dart';
+import 'prasad_tab.dart';
+import '../../theme/app_theme.dart';
 
 class EventDashboardScreen extends StatefulWidget {
   final String eventId;
@@ -52,7 +57,7 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
   void initState() {
     super.initState();
     _tabController = TabController(
-        length: widget.isAdmin ? 8 : 4, vsync: this);
+        length: widget.isAdmin ? 11 : 7, vsync: this);
     if (!widget.isAdmin) _loadSession();
   }
 
@@ -129,7 +134,7 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
             style:
-                ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple),
+                ElevatedButton.styleFrom(backgroundColor: AppTheme.accent),
             child: const Text('Close Event',
                 style: TextStyle(color: Colors.white)),
           ),
@@ -150,7 +155,7 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
       builder: (ctx) => AlertDialog(
         title: const Text('Reopen Event'),
         content: const Text(
-            'Move this event back to Active? Residents and admins will be able to add contributions and expenses again.'),
+            'Move this event back to Ongoing? Residents and admins will be able to add contributions and expenses again.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -170,8 +175,66 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
           .update({'status': 'active'});
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Event reopened — now active')));
+            const SnackBar(content: Text('Event reopened — now Ongoing')));
       }
+    }
+  }
+
+  Future<void> _startEvent() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Start Event'),
+        content: const Text(
+            'Move this event from Upcoming to Ongoing? Residents will be able to contribute and volunteer starting now.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade600),
+            child: const Text('Start', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      await FirebaseFirestore.instance
+          .collection('events')
+          .doc(widget.eventId)
+          .update({'status': 'active'});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Event started — now Ongoing')));
+      }
+    }
+  }
+
+  Future<void> _toggleFeatured(bool currentlyFeatured) async {
+    final fs = FirebaseFirestore.instance;
+    if (currentlyFeatured) {
+      await fs.collection('events').doc(widget.eventId).update({'featured': false});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Removed from Featured banner')));
+      }
+      return;
+    }
+    // Only one event is featured at a time — unset any previously featured event first.
+    final batch = fs.batch();
+    final prevFeatured = await fs
+        .collection('events')
+        .where('featured', isEqualTo: true)
+        .get();
+    for (final doc in prevFeatured.docs) {
+      batch.update(doc.reference, {'featured': false});
+    }
+    batch.update(fs.collection('events').doc(widget.eventId), {'featured': true});
+    await batch.commit();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Set as the Featured event')));
     }
   }
 
@@ -246,6 +309,7 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
         final double target = ((data['targetAmount'] ?? 0) as num).toDouble();
         final double balance = collected - spent;
         final status = data['status'] ?? 'active';
+        final featured = data['featured'] == true;
         final double progress =
             target > 0 ? ((collected / target).clamp(0.0, 1.0) as num).toDouble() : 0.0;
 
@@ -253,14 +317,14 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
         final eventType = eventTypeById(data['eventTypeId'] as String?) ??
             eventTypeByName(data['name'] as String?);
         final List<Color> headerGradient = eventType?.gradient ??
-            [Colors.deepPurple.shade700, Colors.deepPurple.shade400];
+            [AppTheme.accent.shade700, AppTheme.accent.shade400];
         final String imageUrl =
             (data['bannerUrl'] as String?)?.isNotEmpty == true
                 ? data['bannerUrl'] as String
                 : (eventType?.imageUrl ?? '');
 
         return Scaffold(
-          backgroundColor: Colors.grey.shade50,
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
           body: Column(
             children: [
               // Header
@@ -275,10 +339,10 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                 child: Stack(children: [
                   if (imageUrl.isNotEmpty) ...[
                     Positioned.fill(
-                      child: Image.asset(
-                        imageUrl,
+                      child: CachedNetworkImage(
+                        imageUrl: imageUrl,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => const SizedBox(),
+                        errorWidget: (_, __, ___) => const SizedBox(),
                       ),
                     ),
                     Positioned.fill(
@@ -286,11 +350,11 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [
-                              headerGradient.first.withValues(alpha: 0.72),
-                              headerGradient.last.withValues(alpha: 0.82),
+                              Colors.black.withValues(alpha: 0.35),
+                              Colors.black.withValues(alpha: 0.75),
                             ],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
                           ),
                         ),
                       ),
@@ -429,6 +493,8 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                               if (val == 'recalculate') _recalculateTotals(context);
                               if (val == 'close') _closeEvent();
                               if (val == 'reopen') _reopenEvent();
+                              if (val == 'start') _startEvent();
+                              if (val == 'toggle_featured') _toggleFeatured(featured);
                               if (val == 'delete') _deleteEvent();
                               if (val == 'edit') {
                                 Navigator.push(
@@ -477,6 +543,19 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                                     SizedBox(width: 8),
                                     Text('Recalculate Totals'),
                                   ])),
+                              PopupMenuItem(
+                                  value: 'toggle_featured',
+                                  child: Row(children: [
+                                    Icon(
+                                        featured
+                                            ? Icons.star
+                                            : Icons.star_border,
+                                        color: Colors.amber.shade700),
+                                    const SizedBox(width: 8),
+                                    Text(featured
+                                        ? 'Remove from Featured'
+                                        : 'Set as Featured Event'),
+                                  ])),
                               if (status == 'active') ...[
                                 const PopupMenuItem(
                                     value: 'notify',
@@ -498,13 +577,13 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                                     ])),
                               ],
                               const PopupMenuDivider(),
-                              const PopupMenuItem(
+                              PopupMenuItem(
                                   value: 'edit',
                                   child: Row(children: [
                                     Icon(Icons.edit_outlined,
-                                        color: Colors.deepPurple),
-                                    SizedBox(width: 8),
-                                    Text('Edit Event'),
+                                        color: AppTheme.accent),
+                                    const SizedBox(width: 8),
+                                    const Text('Edit Event'),
                                   ])),
                               if (status == 'active')
                                 const PopupMenuItem(
@@ -515,6 +594,16 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                                       SizedBox(width: 8),
                                       Text('Close Event',
                                           style: TextStyle(color: Colors.red))
+                                    ]))
+                              else if (status == 'upcoming')
+                                PopupMenuItem(
+                                    value: 'start',
+                                    child: Row(children: [
+                                      Icon(Icons.play_circle_outline,
+                                          color: Colors.green.shade600),
+                                      const SizedBox(width: 8),
+                                      Text('Start Event',
+                                          style: TextStyle(color: Colors.green.shade600))
                                     ]))
                               else
                                 PopupMenuItem(
@@ -621,11 +710,14 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                     _TabItem(icon: Icons.groups_outlined, label: 'Volunteers'),
                     _TabItem(icon: Icons.checklist_outlined, label: 'Tasks'),
                     _TabItem(icon: Icons.history_outlined, label: 'Activity'),
+                    _TabItem(icon: Icons.emoji_events_outlined, label: 'Competitions'),
+                    _TabItem(icon: Icons.restaurant_outlined, label: 'Prasad'),
+                    _TabItem(icon: Icons.leaderboard_outlined, label: 'Leaderboard'),
                   ],
                 )
               else
                 Container(
-                  color: Colors.deepPurple,
+                  color: AppTheme.accent,
                   child: TabBar(
                     controller: _tabController,
                     isScrollable: true,
@@ -640,6 +732,9 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                       Tab(text: 'Overview'),
                       Tab(text: 'Expenses'),
                       Tab(text: 'Volunteers'),
+                      Tab(text: 'Competitions'),
+                      Tab(text: 'Prasad'),
+                      Tab(text: 'Leaderboard'),
                     ],
                   ),
                 ),
@@ -687,6 +782,9 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                               isAdmin: true),
                           _TasksTab(eventId: widget.eventId),
                           _ActivityTab(eventId: widget.eventId),
+                          CompetitionsTab(eventId: widget.eventId, isAdmin: true),
+                          PrasadTab(eventId: widget.eventId, isAdmin: true),
+                          _LeaderboardTab(eventId: widget.eventId),
                         ]
                       : [
                           // Resident: Event (default) | Overview | Expenses | Volunteers
@@ -722,6 +820,9 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                               residentName: _residentName,
                               residentWing: _residentWing,
                               residentBlock: _residentBlock),
+                          CompetitionsTab(eventId: widget.eventId, isAdmin: false),
+                          PrasadTab(eventId: widget.eventId, isAdmin: false),
+                          _LeaderboardTab(eventId: widget.eventId),
                         ],
                 ),
               ),
@@ -854,7 +955,7 @@ class _CustomTabBarState extends State<_CustomTabBar> {
   Widget build(BuildContext context) {
     final selected = widget.controller.index;
     return Container(
-      color: Colors.white,
+      color: Theme.of(context).cardColor,
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -878,7 +979,7 @@ class _CustomTabBarState extends State<_CustomTabBar> {
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
                             color: isSel
-                                ? Colors.deepPurple.shade50
+                                ? AppTheme.accent.shade50
                                 : Colors.grey.shade100,
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -886,7 +987,7 @@ class _CustomTabBarState extends State<_CustomTabBar> {
                             tab.icon,
                             size: 22,
                             color: isSel
-                                ? Colors.deepPurple
+                                ? AppTheme.accent
                                 : Colors.grey.shade500,
                           ),
                         ),
@@ -897,7 +998,7 @@ class _CustomTabBarState extends State<_CustomTabBar> {
                             fontSize: 11,
                             fontWeight: isSel ? FontWeight.w700 : FontWeight.w500,
                             color: isSel
-                                ? Colors.deepPurple
+                                ? AppTheme.accent
                                 : Colors.grey.shade600,
                           ),
                         ),
@@ -909,7 +1010,7 @@ class _CustomTabBarState extends State<_CustomTabBar> {
                     height: 3,
                     width: isSel ? 48 : 0,
                     decoration: BoxDecoration(
-                      color: Colors.deepPurple,
+                      color: AppTheme.accent,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -983,7 +1084,7 @@ class _OverviewTab extends StatelessWidget {
         Container(
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
@@ -1258,35 +1359,10 @@ class _OverviewTab extends StatelessWidget {
             if (!enabledTypeIds.contains(resolvedType?.id ?? '')) return const SizedBox.shrink();
             return Column(children: [
               const SizedBox(height: 16),
-              _BlockStatsWidget(eventId: eventId),
+              _BlockStatsWidget(eventId: eventId, isAdmin: isAdmin),
             ]);
           },
         ),
-
-        // ── Leaderboard — always visible to admin; gated by settings for
-        // residents, since admin needs contribution rankings for oversight
-        // even on event types where the public leaderboard is turned off ──
-        if (isAdmin) ...[
-          const SizedBox(height: 16),
-          _LeaderboardWidget(eventId: eventId),
-        ] else
-          StreamBuilder<DocumentSnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('appSettings')
-                .doc('leaderboard')
-                .snapshots(),
-            builder: (context, snap) {
-              final d = snap.data?.data() as Map<String, dynamic>? ?? {};
-              final enabledTypeIds = List<String>.from(d['enabledTypeIds'] as List? ?? []);
-              final resolvedType = eventTypeById(data['eventTypeId'] as String?) ??
-                  eventTypeByName(data['name'] as String?);
-              if (!enabledTypeIds.contains(resolvedType?.id ?? '')) return const SizedBox.shrink();
-              return Column(children: [
-                const SizedBox(height: 16),
-                _LeaderboardWidget(eventId: eventId),
-              ]);
-            },
-          ),
 
         // ── Our Sponsors — live stream, gated by settings ──────────────────
         StreamBuilder<DocumentSnapshot>(
@@ -1453,7 +1529,7 @@ class _MyContributionWidget extends StatelessWidget {
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [Colors.deepPurple.shade600, Colors.deepPurple.shade400],
+                    colors: [AppTheme.accent.shade600, AppTheme.accent.shade400],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
@@ -1570,7 +1646,7 @@ class _MyContributionSheet extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
           child: Row(children: [
-            Icon(Icons.volunteer_activism_rounded, color: Colors.deepPurple.shade400, size: 20),
+            Icon(Icons.volunteer_activism_rounded, color: AppTheme.accent.shade400, size: 20),
             const SizedBox(width: 8),
             Expanded(
               child: Text('My Contributions — $eventName',
@@ -1764,7 +1840,7 @@ class _AnonymousExternalCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
@@ -1777,6 +1853,10 @@ class _AnonymousExternalCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+          const SizedBox(height: 2),
+          Text(
+              'A breakdown of your Collected total above — not additional money on top of it.',
+              style: TextStyle(fontSize: 10, color: Colors.grey.shade400, height: 1.3)),
           const SizedBox(height: 12),
           Row(
             children: chips
@@ -1846,7 +1926,7 @@ class _SpecialContributionsWidget extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
@@ -1858,7 +1938,7 @@ class _SpecialContributionsWidget extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Regular vs Special Contributions',
+              const Text('Regular & Special Contributions',
                   style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
               const SizedBox(height: 12),
               Row(children: [
@@ -1969,7 +2049,7 @@ class _ExternalDonationsWidget extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
@@ -2062,7 +2142,8 @@ class _ExternalDonationsWidget extends StatelessWidget {
 
 class _BlockStatsWidget extends StatefulWidget {
   final String eventId;
-  const _BlockStatsWidget({required this.eventId});
+  final bool isAdmin;
+  const _BlockStatsWidget({required this.eventId, this.isAdmin = false});
   @override
   State<_BlockStatsWidget> createState() => _BlockStatsWidgetState();
 }
@@ -2182,7 +2263,10 @@ class _BlockStatsWidgetState extends State<_BlockStatsWidget> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text('Flat $flat',
-                                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
+                                      color: Colors.grey.shade800)),
                               if (name.isNotEmpty)
                                 Text(name,
                                     style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
@@ -2297,6 +2381,12 @@ class _BlockStatsWidgetState extends State<_BlockStatsWidget> {
                     fontWeight: FontWeight.w600,
                     color: Colors.grey.shade500,
                     letterSpacing: 0.3)),
+            const SizedBox(height: 2),
+            Text(
+                'Only flats configured under Wings & Blocks — anonymous, external, '
+                'or unlisted-flat contributions are already counted in the totals '
+                'above but won\'t appear here.',
+                style: TextStyle(fontSize: 10, color: Colors.grey.shade400, height: 1.3)),
             const SizedBox(height: 8),
             ...sortedWings.map((wing) {
               final entry = byWing[wing]!;
@@ -2330,8 +2420,10 @@ class _BlockStatsWidgetState extends State<_BlockStatsWidget> {
                         final allPaid = s.paid == s.total;
                         final nonePaid = s.paid == 0;
                         return GestureDetector(
-                          onTap: () => _showBlockDetail(
-                              context, wing, s.block, s.flats, paidFlats, flatAmount, flatName),
+                          onTap: widget.isAdmin
+                              ? () => _showBlockDetail(context, wing, s.block,
+                                  s.flats, paidFlats, flatAmount, flatName)
+                              : null,
                           child: Container(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 8, vertical: 5),
@@ -2438,7 +2530,7 @@ class _LeaderboardWidget extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
@@ -2529,6 +2621,319 @@ class _LeaderboardWidget extends StatelessWidget {
   }
 }
 
+// ── Leaderboard Tab — full leaderboard visible to admin & residents ──────────
+// Combines: Top Contributors (reuses _LeaderboardWidget), Most Active
+// Volunteers (derived from completed tasks), Quiz Winners (placeholder — no
+// quiz feature yet), Competition Winners (derived from competitions
+// subcollection), and Apartment Participation (per-wing paid-flat %).
+
+class _LeaderboardTab extends StatefulWidget {
+  final String eventId;
+  const _LeaderboardTab({required this.eventId});
+
+  @override
+  State<_LeaderboardTab> createState() => _LeaderboardTabState();
+}
+
+class _LeaderboardTabState extends State<_LeaderboardTab> {
+  Map<String, dynamic> _wingBlocks = {};
+  List<String> _wings = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchWingBlocks();
+  }
+
+  Future<void> _fetchWingBlocks() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('community_settings')
+          .doc('address')
+          .get();
+      if (!mounted) return;
+      final data = doc.data() as Map<String, dynamic>? ?? {};
+      setState(() {
+        _wingBlocks = Map<String, dynamic>.from(data['wingBlocks'] as Map? ?? {});
+        _wings = List<String>.from(
+            data['wings'] as List? ?? (_wingBlocks.keys.toList()..sort()));
+      });
+    } catch (_) {}
+  }
+
+  Widget _sectionCard({required String emoji, required String title, required Widget child}) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 3)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Text(emoji, style: const TextStyle(fontSize: 18)),
+            const SizedBox(width: 8),
+            Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+          ]),
+          const SizedBox(height: 12),
+          child,
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 90),
+        children: [
+          _LeaderboardWidget(eventId: widget.eventId),
+          const SizedBox(height: 14),
+          _sectionCard(
+            emoji: '🙋',
+            title: 'Most Active Volunteers',
+            child: _MostActiveVolunteers(eventId: widget.eventId),
+          ),
+          _sectionCard(
+            emoji: '🧠',
+            title: 'Quiz Winners',
+            child: Text('Quiz feature coming soon.',
+                style: TextStyle(
+                    color: Colors.grey.shade500, fontSize: 13, fontStyle: FontStyle.italic)),
+          ),
+          _sectionCard(
+            emoji: '🏆',
+            title: 'Competition Winners',
+            child: _CompetitionWinnersList(eventId: widget.eventId),
+          ),
+          _sectionCard(
+            emoji: '🏘️',
+            title: 'Apartment Participation',
+            child: _ApartmentParticipation(
+                eventId: widget.eventId, wingBlocks: _wingBlocks, wings: _wings),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MostActiveVolunteers extends StatelessWidget {
+  final String eventId;
+  const _MostActiveVolunteers({required this.eventId});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('events')
+          .doc(eventId)
+          .collection('tasks')
+          .where('status', isEqualTo: kTaskStatusDone)
+          .snapshots(),
+      builder: (context, snap) {
+        if (!snap.hasData) {
+          return const SizedBox(
+              height: 20, child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
+        }
+        final counts = <String, int>{};
+        final flats = <String, String>{};
+        for (final doc in snap.data!.docs) {
+          final d = doc.data() as Map<String, dynamic>;
+          final assignees = (d['assignees'] as List? ?? [])
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList();
+          for (final a in assignees) {
+            final name = (a['name'] ?? '').toString().trim();
+            if (name.isEmpty) continue;
+            counts[name] = (counts[name] ?? 0) + 1;
+            final flat = (a['flat'] ?? '').toString().trim();
+            if (flat.isNotEmpty) flats[name] = flat;
+          }
+        }
+        if (counts.isEmpty) {
+          return Text('No completed tasks yet.',
+              style: TextStyle(color: Colors.grey.shade500, fontSize: 13));
+        }
+        final ranked = counts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+        final top = ranked.take(5).toList();
+        return Column(
+          children: top.asMap().entries.map((e) {
+            final rank = e.key;
+            final name = e.value.key;
+            final count = e.value.value;
+            final flat = flats[name] ?? '';
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(children: [
+                Text('${rank + 1}.',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold, color: Colors.grey.shade600, fontSize: 12)),
+                const SizedBox(width: 8),
+                Expanded(
+                    child: Text([name, if (flat.isNotEmpty) flat].join(' · '),
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
+                Text('$count task${count == 1 ? '' : 's'}',
+                    style: TextStyle(
+                        fontSize: 12, color: Colors.teal.shade700, fontWeight: FontWeight.bold)),
+              ]),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+}
+
+class _CompetitionWinnersList extends StatelessWidget {
+  final String eventId;
+  const _CompetitionWinnersList({required this.eventId});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('events')
+          .doc(eventId)
+          .collection('competitions')
+          .orderBy('createdAt', descending: true)
+          .snapshots(),
+      builder: (context, snap) {
+        if (!snap.hasData) {
+          return const SizedBox(
+              height: 20, child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
+        }
+        final declared = snap.data!.docs.where((d) {
+          final winners = (d.data() as Map<String, dynamic>)['winners'] as Map? ?? {};
+          return winners['first'] != null;
+        }).toList();
+        if (declared.isEmpty) {
+          return Text('No competition winners announced yet.',
+              style: TextStyle(color: Colors.grey.shade500, fontSize: 13));
+        }
+        return Column(
+          children: declared.map((doc) {
+            final d = doc.data() as Map<String, dynamic>;
+            final name = d['name'] as String? ?? '';
+            final winners = Map<String, dynamic>.from(d['winners'] as Map);
+            final first = Map<String, dynamic>.from(winners['first'] as Map);
+            final flat = (first['flat'] ?? '').toString();
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(children: [
+                const Text('🥇', style: TextStyle(fontSize: 14)),
+                const SizedBox(width: 8),
+                Expanded(
+                    child: Text(
+                        '$name — ${first['name']}${flat.isNotEmpty ? ' ($flat)' : ''}',
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
+              ]),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+}
+
+class _ApartmentParticipation extends StatelessWidget {
+  final String eventId;
+  final Map<String, dynamic> wingBlocks;
+  final List<String> wings;
+  const _ApartmentParticipation(
+      {required this.eventId, required this.wingBlocks, required this.wings});
+
+  @override
+  Widget build(BuildContext context) {
+    if (wingBlocks.isEmpty) {
+      return Text('Wing/block data not configured yet.',
+          style: TextStyle(color: Colors.grey.shade500, fontSize: 13));
+    }
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('events')
+          .doc(eventId)
+          .collection('contributions')
+          .snapshots(),
+      builder: (context, snap) {
+        if (!snap.hasData) {
+          return const SizedBox(
+              height: 20, child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
+        }
+
+        final paidFlatsByWing = <String, Set<String>>{};
+        for (final doc in snap.data!.docs) {
+          final d = doc.data() as Map<String, dynamic>;
+          if (d['amountReceived'] != true ||
+              d['status'] == 'rejected' ||
+              d['status'] == 'deleted') continue;
+          final wing = (d['wing'] ?? '').toString().trim().toUpperCase();
+          final flat = (d['flatNumber'] ?? '').toString().trim();
+          if (wing.isEmpty || flat.isEmpty) continue;
+          paidFlatsByWing.putIfAbsent(wing, () => {}).add(flat);
+        }
+
+        final rows = <MapEntry<String, double>>[];
+        for (final wing in wings) {
+          final blocks = Map<String, dynamic>.from(wingBlocks[wing] as Map? ?? {});
+          int totalFlats = 0;
+          for (final list in blocks.values) {
+            totalFlats += (list as List? ?? []).length;
+          }
+          if (totalFlats == 0) continue;
+          final paid = paidFlatsByWing[wing.toUpperCase()]?.length ?? 0;
+          rows.add(MapEntry(wing, (paid / totalFlats * 100).clamp(0, 100)));
+        }
+        rows.sort((a, b) => b.value.compareTo(a.value));
+
+        if (rows.isEmpty) {
+          return Text('No participation data yet.',
+              style: TextStyle(color: Colors.grey.shade500, fontSize: 13));
+        }
+
+        return Column(
+          children: rows.map((r) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                    Text(r.key, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                    Text('${r.value.toStringAsFixed(0)}%',
+                        style: TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.bold, color: Colors.indigo.shade700)),
+                  ]),
+                  const SizedBox(height: 4),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(3),
+                    child: LinearProgressIndicator(
+                        value: r.value / 100,
+                        minHeight: 6,
+                        backgroundColor: Colors.grey.shade100,
+                        valueColor: const AlwaysStoppedAnimation(Colors.indigo)),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+}
+
 // ── Sponsors Widget — "Our Sponsors" recognition wall ─────────────────────────
 // Sponsors are shown publicly by name/tier (that's the point of sponsorship —
 // unlike regular contributions, which stay private between resident and
@@ -2568,7 +2973,7 @@ class _SponsorsWidget extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
@@ -2706,7 +3111,7 @@ class _EventTabState extends State<_EventTab> {
                 // Date picker
                 ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.calendar_today, color: Colors.deepPurple),
+                  leading: Icon(Icons.calendar_today, color: AppTheme.accent),
                   title: Text(
                     '${date.day.toString().padLeft(2,'0')}/${date.month.toString().padLeft(2,'0')}/${date.year}',
                     style: const TextStyle(fontWeight: FontWeight.w600),
@@ -2746,7 +3151,7 @@ class _EventTabState extends State<_EventTab> {
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Colors.deepPurple, width: 2),
+                      borderSide: BorderSide(color: AppTheme.accent, width: 2),
                     ),
                   ),
                 ),
@@ -2761,7 +3166,7 @@ class _EventTabState extends State<_EventTab> {
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Colors.deepPurple, width: 2),
+                      borderSide: BorderSide(color: AppTheme.accent, width: 2),
                     ),
                   ),
                 ),
@@ -2801,7 +3206,7 @@ class _EventTabState extends State<_EventTab> {
                   await ref.add(payload);
                 }
               },
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple),
+              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accent),
               child: Text(existing == null ? 'Add' : 'Save',
                   style: const TextStyle(color: Colors.white)),
             ),
@@ -2829,12 +3234,12 @@ class _EventTabState extends State<_EventTab> {
         : (data['eventTypeName'] as String? ?? 'Event');
 
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       floatingActionButton: widget.isAdmin
           ? FloatingActionButton.extended(
               heroTag: 'schedule_add',
               onPressed: _showAddScheduleDialog,
-              backgroundColor: Colors.deepPurple,
+              backgroundColor: AppTheme.accent,
               icon: const Icon(Icons.add, color: Colors.white),
               label: const Text('Add to Schedule', style: TextStyle(color: Colors.white)),
             )
@@ -2878,7 +3283,7 @@ class _EventTabState extends State<_EventTab> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: Theme.of(context).cardColor,
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0,3))],
                 ),
@@ -2890,25 +3295,25 @@ class _EventTabState extends State<_EventTab> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                           decoration: BoxDecoration(
-                            color: Colors.deepPurple.shade50,
+                            color: AppTheme.accent.shade50,
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text('$eventTypeEmoji $eventTypeLabel',
                               style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
-                                  color: Colors.deepPurple.shade700)),
+                                  color: AppTheme.accent.shade700)),
                         ),
                         const Spacer(),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                           decoration: BoxDecoration(
-                            color: status == 'active' ? Colors.green.shade50 : Colors.grey.shade100,
+                            color: eventStatusColor(status).withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: status == 'active' ? Colors.green.shade300 : Colors.grey.shade300),
+                            border: Border.all(color: eventStatusColor(status).withValues(alpha: 0.4)),
                           ),
                           child: Text(
-                            status == 'active' ? '🟢 Active' : '🔴 Closed',
+                            '${status == 'active' ? '🟢' : status == 'upcoming' ? '🔵' : '🔴'} ${eventStatusLabel(status)}',
                             style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
-                                color: status == 'active' ? Colors.green.shade700 : Colors.grey.shade600),
+                                color: eventStatusColor(status)),
                           ),
                         ),
                       ],
@@ -2931,7 +3336,7 @@ class _EventTabState extends State<_EventTab> {
               // ── Day-by-day schedule ────────────────────────────
               const SizedBox(height: 20),
               Row(children: [
-                const Icon(Icons.schedule_outlined, size: 16, color: Colors.deepPurple),
+                Icon(Icons.schedule_outlined, size: 16, color: AppTheme.accent),
                 const SizedBox(width: 6),
                 Text('Event Schedule',
                     style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
@@ -2947,7 +3352,7 @@ class _EventTabState extends State<_EventTab> {
                 Container(
                   padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: Theme.of(context).cardColor,
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: Column(
@@ -2987,7 +3392,7 @@ class _EventTabState extends State<_EventTab> {
                           Container(
                             width: 48, height: 48,
                             decoration: BoxDecoration(
-                              color: Colors.deepPurple,
+                              color: AppTheme.accent,
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Column(
@@ -3016,7 +3421,7 @@ class _EventTabState extends State<_EventTab> {
                           final session = item['session'] as String? ?? 'Morning';
                           final title = item['title'] as String? ?? '';
                           final desc = item['description'] as String? ?? '';
-                          final color = _sessionColors[session] ?? Colors.deepPurple;
+                          final color = _sessionColors[session] ?? AppTheme.accent;
                           final icon = _sessionIcons[session] ?? Icons.schedule;
                           final docId = item['_id'] as String;
 
@@ -3045,7 +3450,7 @@ class _EventTabState extends State<_EventTab> {
                                     child: Container(
                                       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
                                       decoration: BoxDecoration(
-                                        color: Colors.white,
+                                        color: Theme.of(context).cardColor,
                                         borderRadius: BorderRadius.circular(12),
                                         border: Border.all(color: color.withOpacity(0.2)),
                                         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha:0.03), blurRadius: 6, offset: const Offset(0,2))],
@@ -3142,7 +3547,7 @@ class _EventDetailRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(children: [
-      Icon(icon, size: 15, color: Colors.deepPurple.shade300),
+      Icon(icon, size: 15, color: AppTheme.accent.shade300),
       const SizedBox(width: 8),
       Text('$label: ', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
       Text(value, style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
@@ -3239,11 +3644,11 @@ class _CountdownBannerState extends State<_CountdownBanner> {
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [Colors.deepPurple.shade700, Colors.indigo.shade500],
+          colors: [AppTheme.accent.shade700, Colors.indigo.shade500],
           begin: Alignment.topLeft, end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.deepPurple.withValues(alpha: 0.25), blurRadius: 12, offset: const Offset(0, 5))],
+        boxShadow: [BoxShadow(color: AppTheme.accent.withValues(alpha: 0.25), blurRadius: 12, offset: const Offset(0, 5))],
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
@@ -3456,7 +3861,7 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
               }});
               if (ctx.mounted) Navigator.pop(ctx);
             },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple),
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accent),
             child: const Text('Save', style: TextStyle(color: Colors.white)),
           ),
         ],
@@ -3501,7 +3906,7 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
                 label: Text(_fmtDate(d), style: TextStyle(fontSize: 12,
                     color: sel ? Colors.white : Colors.grey.shade700)),
                 selected: sel,
-                selectedColor: Colors.deepPurple,
+                selectedColor: AppTheme.accent,
                 onSelected: (_) => setSt(() => picked = d),
               );
             }).toList()),
@@ -3518,7 +3923,7 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
                 });
                 if (ctx.mounted) Navigator.pop(ctx);
               },
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple),
+              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accent),
               child: const Text('Change Date', style: TextStyle(color: Colors.white)),
             ),
           ],
@@ -3553,7 +3958,7 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple),
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accent),
             child: const Text('Request Slot', style: TextStyle(color: Colors.white)),
           ),
         ],
@@ -3639,7 +4044,7 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
                     icon: const Icon(Icons.tune, size: 16),
                     label: const Text('Configure', style: TextStyle(fontSize: 12)),
                     style: TextButton.styleFrom(
-                      foregroundColor: Colors.deepPurple,
+                      foregroundColor: AppTheme.accent,
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     ),
                     onPressed: () => _showConfigDialog(poojaConfig),
@@ -3654,7 +4059,7 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
                 Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    color: Colors.white, borderRadius: BorderRadius.circular(12),
+                    color: Theme.of(context).cardColor, borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: Colors.grey.shade200),
                   ),
                   child: Center(child: Text('Set event start/end dates to enable Pooja scheduling.',
@@ -3676,7 +4081,7 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
                   return Container(
                     margin: const EdgeInsets.only(bottom: 12),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: Theme.of(context).cardColor,
                       borderRadius: BorderRadius.circular(14),
                       boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 3))],
                     ),
@@ -3685,14 +4090,14 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
                       Container(
                         padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
                         decoration: BoxDecoration(
-                          color: isNoSchedule ? Colors.grey.shade100 : Colors.deepPurple.shade50,
+                          color: isNoSchedule ? Colors.grey.shade100 : AppTheme.accent.shade50,
                           borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
                         ),
                         child: Row(children: [
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                             decoration: BoxDecoration(
-                              color: isNoSchedule ? Colors.grey.shade400 : Colors.deepPurple,
+                              color: isNoSchedule ? Colors.grey.shade400 : AppTheme.accent,
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text('${date.day}',
@@ -3701,7 +4106,7 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
                           const SizedBox(width: 8),
                           Text(_fmtDate(date),
                               style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13,
-                                  color: isNoSchedule ? Colors.grey.shade600 : Colors.deepPurple.shade800)),
+                                  color: isNoSchedule ? Colors.grey.shade600 : AppTheme.accent.shade800)),
                           const Spacer(),
                           if (widget.isAdmin)
                             GestureDetector(
@@ -3709,17 +4114,17 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                 decoration: BoxDecoration(
-                                  color: isNoSchedule ? Colors.deepPurple.withValues(alpha: 0.1) : Colors.grey.shade200,
+                                  color: isNoSchedule ? AppTheme.accent.withValues(alpha: 0.1) : Colors.grey.shade200,
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 child: Text(isNoSchedule ? 'Enable' : 'No Schedule',
                                     style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600,
-                                        color: isNoSchedule ? Colors.deepPurple : Colors.grey.shade600)),
+                                        color: isNoSchedule ? AppTheme.accent : Colors.grey.shade600)),
                               ),
                             )
                           else
                             Text('Day ${dates.indexOf(date) + 1}',
-                                style: TextStyle(fontSize: 11, color: Colors.deepPurple.shade300)),
+                                style: TextStyle(fontSize: 11, color: AppTheme.accent.shade300)),
                         ]),
                       ),
                       if (isNoSchedule)
@@ -3938,7 +4343,7 @@ class _PoojaShift extends StatelessWidget {
                 Container(
                   width: 20, height: 20,
                   decoration: BoxDecoration(
-                    color: i == 0 ? Colors.deepPurple : Colors.orange.shade300,
+                    color: i == 0 ? AppTheme.accent : Colors.orange.shade300,
                     shape: BoxShape.circle,
                   ),
                   child: Center(child: Text('${i+1}',
@@ -4182,7 +4587,7 @@ class _VolunteersTabState extends State<_VolunteersTab> {
                 if (docId != null) { await _col.doc(docId).update(payload); }
                 else { await _col.add(payload); }
               },
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple),
+              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accent),
               child: Text(existing == null ? 'Add' : 'Save', style: const TextStyle(color: Colors.white)),
             ),
           ],
@@ -4254,15 +4659,15 @@ class _VolunteersTabState extends State<_VolunteersTab> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.deepPurple.shade50,
+                  color: AppTheme.accent.shade50,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Row(children: [
                   CircleAvatar(
-                    radius: 18, backgroundColor: Colors.deepPurple.shade100,
+                    radius: 18, backgroundColor: AppTheme.accent.shade100,
                     child: Text(
                       _name.isNotEmpty ? _name[0].toUpperCase() : '?',
-                      style: TextStyle(color: Colors.deepPurple.shade700, fontWeight: FontWeight.bold),
+                      style: TextStyle(color: AppTheme.accent.shade700, fontWeight: FontWeight.bold),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -4288,7 +4693,7 @@ class _VolunteersTabState extends State<_VolunteersTab> {
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: Colors.deepPurple, width: 2),
+                    borderSide: BorderSide(color: AppTheme.accent, width: 2),
                   ),
                 ),
               ),
@@ -4318,7 +4723,7 @@ class _VolunteersTabState extends State<_VolunteersTab> {
                 if (docId != null) { await _col.doc(docId).update(payload); }
                 else { await _col.add(payload); }
               },
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple),
+              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accent),
               child: Text(existing == null ? 'Submit Registration' : 'Update',
                   style: const TextStyle(color: Colors.white)),
             ),
@@ -4344,7 +4749,7 @@ class _VolunteersTabState extends State<_VolunteersTab> {
       children: roles.map((r) => ChoiceChip(
         label: Text(r, style: const TextStyle(fontSize: 12)),
         selected: selected == r,
-        selectedColor: (_roleColors[r] ?? Colors.deepPurple).withValues(alpha: 0.15),
+        selectedColor: (_roleColors[r] ?? AppTheme.accent).withValues(alpha: 0.15),
         onSelected: (_) => onSelect(r),
       )).toList(),
     );
@@ -4360,7 +4765,7 @@ class _VolunteersTabState extends State<_VolunteersTab> {
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: Colors.deepPurple, width: 2),
+          borderSide: BorderSide(color: AppTheme.accent, width: 2),
         ),
       ),
     );
@@ -4377,7 +4782,7 @@ class _VolunteersTabState extends State<_VolunteersTab> {
         margin: const EdgeInsets.only(bottom: 6),
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Theme.of(context).cardColor,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: color.withValues(alpha: 0.18)),
           boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 4, offset: const Offset(0, 2))],
@@ -4445,12 +4850,12 @@ class _VolunteersTabState extends State<_VolunteersTab> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       floatingActionButton: widget.isAdmin
           ? FloatingActionButton.extended(
               heroTag: 'volunteer_add',
               onPressed: _showAdminAddDialog,
-              backgroundColor: Colors.deepPurple,
+              backgroundColor: AppTheme.accent,
               icon: const Icon(Icons.person_add_outlined, color: Colors.white),
               label: const Text('Add Volunteer', style: TextStyle(color: Colors.white)),
             )
@@ -5064,7 +5469,7 @@ class _PendingCard extends StatelessWidget {
           const SizedBox(height: 8),
           Container(
             padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8)),
+            decoration: BoxDecoration(color: Theme.of(context).cardColor, borderRadius: BorderRadius.circular(8)),
             child: Text('"$note"', style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontStyle: FontStyle.italic)),
           ),
         ],
@@ -5522,7 +5927,7 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                                     if (!isRejected && !isPending)
                                       IconButton(
                                         icon: Icon(Icons.download_rounded,
-                                            color: Colors.deepPurple.shade300,
+                                            color: AppTheme.accent.shade300,
                                             size: 17),
                                         onPressed: () => exportContributionReceipt(
                                           context: context,
@@ -5755,7 +6160,7 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                           ? Colors.red.shade50
                           : isPending
                               ? Colors.orange.shade50
-                              : Colors.white,
+                              : Theme.of(context).cardColor,
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
                           color: isRejected
@@ -5953,7 +6358,7 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 10, vertical: 8),
                             decoration: BoxDecoration(
-                              color: isAdditional ? Colors.amber.shade50 : Colors.white,
+                              color: isAdditional ? Colors.amber.shade50 : Theme.of(context).cardColor,
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(
                                   color: isAdditional
@@ -6171,7 +6576,7 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                   return Container(
                     margin: const EdgeInsets.only(bottom: 10),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: Theme.of(context).cardColor,
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: Colors.red.shade100),
                     ),
@@ -6299,7 +6704,7 @@ class _ContributionsTabState extends State<_ContributionsTab> {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.blue.shade100),
         boxShadow: [
@@ -6426,8 +6831,10 @@ class _ContributionsTabState extends State<_ContributionsTab> {
             ),
           ),
           title: Text('Block $block',
-              style:
-                  const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+              style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                  color: Colors.purple.shade900)),
           subtitle: Row(
             children: [
               Text('$paidCount/${flats.length} paid',
@@ -7219,7 +7626,7 @@ class _ExpensesTab extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: Theme.of(context).cardColor,
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
@@ -7268,7 +7675,7 @@ class _ExpensesTab extends StatelessWidget {
                   ],
                 ),
                 child: Material(
-                  color: Colors.white,
+                  color: Theme.of(context).cardColor,
                   borderRadius: BorderRadius.circular(12),
                   child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -7473,6 +7880,9 @@ class _ResidentContributeButton extends StatelessWidget {
         if (status == 'closed') {
           return _pill(context, 'Contributions Closed', Colors.grey.shade500);
         }
+        if (status == 'upcoming') {
+          return _pill(context, 'Contributions open soon', Colors.amber.shade700);
+        }
 
         final start = _parseDate(startDate);
         if (start != null && DateTime.now().isBefore(start)) {
@@ -7559,7 +7969,7 @@ class _SummaryCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
@@ -7695,7 +8105,7 @@ class _FollowUpTab extends StatelessWidget {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(children: [
           Icon(isPaidFlat ? Icons.chat_outlined : Icons.notifications_active,
-              color: Colors.deepPurple, size: 22),
+              color: AppTheme.accent, size: 22),
           const SizedBox(width: 8),
           Expanded(child: Text('${isPaidFlat ? 'Message' : 'Reminder'} — $scopeTitle')),
         ]),
@@ -7714,7 +8124,8 @@ class _FollowUpTab extends StatelessWidget {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(message,
-                  style: const TextStyle(fontSize: 13, height: 1.4)),
+                  style: const TextStyle(
+                      fontSize: 13, height: 1.4, color: Colors.black87)),
             ),
             const SizedBox(height: 8),
             Text(
@@ -7735,12 +8146,12 @@ class _FollowUpTab extends StatelessWidget {
               ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                 content: Text(
                     'Message copied for ${flats.length} flat${flats.length == 1 ? '' : 's'}'),
-                backgroundColor: Colors.deepPurple,
+                backgroundColor: AppTheme.accent,
                 duration: const Duration(seconds: 2),
               ));
             },
             style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.deepPurple,
+              foregroundColor: AppTheme.accent,
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8)),
             ),
@@ -7981,7 +8392,7 @@ class _FollowUpTab extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.blue.shade100),
         boxShadow: [
@@ -8017,7 +8428,7 @@ class _FollowUpTab extends StatelessWidget {
             IconButton(
               icon: Icon(
                   wingFullyPaid ? Icons.celebration_outlined : Icons.notifications_active_outlined,
-                  color: wingFullyPaid ? Colors.green.shade600 : Colors.deepPurple.shade400,
+                  color: wingFullyPaid ? Colors.green.shade600 : AppTheme.accent.shade400,
                   size: 20),
               tooltip: wingFullyPaid ? 'Send Thank You to whole wing' : 'Send Reminder to whole wing',
               onPressed: () => wingFullyPaid
@@ -8099,8 +8510,10 @@ class _FollowUpTab extends StatelessWidget {
             ),
           ),
           title: Text('Block $block',
-              style:
-                  const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+              style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                  color: blockFullyPaid ? Colors.green.shade900 : Colors.purple.shade900)),
           subtitle: blockFullyPaid
               ? Text('All paid ✓ · ₹${blockPaidAmount.toStringAsFixed(0)} received',
                   style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.green.shade700))
@@ -8139,7 +8552,7 @@ class _FollowUpTab extends StatelessWidget {
           trailing: IconButton(
             icon: Icon(
                 blockFullyPaid ? Icons.celebration_outlined : Icons.notifications_active_outlined,
-                color: blockFullyPaid ? Colors.green.shade600 : Colors.deepPurple.shade400,
+                color: blockFullyPaid ? Colors.green.shade600 : AppTheme.accent.shade400,
                 size: 20),
             tooltip: blockFullyPaid ? 'Send Thank You' : 'Send Reminder',
             onPressed: () => blockFullyPaid
@@ -8309,7 +8722,7 @@ class _FollowUpFlatCard extends StatelessWidget {
         title: Row(
           children: [
             Icon(Icons.notifications_active,
-                color: Colors.deepPurple, size: 22),
+                color: AppTheme.accent, size: 22),
             const SizedBox(width: 8),
             const Text('Send Reminder'),
           ],
@@ -8328,7 +8741,8 @@ class _FollowUpFlatCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(message,
-                  style: const TextStyle(fontSize: 13, height: 1.4)),
+                  style: const TextStyle(
+                      fontSize: 13, height: 1.4, color: Colors.black87)),
             ),
             const SizedBox(height: 10),
             Text('Copy this message and send via WhatsApp or SMS.',
@@ -8349,13 +8763,13 @@ class _FollowUpFlatCard extends StatelessWidget {
                 SnackBar(
                   content:
                       Text('Reminder message copied for $flatNumber'),
-                  backgroundColor: Colors.deepPurple,
+                  backgroundColor: AppTheme.accent,
                   duration: const Duration(seconds: 2),
                 ),
               );
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.deepPurple,
+              backgroundColor: AppTheme.accent,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8)),
@@ -8387,7 +8801,7 @@ class _FollowUpFlatCard extends StatelessWidget {
         return Container(
           margin: const EdgeInsets.only(bottom: 10),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: Colors.grey.shade200),
             boxShadow: [
@@ -8454,10 +8868,10 @@ class _FollowUpFlatCard extends StatelessWidget {
                 IconButton(
                   onPressed: () => _sendReminder(context),
                   icon: Icon(Icons.notifications_active_outlined,
-                      color: Colors.deepPurple.shade400),
+                      color: AppTheme.accent.shade400),
                   tooltip: 'Send Reminder',
                   style: IconButton.styleFrom(
-                    backgroundColor: Colors.deepPurple.shade50,
+                    backgroundColor: AppTheme.accent.shade50,
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8)),
                   ),
@@ -8498,7 +8912,7 @@ class _MyTasksSection extends StatelessWidget {
           margin: const EdgeInsets.only(bottom: 16),
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(16),
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
           ),
@@ -8506,7 +8920,7 @@ class _MyTasksSection extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(children: [
-                const Icon(Icons.checklist, size: 18, color: Colors.deepPurple),
+                Icon(Icons.checklist, size: 18, color: AppTheme.accent),
                 const SizedBox(width: 8),
                 const Text('My Tasks', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
                 const Spacer(),
@@ -8549,7 +8963,7 @@ class _TasksTabState extends State<_TasksTab> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('events')
@@ -8603,7 +9017,7 @@ class _TasksTabState extends State<_TasksTab> {
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
             children: [
               Row(children: [
-                Expanded(child: _TaskStat(label: 'Total', value: '${allTasks.length}', color: Colors.deepPurple)),
+                Expanded(child: _TaskStat(label: 'Total', value: '${allTasks.length}', color: AppTheme.accent)),
                 const SizedBox(width: 8),
                 Expanded(child: _TaskStat(label: 'Pending', value: '$pending', color: Colors.blueGrey)),
                 const SizedBox(width: 8),
@@ -8655,7 +9069,7 @@ class _TasksTabState extends State<_TasksTab> {
           context,
           MaterialPageRoute(builder: (_) => TaskFormScreen(eventId: widget.eventId)),
         ),
-        backgroundColor: Colors.deepPurple,
+        backgroundColor: AppTheme.accent,
         icon: const Icon(Icons.add, color: Colors.white),
         label: const Text('Create Task', style: TextStyle(color: Colors.white)),
       ),
@@ -8683,7 +9097,7 @@ class _TaskStat extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: color.withValues(alpha: 0.2)),
       ),
@@ -8732,7 +9146,7 @@ class _TaskCard extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Theme.of(context).cardColor,
           borderRadius: BorderRadius.circular(14),
           boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 3))],
         ),
@@ -8794,14 +9208,16 @@ class _ActivityTab extends StatefulWidget {
 class _ActivityTabState extends State<_ActivityTab> {
   final Set<String> _expandedMonths = {};
   final Set<String> _expandedDates = {};
-  final TextEditingController _searchCtrl = TextEditingController();
   String _flatFilter = '';
-  bool _showSearch = false;
   bool _autoExpanded = false; // expand current month on first data load
   DateTime? _dateFilter;
   String _wingFilter = '';
   String _blockFilter = '';
   String _statusFilter = ''; // '', 'confirmed', 'rejected', 'deleted', 'submitted'
+  String _lastFilterSignature = '';
+
+  Map<String, dynamic> _wingBlocks = {};
+  List<String> _wings = [];
 
   static const Map<String, String> _statusLabels = {
     'confirmed': 'Confirmed / Approved',
@@ -8813,15 +9229,155 @@ class _ActivityTabState extends State<_ActivityTab> {
   @override
   void initState() {
     super.initState();
-    _searchCtrl.addListener(() {
-      setState(() => _flatFilter = _searchCtrl.text.trim().toLowerCase());
-    });
+    _fetchWingBlockSettings();
   }
 
-  @override
-  void dispose() {
-    _searchCtrl.dispose();
-    super.dispose();
+  Future<void> _fetchWingBlockSettings() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('community_settings')
+          .doc('address')
+          .get();
+      if (!mounted) return;
+      final data = doc.data() as Map<String, dynamic>? ?? {};
+      setState(() {
+        _wingBlocks = Map<String, dynamic>.from(data['wingBlocks'] as Map? ?? {});
+        _wings = List<String>.from(
+            data['wings'] as List? ?? (_wingBlocks.keys.toList()..sort()));
+      });
+    } catch (_) {
+      // Keep empty defaults; pickers will just show nothing to choose from.
+    }
+  }
+
+  // Blocks configured for the currently-selected wing filter (empty = all wings' blocks)
+  List<String> get _blocksForSelectedWing {
+    if (_wingFilter.isEmpty) {
+      final all = <String>{};
+      for (final v in _wingBlocks.values) {
+        all.addAll(Map<String, dynamic>.from(v as Map? ?? {}).keys);
+      }
+      return all.toList()..sort();
+    }
+    final raw = _wingBlocks[_wingFilter];
+    if (raw == null) return [];
+    return (Map<String, dynamic>.from(raw as Map).keys.toList())..sort();
+  }
+
+  // Flat numbers available for the currently-selected wing/block filters
+  List<String> get _flatsForSelectedFilters {
+    final flats = <String>{};
+    void addFromBlockMap(Map<String, dynamic> blockMap) {
+      if (_blockFilter.isNotEmpty) {
+        final list = blockMap[_blockFilter];
+        if (list != null) flats.addAll(List<String>.from(list as List));
+      } else {
+        for (final list in blockMap.values) {
+          flats.addAll(List<String>.from(list as List? ?? []));
+        }
+      }
+    }
+
+    if (_wingFilter.isNotEmpty) {
+      final raw = _wingBlocks[_wingFilter];
+      if (raw != null) addFromBlockMap(Map<String, dynamic>.from(raw as Map));
+    } else {
+      for (final raw in _wingBlocks.values) {
+        addFromBlockMap(Map<String, dynamic>.from(raw as Map? ?? {}));
+      }
+    }
+    final sorted = flats.toList()
+      ..sort((a, b) {
+        final na = int.tryParse(RegExp(r'\d+').firstMatch(a)?.group(0) ?? '');
+        final nb = int.tryParse(RegExp(r'\d+').firstMatch(b)?.group(0) ?? '');
+        if (na != null && nb != null) return na.compareTo(nb);
+        return a.compareTo(b);
+      });
+    return sorted;
+  }
+
+  Future<String?> _showPickerSheet({
+    required String title,
+    required List<String> options,
+    required String current,
+    bool allowClear = true,
+  }) {
+    final searchCtrl = TextEditingController();
+    return showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        minChildSize: 0.3,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (ctx, scrollController) => StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            final query = searchCtrl.text.trim().toLowerCase();
+            final filtered = query.isEmpty
+                ? options
+                : options.where((o) => o.toLowerCase().contains(query)).toList();
+            return SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                    child: Text(title,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: TextField(
+                      controller: searchCtrl,
+                      autofocus: false,
+                      onChanged: (_) => setSheetState(() {}),
+                      decoration: InputDecoration(
+                        hintText: 'Search…',
+                        isDense: true,
+                        prefixIcon: const Icon(Icons.search, size: 18),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Expanded(
+                    child: ListView(
+                      controller: scrollController,
+                      children: [
+                        if (allowClear)
+                          ListTile(
+                            title: const Text('All'),
+                            trailing: current.isEmpty
+                                ? Icon(Icons.check, color: AppTheme.accent)
+                                : null,
+                            onTap: () => Navigator.pop(ctx, ''),
+                          ),
+                        if (filtered.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Text('No matches',
+                                style: TextStyle(color: Colors.grey.shade400)),
+                          ),
+                        ...filtered.map((o) => ListTile(
+                              title: Text(o),
+                              trailing: current == o
+                                  ? Icon(Icons.check, color: AppTheme.accent)
+                                  : null,
+                              onTap: () => Navigator.pop(ctx, o),
+                            )),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
   }
 
   Future<void> _restore(DocumentReference ref, Map<String, dynamic> e) async {
@@ -8978,6 +9534,8 @@ class _ActivityTabState extends State<_ActivityTab> {
       final name = d['name'] as String? ?? '';
       final rawFlat = d['flat'] as String? ?? '';
       final flat = _fmtFlat(rawFlat);
+      final wing = (d['wing'] as String? ?? '').trim().toUpperCase();
+      final block = (d['block'] as String? ?? '').trim().toUpperCase();
       final role = d['role'] as String? ?? '';
       final addedBy = d['addedBy'] as String? ?? '';
 
@@ -8988,49 +9546,49 @@ class _ActivityTabState extends State<_ActivityTab> {
       if (_ts('addedAt') != null) {
         entries.add({
           'type': addedBy == 'resident' ? 'vol_registered' : 'vol_added',
-          'name': _label(), 'flat': flat, 'role': role,
+          'name': _label(), 'flat': flat, 'wing': wing, 'block': block, 'role': role,
           'ts': _ts('addedAt')!.toDate().toIso8601String(),
         });
       }
       if (_ts('approvedAt') != null) {
         entries.add({
           'type': 'vol_approved',
-          'name': _label(), 'flat': flat, 'role': role,
+          'name': _label(), 'flat': flat, 'wing': wing, 'block': block, 'role': role,
           'ts': _ts('approvedAt')!.toDate().toIso8601String(),
         });
       }
       if (_ts('rejectedAt') != null) {
         entries.add({
           'type': 'vol_rejected',
-          'name': _label(), 'flat': flat, 'role': role,
+          'name': _label(), 'flat': flat, 'wing': wing, 'block': block, 'role': role,
           'ts': _ts('rejectedAt')!.toDate().toIso8601String(),
         });
       }
       if (_ts('waitlistedAt') != null) {
         entries.add({
           'type': 'vol_waitlisted',
-          'name': _label(), 'flat': flat, 'role': role,
+          'name': _label(), 'flat': flat, 'wing': wing, 'block': block, 'role': role,
           'ts': _ts('waitlistedAt')!.toDate().toIso8601String(),
         });
       }
       if (_ts('deletedAt') != null) {
         entries.add({
           'type': 'vol_deleted',
-          'name': _label(), 'flat': flat, 'role': role,
+          'name': _label(), 'flat': flat, 'wing': wing, 'block': block, 'role': role,
           'ts': _ts('deletedAt')!.toDate().toIso8601String(),
         });
       }
       if (_ts('restoredAt') != null) {
         entries.add({
           'type': 'vol_restored',
-          'name': _label(), 'flat': flat, 'role': role,
+          'name': _label(), 'flat': flat, 'wing': wing, 'block': block, 'role': role,
           'ts': _ts('restoredAt')!.toDate().toIso8601String(),
         });
       }
       if (_ts('pendingAt') != null) {
         entries.add({
           'type': 'vol_pending',
-          'name': _label(), 'flat': flat, 'role': role,
+          'name': _label(), 'flat': flat, 'wing': wing, 'block': block, 'role': role,
           'ts': _ts('pendingAt')!.toDate().toIso8601String(),
         });
       }
@@ -9061,6 +9619,8 @@ class _ActivityTabState extends State<_ActivityTab> {
         for (final doc in snap.data!.docs) {
           final d = doc.data() as Map<String, dynamic>;
           final flat = _fmtFlat((d['flatNumber'] ?? '') as String);
+          final wing = (d['wing'] as String? ?? '').trim().toUpperCase();
+          final block = (d['block'] as String? ?? '').trim().toUpperCase();
           final name = d['residentName'] ?? '';
           final amt = (d['amount'] as num?)?.toDouble() ?? 0;
           final mode = d['paymentMode'] ?? '';
@@ -9070,7 +9630,7 @@ class _ActivityTabState extends State<_ActivityTab> {
           if (status == 'deleted') {
             entries.add({
               'type': 'deleted',
-              'flat': flat, 'name': name, 'amt': amt,
+              'flat': flat, 'name': name, 'amt': amt, 'wing': wing, 'block': block,
               'ref': doc.reference,
               'preDeleteStatus': d['preDeleteStatus'] ?? '',
               'preDeleteAmountReceived': d['preDeleteAmountReceived'],
@@ -9081,27 +9641,27 @@ class _ActivityTabState extends State<_ActivityTab> {
             if ((d['restoredAt'] as String?)?.isNotEmpty == true) {
               entries.add({
                 'type': 'restored',
-                'flat': flat, 'name': name, 'amt': amt,
+                'flat': flat, 'name': name, 'amt': amt, 'wing': wing, 'block': block,
                 'ts': d['restoredAt'],
               });
             }
             if (selfReported) {
               entries.add({
                 'type': 'submitted',
-                'flat': flat, 'name': name, 'amt': amt, 'mode': mode,
+                'flat': flat, 'name': name, 'amt': amt, 'mode': mode, 'wing': wing, 'block': block,
                 'ts': d['reportedAt'] ?? d['paidAt'] ?? '',
               });
               if (status == 'confirmed' && (d['confirmedAt'] ?? '').isNotEmpty) {
                 entries.add({
                   'type': 'confirmed',
-                  'flat': flat, 'name': name, 'amt': amt, 'mode': mode,
+                  'flat': flat, 'name': name, 'amt': amt, 'mode': mode, 'wing': wing, 'block': block,
                   'ts': d['confirmedAt'],
                 });
               }
               if ((d['rejectedAt'] as String?)?.isNotEmpty == true) {
                 entries.add({
                   'type': 'rejected',
-                  'flat': flat, 'name': name, 'amt': amt,
+                  'flat': flat, 'name': name, 'amt': amt, 'wing': wing, 'block': block,
                   'reason': d['rejectionReason'] ?? '',
                   'ref': status == 'rejected' ? doc.reference : null,
                   'ts': d['rejectedAt'],
@@ -9110,14 +9670,14 @@ class _ActivityTabState extends State<_ActivityTab> {
               if ((d['revertedAt'] as String?)?.isNotEmpty == true) {
                 entries.add({
                   'type': 'reverted',
-                  'flat': flat, 'name': name, 'amt': amt,
+                  'flat': flat, 'name': name, 'amt': amt, 'wing': wing, 'block': block,
                   'ts': d['revertedAt'],
                 });
               }
             } else {
               entries.add({
                 'type': 'added',
-                'flat': flat, 'name': name, 'amt': amt, 'mode': mode,
+                'flat': flat, 'name': name, 'amt': amt, 'mode': mode, 'wing': wing, 'block': block,
                 'ts': d['paidAt'] ?? '',
               });
             }
@@ -9130,12 +9690,14 @@ class _ActivityTabState extends State<_ActivityTab> {
         }
         bool _matchEntry(Map<String, dynamic> e) {
           final flat = (e['flat'] as String? ?? '').toUpperCase();
-          if (_flatFilter.isNotEmpty && !flat.toLowerCase().contains(_flatFilter)) return false;
-          if (_wingFilter.isNotEmpty && !flat.startsWith(_wingFilter.toUpperCase())) return false;
-          if (_blockFilter.isNotEmpty) {
-            final afterWing = flat.substring(_wingFilter.length);
-            if (!afterWing.startsWith(_blockFilter.toUpperCase())) return false;
+          final wing = (e['wing'] as String? ?? '').toUpperCase();
+          final block = (e['block'] as String? ?? '').toUpperCase();
+          if (_flatFilter.isNotEmpty) {
+            final flatNo = flat.split(' ').last;
+            if (flatNo != _flatFilter.toUpperCase()) return false;
           }
+          if (_wingFilter.isNotEmpty && wing != _wingFilter.toUpperCase()) return false;
+          if (_blockFilter.isNotEmpty && block != _blockFilter.toUpperCase()) return false;
           if (_dateFilter != null) {
             final dt = e['dt'] as DateTime?;
             if (dt == null) return false;
@@ -9194,6 +9756,25 @@ class _ActivityTabState extends State<_ActivityTab> {
         }
         final allExpanded = _expandedMonths.containsAll(allMonthKeys) &&
             _expandedDates.containsAll(allDateKeys);
+
+        // Auto-expand every group whenever a filter is actively narrowing results,
+        // so filtered results are visible immediately instead of staying collapsed.
+        final filtersActive = _flatFilter.isNotEmpty || _wingFilter.isNotEmpty ||
+            _blockFilter.isNotEmpty || _dateFilter != null || _statusFilter.isNotEmpty;
+        final filterSignature = filtersActive
+            ? '$_flatFilter|$_wingFilter|$_blockFilter|$_statusFilter|${_dateFilter?.toIso8601String() ?? ''}'
+            : '';
+        if (filtersActive && filterSignature != _lastFilterSignature) {
+          _lastFilterSignature = filterSignature;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() {
+              _expandedMonths.addAll(allMonthKeys);
+              _expandedDates.addAll(allDateKeys);
+            });
+          });
+        } else if (!filtersActive) {
+          _lastFilterSignature = '';
+        }
 
         // Auto-expand today's month and date on first data load
         if (!_autoExpanded && allMonthKeys.isNotEmpty) {
@@ -9260,40 +9841,11 @@ class _ActivityTabState extends State<_ActivityTab> {
         final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
         return Column(
           children: [
-            // Toolbar: search toggle (left) + expand/collapse (right)
+            // Toolbar: expand/collapse (right)
             Padding(
               padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
               child: Row(
                 children: [
-                  // Search icon toggles inline field
-                  IconButton(
-                    icon: Icon(
-                      _showSearch ? Icons.search_off : Icons.search,
-                      size: 20,
-                      color: _flatFilter.isNotEmpty
-                          ? Colors.deepPurple.shade600
-                          : Colors.grey.shade500),
-                    tooltip: 'Filter by flat',
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    onPressed: () => setState(() {
-                      _showSearch = !_showSearch;
-                      if (!_showSearch) _searchCtrl.clear();
-                    }),
-                  ),
-                  if (_flatFilter.isNotEmpty) ...[
-                    const SizedBox(width: 6),
-                    Chip(
-                      label: Text(_flatFilter,
-                          style: const TextStyle(fontSize: 11)),
-                      deleteIcon: const Icon(Icons.close, size: 14),
-                      onDeleted: () => _searchCtrl.clear(),
-                      visualDensity: VisualDensity.compact,
-                      padding: EdgeInsets.zero,
-                      backgroundColor: Colors.deepPurple.shade50,
-                      side: BorderSide(color: Colors.deepPurple.shade200),
-                    ),
-                  ],
                   const Spacer(),
                   TextButton.icon(
                     icon: Icon(
@@ -9302,7 +9854,7 @@ class _ActivityTabState extends State<_ActivityTab> {
                     label: Text(allExpanded ? 'Collapse All' : 'Expand All',
                         style: const TextStyle(fontSize: 12)),
                     style: TextButton.styleFrom(
-                        foregroundColor: Colors.deepPurple.shade400,
+                        foregroundColor: AppTheme.accent.shade400,
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
                     onPressed: () => setState(() {
                       if (allExpanded) {
@@ -9317,73 +9869,37 @@ class _ActivityTabState extends State<_ActivityTab> {
                 ],
               ),
             ),
-            // Inline search field — only visible when toggled
-            if (_showSearch)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
-                child: TextField(
-                  controller: _searchCtrl,
-                  autofocus: true,
-                  decoration: InputDecoration(
-                    hintText: 'Flat number (e.g. DB 104)',
-                    hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade400),
-                    prefixIcon: Icon(Icons.search, size: 18, color: Colors.grey.shade400),
-                    suffixIcon: _flatFilter.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear, size: 16),
-                            onPressed: () => _searchCtrl.clear())
-                        : null,
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(color: Colors.grey.shade300)),
-                    enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(color: Colors.grey.shade200)),
-                  ),
-                ),
-              ),
-            // Wing / Block / Date filter row
+            // Wing / Block / Flat / Date / Status filter row
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
               child: Wrap(
                 spacing: 6,
                 runSpacing: 4,
                 children: [
-                  // Wing filter chip
+                  // Wing filter chip (dropdown picker)
                   ActionChip(
                     avatar: Icon(Icons.home_work_outlined, size: 14,
-                        color: _wingFilter.isNotEmpty ? Colors.deepPurple.shade700 : Colors.grey.shade500),
+                        color: _wingFilter.isNotEmpty ? AppTheme.accent.shade700 : Colors.grey.shade500),
                     label: Text(_wingFilter.isEmpty ? 'Wing' : 'Wing: $_wingFilter',
                         style: TextStyle(fontSize: 11,
-                            color: _wingFilter.isNotEmpty ? Colors.deepPurple.shade700 : Colors.grey.shade600)),
-                    backgroundColor: _wingFilter.isNotEmpty ? Colors.deepPurple.shade50 : Colors.grey.shade100,
-                    side: BorderSide(color: _wingFilter.isNotEmpty ? Colors.deepPurple.shade200 : Colors.grey.shade300),
+                            color: _wingFilter.isNotEmpty ? AppTheme.accent.shade700 : Colors.grey.shade600)),
+                    backgroundColor: _wingFilter.isNotEmpty ? AppTheme.accent.shade50 : Colors.grey.shade100,
+                    side: BorderSide(color: _wingFilter.isNotEmpty ? AppTheme.accent.shade200 : Colors.grey.shade300),
                     visualDensity: VisualDensity.compact,
                     padding: const EdgeInsets.symmetric(horizontal: 2),
                     onPressed: () async {
-                      final ctrl = TextEditingController(text: _wingFilter);
-                      final val = await showDialog<String>(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          title: const Text('Filter by Wing'),
-                          content: TextField(
-                            controller: ctrl,
-                            autofocus: true,
-                            textCapitalization: TextCapitalization.characters,
-                            decoration: const InputDecoration(hintText: 'e.g. D', isDense: true),
-                          ),
-                          actions: [
-                            TextButton(onPressed: () => Navigator.pop(ctx, ''), child: const Text('Clear')),
-                            TextButton(onPressed: () => Navigator.pop(ctx, ctrl.text.trim().toUpperCase()), child: const Text('Apply')),
-                          ],
-                        ),
-                      );
-                      if (val != null) setState(() => _wingFilter = val);
+                      final val = await _showPickerSheet(
+                          title: 'Filter by Wing', options: _wings, current: _wingFilter);
+                      if (val != null) {
+                        setState(() {
+                          _wingFilter = val;
+                          _blockFilter = '';
+                          _flatFilter = '';
+                        });
+                      }
                     },
                   ),
-                  // Block filter chip
+                  // Block filter chip (dropdown picker, scoped to selected wing)
                   ActionChip(
                     avatar: Icon(Icons.domain_outlined, size: 14,
                         color: _blockFilter.isNotEmpty ? Colors.indigo.shade700 : Colors.grey.shade500),
@@ -9395,24 +9911,31 @@ class _ActivityTabState extends State<_ActivityTab> {
                     visualDensity: VisualDensity.compact,
                     padding: const EdgeInsets.symmetric(horizontal: 2),
                     onPressed: () async {
-                      final ctrl = TextEditingController(text: _blockFilter);
-                      final val = await showDialog<String>(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          title: const Text('Filter by Block'),
-                          content: TextField(
-                            controller: ctrl,
-                            autofocus: true,
-                            textCapitalization: TextCapitalization.characters,
-                            decoration: const InputDecoration(hintText: 'e.g. B', isDense: true),
-                          ),
-                          actions: [
-                            TextButton(onPressed: () => Navigator.pop(ctx, ''), child: const Text('Clear')),
-                            TextButton(onPressed: () => Navigator.pop(ctx, ctrl.text.trim().toUpperCase()), child: const Text('Apply')),
-                          ],
-                        ),
-                      );
-                      if (val != null) setState(() => _blockFilter = val);
+                      final val = await _showPickerSheet(
+                          title: 'Filter by Block', options: _blocksForSelectedWing, current: _blockFilter);
+                      if (val != null) {
+                        setState(() {
+                          _blockFilter = val;
+                          _flatFilter = '';
+                        });
+                      }
+                    },
+                  ),
+                  // Flat filter chip (dropdown picker, scoped to selected wing/block)
+                  ActionChip(
+                    avatar: Icon(Icons.meeting_room_outlined, size: 14,
+                        color: _flatFilter.isNotEmpty ? Colors.brown.shade700 : Colors.grey.shade500),
+                    label: Text(_flatFilter.isEmpty ? 'Flat' : 'Flat: $_flatFilter',
+                        style: TextStyle(fontSize: 11,
+                            color: _flatFilter.isNotEmpty ? Colors.brown.shade700 : Colors.grey.shade600)),
+                    backgroundColor: _flatFilter.isNotEmpty ? Colors.brown.shade50 : Colors.grey.shade100,
+                    side: BorderSide(color: _flatFilter.isNotEmpty ? Colors.brown.shade200 : Colors.grey.shade300),
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    onPressed: () async {
+                      final val = await _showPickerSheet(
+                          title: 'Filter by Flat', options: _flatsForSelectedFilters, current: _flatFilter);
+                      if (val != null) setState(() => _flatFilter = val);
                     },
                   ),
                   // Date filter chip
@@ -9485,7 +10008,8 @@ class _ActivityTabState extends State<_ActivityTab> {
                     },
                   ),
                   // Clear all filters
-                  if (_wingFilter.isNotEmpty || _blockFilter.isNotEmpty || _dateFilter != null || _statusFilter.isNotEmpty)
+                  if (_wingFilter.isNotEmpty || _blockFilter.isNotEmpty || _flatFilter.isNotEmpty ||
+                      _dateFilter != null || _statusFilter.isNotEmpty)
                     ActionChip(
                       avatar: const Icon(Icons.clear_all, size: 14, color: Colors.red),
                       label: const Text('Clear', style: TextStyle(fontSize: 11, color: Colors.red)),
@@ -9496,6 +10020,7 @@ class _ActivityTabState extends State<_ActivityTab> {
                       onPressed: () => setState(() {
                         _wingFilter = '';
                         _blockFilter = '';
+                        _flatFilter = '';
                         _dateFilter = null;
                         _statusFilter = '';
                       }),
@@ -9527,7 +10052,7 @@ class _ActivityTabState extends State<_ActivityTab> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
-                        color: Colors.deepPurple.shade600,
+                        color: AppTheme.accent.shade600,
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Row(
@@ -9551,7 +10076,7 @@ class _ActivityTabState extends State<_ActivityTab> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Expanded(child: Divider(color: Colors.deepPurple.shade100)),
+                    Expanded(child: Divider(color: AppTheme.accent.shade100)),
                   ]),
                 ),
               );
@@ -9694,7 +10219,9 @@ class _ActivityTabState extends State<_ActivityTab> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
-                  color: type == 'deleted' ? Colors.grey.shade50 : Colors.white,
+                  color: type == 'deleted'
+                      ? Colors.grey.withValues(alpha: 0.08)
+                      : Theme.of(context).cardColor,
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(color: type == 'deleted'
                       ? Colors.grey.shade200 : Colors.grey.shade100),

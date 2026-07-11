@@ -1,6 +1,7 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../utils/country_codes.dart';
+import '../../theme/app_theme.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -33,7 +34,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade600),
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accent),
             child: const Text('Add', style: TextStyle(color: Colors.white)),
           ),
         ],
@@ -260,7 +261,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           decoration: BoxDecoration(
                             color: !isBulk
                                 ? Colors.teal.shade600
-                                : Colors.grey.shade100,
+                                : (Theme.of(ctx).brightness == Brightness.dark
+                                    ? Colors.grey.shade800
+                                    : Colors.grey.shade100),
                             borderRadius: const BorderRadius.horizontal(
                                 left: Radius.circular(8)),
                           ),
@@ -283,7 +286,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           decoration: BoxDecoration(
                             color: isBulk
                                 ? Colors.teal.shade600
-                                : Colors.grey.shade100,
+                                : (Theme.of(ctx).brightness == Brightness.dark
+                                    ? Colors.grey.shade800
+                                    : Colors.grey.shade100),
                             borderRadius: const BorderRadius.horizontal(
                                 right: Radius.circular(8)),
                           ),
@@ -525,8 +530,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-            style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1A73E8)),
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accent),
             child: const Text('Save', style: TextStyle(color: Colors.white)),
           ),
         ],
@@ -541,11 +545,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('Community Settings',
             style: TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: const Color(0xFF1A73E8),
+        backgroundColor: AppTheme.accent,
         foregroundColor: Colors.white,
       ),
       body: StreamBuilder<DocumentSnapshot>(
@@ -567,17 +571,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              _DefaultNoteCard(ref: _ref, data: data),
-              const SizedBox(height: 16),
-              _ResidentLandingScreenCard(ref: _ref, data: data),
-              const SizedBox(height: 16),
-              _CountryCodeCard(ref: _ref, data: data),
-              const SizedBox(height: 16),
-              _PaymentModesCard(ref: _ref, data: data),
-              const SizedBox(height: 16),
+              const _SectionLabel('Community Structure'),
               _SectionCard(
                 icon: Icons.apartment,
-                iconColor: Colors.blue,
+                iconColor: AppTheme.accent,
                 title: 'Wings & Blocks',
                 subtitle: wings.isEmpty
                     ? 'No wings yet â€" tap + to add your first wing'
@@ -641,11 +638,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                 ],
               ),
-
+              const SizedBox(height: 20),
+              const _SectionLabel('Resident Experience'),
+              _ResidentLandingScreenCard(ref: _ref, data: data),
+              const SizedBox(height: 10),
+              _DefaultNoteCard(ref: _ref, data: data),
+              const SizedBox(height: 20),
+              const _SectionLabel('Payments'),
+              _CountryCodeCard(ref: _ref, data: data),
+              const SizedBox(height: 10),
+              _PaymentModesCard(ref: _ref, data: data),
             ],
           );
         },
       ),
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  final String text;
+  const _SectionLabel(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Text(text.toUpperCase(),
+          style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: Colors.grey.shade500,
+              letterSpacing: 0.6)),
     );
   }
 }
@@ -763,7 +787,7 @@ class _ResidentLandingScreenCard extends StatelessWidget {
     final current = _current;
     return _CollapsibleCard(
       icon: Icons.home_outlined,
-      iconColor: Colors.deepPurple,
+      iconColor: AppTheme.accent,
       title: 'Resident Landing Screen',
       subtitle: 'What residents see right after logging in.',
       child: Row(children: [
@@ -807,15 +831,18 @@ class _LandingOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: selected ? Colors.deepPurple.shade50 : Colors.grey.shade50,
+          color: selected
+              ? AppTheme.accent.shade50
+              : (isDark ? Colors.grey.shade800 : Colors.grey.shade50),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-              color: selected ? Colors.deepPurple.shade300 : Colors.grey.shade200,
+              color: selected ? AppTheme.accent.shade300 : Colors.grey.shade200,
               width: selected ? 1.5 : 1),
         ),
         child: Column(
@@ -824,17 +851,17 @@ class _LandingOption extends StatelessWidget {
             Row(children: [
               Icon(icon,
                   size: 18,
-                  color: selected ? Colors.deepPurple : Colors.grey.shade500),
+                  color: selected ? AppTheme.accent : Colors.grey.shade500),
               const Spacer(),
               if (selected)
-                Icon(Icons.check_circle, size: 16, color: Colors.deepPurple.shade400),
+                Icon(Icons.check_circle, size: 16, color: AppTheme.accent.shade400),
             ]),
             const SizedBox(height: 6),
             Text(label,
                 style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.bold,
-                    color: selected ? Colors.deepPurple.shade700 : Colors.grey.shade700)),
+                    color: selected ? AppTheme.accent.shade700 : Colors.grey.shade500)),
             const SizedBox(height: 2),
             Text(subtitle,
                 style: TextStyle(fontSize: 10.5, color: Colors.grey.shade500)),
@@ -930,6 +957,7 @@ class _CountryCodeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final current = countryByDialCode(_current);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return _CollapsibleCard(
       icon: Icons.public,
       iconColor: Colors.teal,
@@ -941,7 +969,7 @@ class _CountryCodeCard extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           decoration: BoxDecoration(
-            color: Colors.grey.shade50,
+            color: isDark ? Colors.grey.shade800 : Colors.grey.shade50,
             borderRadius: BorderRadius.circular(10),
             border: Border.all(color: Colors.grey.shade200),
           ),
@@ -1638,14 +1666,17 @@ class _SectionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      elevation: 2,
-      shadowColor: Colors.black12,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      color: Theme.of(context).cardColor,
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: Colors.grey.shade200)),
       child: ExpansionTile(
         initiallyExpanded: false,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         collapsedShape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         leading: Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
@@ -1654,9 +1685,9 @@ class _SectionCard extends StatelessWidget {
           child: Icon(icon, color: iconColor.shade600, size: 20),
         ),
         title: Text(title,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        subtitle:
-            Text(subtitle, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+        subtitle: Text(subtitle,
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
         trailing: _TileTrailing(
           actions: [
             Tooltip(
@@ -1708,12 +1739,14 @@ class _CollapsibleCard extends StatelessWidget {
     return Card(
       margin: EdgeInsets.zero,
       elevation: 0,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      color: Theme.of(context).cardColor,
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: Colors.grey.shade200)),
       child: ExpansionTile(
         initiallyExpanded: false,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        collapsedShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        collapsedShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         tilePadding: const EdgeInsets.symmetric(horizontal: 16),
         leading: Container(
           padding: const EdgeInsets.all(8),

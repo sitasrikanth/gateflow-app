@@ -8,6 +8,10 @@ import '../events/event_dashboard_screen.dart';
 import '../events/event_types.dart';
 import '../events/self_report_sheet.dart';
 import 'contribution_history_screen.dart';
+import '../../utils/event_status.dart';
+import '../events/featured_event_banner.dart';
+import '../../theme/app_theme.dart';
+import '../settings/theme_settings_sheet.dart';
 
 const _kMonthNames = [
   '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -33,7 +37,7 @@ class _ResidentEventsScreenState extends State<ResidentEventsScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this, initialIndex: 1);
     _load();
   }
 
@@ -62,13 +66,13 @@ class _ResidentEventsScreenState extends State<ResidentEventsScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: NestedScrollView(
         headerSliverBuilder: (context, _) => [
           SliverAppBar(
             expandedHeight: 168,
             pinned: true,
-            backgroundColor: Colors.deepPurple,
+            backgroundColor: AppTheme.accent,
             flexibleSpace: FlexibleSpaceBar(
               background: Container(
                 decoration: const BoxDecoration(
@@ -138,6 +142,11 @@ class _ResidentEventsScreenState extends State<ResidentEventsScreen>
                 ),
               ),
               IconButton(
+                icon: const Icon(Icons.palette_outlined, color: Colors.white70),
+                tooltip: 'Theme',
+                onPressed: () => showThemeSettingsSheet(context),
+              ),
+              IconButton(
                 icon: const Icon(Icons.logout, color: Colors.white70),
                 tooltip: 'Logout',
                 onPressed: () async {
@@ -160,17 +169,20 @@ class _ResidentEventsScreenState extends State<ResidentEventsScreen>
               unselectedLabelColor: Colors.white60,
               labelStyle: const TextStyle(fontWeight: FontWeight.w600),
               tabs: const [
-                Tab(text: 'Active Events'),
-                Tab(text: 'Closed Events'),
+                Tab(text: 'Upcoming'),
+                Tab(text: 'Ongoing'),
+                Tab(text: 'Past'),
               ],
             ),
           ),
+          const SliverToBoxAdapter(child: FeaturedEventBanner(isAdmin: false)),
         ],
         body: _flatNumber.isEmpty
             ? const Center(child: CircularProgressIndicator())
             : TabBarView(
                 controller: _tabController,
                 children: [
+                  _EventsTab(flatNumber: _flatNumber, residentName: _residentName, status: 'upcoming'),
                   _EventsTab(flatNumber: _flatNumber, residentName: _residentName, status: 'active'),
                   _EventsTab(flatNumber: _flatNumber, residentName: _residentName, status: 'closed'),
                 ],
@@ -211,9 +223,11 @@ class _EventsTab extends StatelessWidget {
                     size: 64, color: Colors.grey.shade300),
                 const SizedBox(height: 12),
                 Text(
-                  status == 'active'
-                      ? 'No active events right now'
-                      : 'No closed events yet',
+                  status == 'upcoming'
+                      ? 'No upcoming events yet'
+                      : status == 'active'
+                          ? 'No ongoing events right now'
+                          : 'No past events yet',
                   style: TextStyle(
                       color: Colors.grey.shade500,
                       fontSize: 15,
@@ -244,10 +258,10 @@ class _EventsTab extends StatelessWidget {
               eventDoc: events[i],
               flatNumber: flatNumber,
               residentName: residentName,
-              isActive: status == 'active',
+              status: status,
               imageUrl: imageUrl,
               gradientColors: eventType?.gradient ??
-                  [Colors.deepPurple, Colors.deepPurple.shade300],
+                  [AppTheme.accent, AppTheme.accent.shade300],
               typeEmoji: eventType?.emoji ?? '🎉',
               tagline: eventType?.tagline ?? '',
             );
@@ -263,19 +277,21 @@ class _EventsTab extends StatelessWidget {
 class _ResidentEventGridCard extends StatefulWidget {
   final QueryDocumentSnapshot eventDoc;
   final String flatNumber, residentName, imageUrl, typeEmoji, tagline;
-  final bool isActive;
+  final String status;
   final List<Color> gradientColors;
 
   const _ResidentEventGridCard({
     required this.eventDoc,
     required this.flatNumber,
     required this.residentName,
-    required this.isActive,
+    required this.status,
     required this.imageUrl,
     required this.gradientColors,
     required this.typeEmoji,
     required this.tagline,
   });
+
+  bool get isActive => status == 'active';
 
   @override
   State<_ResidentEventGridCard> createState() => _ResidentEventGridCardState();
@@ -409,7 +425,7 @@ class _ResidentEventGridCardState extends State<_ResidentEventGridCard> {
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
                 child: Row(children: [
                   Icon(Icons.receipt_long_outlined,
-                      color: Colors.deepPurple.shade400, size: 20),
+                      color: AppTheme.accent.shade400, size: 20),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(eventName,
@@ -637,7 +653,7 @@ class _ResidentEventGridCardState extends State<_ResidentEventGridCard> {
       if (_paidAmt > 0) parts.add(pill('✅ ${_fmt(_paidAmt)}', Colors.green));
       if (_pendingAmt > 0) parts.add(pill('⏳ ${_fmt(_pendingAmt)}', Colors.orange));
       if (_rejectedAmt > 0) parts.add(pill('❌ ${_fmt(_rejectedAmt)}', Colors.red));
-      if (parts.isEmpty) parts.add(pill(widget.isActive ? 'Active' : 'Closed', Colors.grey));
+      if (parts.isEmpty) parts.add(pill(eventStatusLabel(widget.status), eventStatusColor(widget.status)));
       final badge = Row(
         mainAxisSize: MainAxisSize.min,
         children: parts
@@ -1022,11 +1038,11 @@ class _EventContributionCardState extends State<_EventContributionCard> {
       child: Container(
         margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Theme.of(context).cardColor,
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-                color: Colors.deepPurple.withValues(alpha: 0.08),
+                color: AppTheme.accent.withValues(alpha: 0.08),
                 blurRadius: 12,
                 offset: const Offset(0, 4))
           ],
@@ -1097,10 +1113,10 @@ class _EventContributionCardState extends State<_EventContributionCard> {
                                 fontSize: 12, color: Colors.grey.shade500)),
                         Text(
                             '₹${collected.toStringAsFixed(0)} collected',
-                            style: const TextStyle(
+                            style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
-                                color: Colors.deepPurple)),
+                                color: AppTheme.accent)),
                       ],
                     ),
                     const SizedBox(height: 6),
@@ -1110,8 +1126,8 @@ class _EventContributionCardState extends State<_EventContributionCard> {
                         value: progress,
                         minHeight: 6,
                         backgroundColor: Colors.grey.shade100,
-                        valueColor: const AlwaysStoppedAnimation(
-                            Colors.deepPurple),
+                        valueColor: AlwaysStoppedAnimation(
+                            AppTheme.accent),
                       ),
                     ),
                   ],
@@ -1332,13 +1348,13 @@ class _EventContributionCardState extends State<_EventContributionCard> {
                     child: OutlinedButton.icon(
                       onPressed: () => _openDashboard(context, eventName),
                       icon: Icon(Icons.open_in_new,
-                          size: 14, color: Colors.deepPurple.shade400),
+                          size: 14, color: AppTheme.accent.shade400),
                       label: Text('Dashboard',
                           style: TextStyle(
                               fontSize: 12,
-                              color: Colors.deepPurple.shade400)),
+                              color: AppTheme.accent.shade400)),
                       style: OutlinedButton.styleFrom(
-                        side: BorderSide(color: Colors.deepPurple.shade200),
+                        side: BorderSide(color: AppTheme.accent.shade200),
                         padding: const EdgeInsets.symmetric(vertical: 10),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(10)),

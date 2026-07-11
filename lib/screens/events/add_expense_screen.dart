@@ -425,7 +425,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: Text(_isEdit ? 'Edit Expense' : 'Record Expense',
             style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -898,7 +898,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: c.shade300, width: 1.5),
       ),

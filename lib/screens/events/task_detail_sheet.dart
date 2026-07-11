@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'task_form_screen.dart';
+import '../../theme/app_theme.dart';
 
 Future<void> showTaskDetailSheet(
   BuildContext context, {
@@ -220,7 +221,7 @@ class _TaskDetailSheetState extends State<_TaskDetailSheet> {
                       title: Text(item['text'] as String? ?? '',
                           style: TextStyle(
                               decoration: done ? TextDecoration.lineThrough : null,
-                              color: done ? Colors.grey : Colors.black87)),
+                              color: done ? Colors.grey : null)),
                       controlAffinity: ListTileControlAffinity.leading,
                     );
                   }),
@@ -293,9 +294,9 @@ class _TaskDetailSheetState extends State<_TaskDetailSheet> {
                             children: [
                               CircleAvatar(
                                 radius: 14,
-                                backgroundColor: isAdminComment ? Colors.deepPurple.shade100 : Colors.teal.shade100,
+                                backgroundColor: isAdminComment ? AppTheme.accent.shade100 : Colors.teal.shade100,
                                 child: Icon(isAdminComment ? Icons.shield_outlined : Icons.person,
-                                    size: 14, color: isAdminComment ? Colors.deepPurple : Colors.teal.shade700),
+                                    size: 14, color: isAdminComment ? AppTheme.accent : Colors.teal.shade700),
                               ),
                               const SizedBox(width: 8),
                               Expanded(
@@ -328,7 +329,7 @@ class _TaskDetailSheetState extends State<_TaskDetailSheet> {
                       onSubmitted: (_) => _postComment(),
                     ),
                   ),
-                  IconButton(icon: const Icon(Icons.send, color: Colors.deepPurple), onPressed: _postComment),
+                  IconButton(icon: Icon(Icons.send, color: AppTheme.accent), onPressed: _postComment),
                 ]),
               ],
             ),

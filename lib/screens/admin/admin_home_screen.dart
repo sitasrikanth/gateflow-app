@@ -11,6 +11,10 @@ import '../events/event_types.dart';
 import '../events/create_event_screen.dart';
 import '../events/event_type_settings_screen.dart';
 import 'settings_screen.dart';
+import '../../theme/app_theme.dart';
+import '../settings/theme_settings_sheet.dart';
+import '../../utils/event_status.dart';
+import '../events/featured_event_banner.dart';
 
 class AdminHomeScreen extends StatefulWidget {
   const AdminHomeScreen({super.key});
@@ -50,7 +54,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Column(
         children: [
           // Header
@@ -81,6 +85,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen>
                             builder: (_) => const SettingsScreen()),
                       ),
                       tooltip: 'Settings',
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.palette_outlined, color: Colors.white),
+                      tooltip: 'Theme',
+                      onPressed: () => showThemeSettingsSheet(context),
                     ),
                     IconButton(
                       icon: const Icon(Icons.logout, color: Colors.white),
@@ -877,7 +886,7 @@ class _ResidentsTabState extends State<_ResidentsTab> {
                       return Container(
                         margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: Theme.of(context).cardColor,
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(color: Colors.grey.shade200),
                           boxShadow: [
@@ -896,7 +905,7 @@ class _ResidentsTabState extends State<_ResidentsTab> {
                                 CircleAvatar(
                                   radius: 20,
                                   backgroundColor: isAdmin
-                                      ? Colors.deepPurple.shade50
+                                      ? AppTheme.accent.shade50
                                       : const Color(0xFF1A73E8)
                                           .withValues(alpha: 0.1),
                                   child: Icon(
@@ -904,7 +913,7 @@ class _ResidentsTabState extends State<_ResidentsTab> {
                                         ? Icons.admin_panel_settings
                                         : Icons.person,
                                     color: isAdmin
-                                        ? Colors.deepPurple
+                                        ? AppTheme.accent
                                         : const Color(0xFF1A73E8),
                                     size: 18,
                                   ),
@@ -1077,7 +1086,7 @@ class _ResidentsTabState extends State<_ResidentsTab> {
                 child: ElevatedButton.icon(
                   onPressed: () => _addUser('admin'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.deepPurple,
+                    backgroundColor: AppTheme.accent,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10)),
@@ -1238,7 +1247,7 @@ class _ResidentsTabState extends State<_ResidentsTab> {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.blue.shade100),
         boxShadow: [
@@ -1448,17 +1457,17 @@ class _ResidentsTabState extends State<_ResidentsTab> {
       BuildContext context, List<QueryDocumentSnapshot> admins) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.deepPurple.shade100),
+        border: Border.all(color: AppTheme.accent.shade100),
       ),
       child: ExpansionTile(
         key: const PageStorageKey('res_admins'),
         leading: CircleAvatar(
           radius: 18,
-          backgroundColor: Colors.deepPurple.shade50,
+          backgroundColor: AppTheme.accent.shade50,
           child: Icon(Icons.admin_panel_settings,
-              color: Colors.deepPurple, size: 18),
+              color: AppTheme.accent, size: 18),
         ),
         title: const Text('Admins',
             style: TextStyle(fontWeight: FontWeight.w600)),
@@ -1470,10 +1479,10 @@ class _ResidentsTabState extends State<_ResidentsTab> {
           final isActive = d['status'] == 'active';
           return ListTile(
             leading: CircleAvatar(
-              backgroundColor: Colors.deepPurple.shade50,
+              backgroundColor: AppTheme.accent.shade50,
               child: Text(name.isNotEmpty ? name[0].toUpperCase() : 'A',
                   style: TextStyle(
-                      color: Colors.deepPurple,
+                      color: AppTheme.accent,
                       fontWeight: FontWeight.bold)),
             ),
             title: Text(name,
@@ -1556,7 +1565,7 @@ class _PendingRegistrationCard extends StatelessWidget {
         return Container(
           margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: Colors.orange.shade200),
             boxShadow: [
@@ -1882,7 +1891,7 @@ class _GuardsTabState extends State<_GuardsTab> {
                   return Container(
                     margin: const EdgeInsets.only(bottom: 10),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: Theme.of(context).cardColor,
                       borderRadius: BorderRadius.circular(12),
                       boxShadow: [
                         BoxShadow(
@@ -2098,7 +2107,7 @@ class _VisitorsTab extends StatelessWidget {
               return Container(
                 margin: const EdgeInsets.only(bottom: 8),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: Theme.of(context).cardColor,
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
@@ -2263,7 +2272,7 @@ class _EventsTabState extends State<_EventsTab>
   @override
   void initState() {
     super.initState();
-    _innerTab = TabController(length: 2, vsync: this);
+    _innerTab = TabController(length: 3, vsync: this, initialIndex: 1);
     _migrateEventTypes();
   }
 
@@ -2301,26 +2310,27 @@ class _EventsTabState extends State<_EventsTab>
       children: [
         // Sub-tab bar + Create button row
         Container(
-          color: Colors.deepPurple.shade50,
+          color: AppTheme.accent.shade50,
           padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
           child: Row(
             children: [
               Expanded(
                 child: TabBar(
                   controller: _innerTab,
-                  labelColor: Colors.deepPurple,
+                  labelColor: AppTheme.accent,
                   unselectedLabelColor: Colors.grey,
-                  indicatorColor: Colors.deepPurple,
+                  indicatorColor: AppTheme.accent,
                   labelStyle: const TextStyle(fontWeight: FontWeight.w600),
                   tabs: const [
-                    Tab(text: 'Active'),
-                    Tab(text: 'Closed'),
+                    Tab(text: 'Upcoming'),
+                    Tab(text: 'Ongoing'),
+                    Tab(text: 'Past'),
                   ],
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.tune,
-                    color: Colors.deepPurple),
+                icon: Icon(Icons.tune,
+                    color: AppTheme.accent),
                 tooltip: 'Event Settings',
                 onPressed: () => Navigator.push(
                   context,
@@ -2329,8 +2339,8 @@ class _EventsTabState extends State<_EventsTab>
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.add_circle,
-                    color: Colors.deepPurple, size: 28),
+                icon: Icon(Icons.add_circle,
+                    color: AppTheme.accent, size: 28),
                 tooltip: 'Create Event',
                 onPressed: () => Navigator.push(
                   context,
@@ -2341,10 +2351,12 @@ class _EventsTabState extends State<_EventsTab>
             ],
           ),
         ),
+        const FeaturedEventBanner(isAdmin: true),
         Expanded(
           child: TabBarView(
             controller: _innerTab,
             children: const [
+              _AdminEventList(status: 'upcoming'),
               _AdminEventList(status: 'active'),
               _AdminEventList(status: 'closed'),
             ],
@@ -2417,19 +2429,23 @@ class _AdminEventList extends StatelessWidget {
                     size: 64, color: Colors.grey.shade300),
                 const SizedBox(height: 12),
                 Text(
-                  status == 'active' ? 'No active events' : 'No closed events yet',
+                  status == 'upcoming'
+                      ? 'No upcoming events yet'
+                      : status == 'active'
+                          ? 'No ongoing events'
+                          : 'No past events yet',
                   style: TextStyle(
                       color: Colors.grey.shade500,
                       fontSize: 15,
                       fontWeight: FontWeight.w500),
                 ),
-                if (status == 'active') ...[
+                if (status == 'upcoming' || status == 'active') ...[
                   const SizedBox(height: 16),
                   ElevatedButton.icon(
                     onPressed: () => Navigator.push(context,
                         MaterialPageRoute(builder: (_) => const CreateEventScreen())),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.deepPurple,
+                      backgroundColor: AppTheme.accent,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10)),
@@ -2650,13 +2666,11 @@ class _AdminEventGridCard extends StatelessWidget {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                         decoration: BoxDecoration(
-                          color: status == 'active'
-                              ? Colors.green.withValues(alpha: 0.85)
-                              : Colors.red.withValues(alpha: 0.85),
+                          color: eventStatusColor(status).withValues(alpha: 0.85),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
-                          status == 'active' ? 'Active' : 'Closed',
+                          eventStatusLabel(status),
                           style: const TextStyle(color: Colors.white, fontSize: 9,
                               fontWeight: FontWeight.w700),
                         ),

@@ -8,6 +8,7 @@ import 'package:excel/excel.dart' hide Border;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
+import '../../theme/app_theme.dart';
 
 // ── Data model for a parsed row ───────────────────────────────────────────────
 
@@ -378,9 +379,9 @@ DA103,Priya Nair,1500,Bank Transfer,17/10/2025,Regular,TXN123456,Festival contri
     final totalAmount = validRows.fold(0.0, (s, r) => s + r.amount);
 
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: Colors.deepPurple,
+        backgroundColor: AppTheme.accent,
         foregroundColor: Colors.white,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -455,7 +456,7 @@ DA103,Priya Nair,1500,Bank Transfer,17/10/2025,Regular,TXN123456,Festival contri
                             ? 'Pick CSV or Excel File'
                             : 'Change File'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.deepPurple,
+                          backgroundColor: AppTheme.accent,
                           foregroundColor: Colors.white,
                           padding:
                               const EdgeInsets.symmetric(vertical: 14),
@@ -501,8 +502,8 @@ DA103,Priya Nair,1500,Bank Transfer,17/10/2025,Regular,TXN123456,Festival contri
                                   Colors.red.shade700, Colors.red.shade50),
                             if (totalAmount > 0)
                               _Chip('Rs.${_fmt(totalAmount)} total',
-                                  Colors.deepPurple.shade700,
-                                  Colors.deepPurple.shade50),
+                                  AppTheme.accent.shade700,
+                                  AppTheme.accent.shade50),
                           ],
                         ),
                         const SizedBox(height: 12),
@@ -579,7 +580,7 @@ class _StepCard extends StatelessWidget {
             Row(children: [
               CircleAvatar(
                 radius: 13,
-                backgroundColor: Colors.deepPurple,
+                backgroundColor: AppTheme.accent,
                 child: Text(step,
                     style: const TextStyle(
                         color: Colors.white,
@@ -723,7 +724,7 @@ Widget _columnHint(String name, String hint, {bool required = false}) {
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(Icons.arrow_right, size: 16, color: Colors.deepPurple.shade300),
+        Icon(Icons.arrow_right, size: 16, color: AppTheme.accent.shade300),
         const SizedBox(width: 2),
         Text(name,
             style: const TextStyle(

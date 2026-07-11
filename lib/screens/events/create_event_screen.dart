@@ -7,10 +7,15 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'event_types.dart';
+import '../../theme/app_theme.dart';
 
 final _eventTypeImagesRef = FirebaseFirestore.instance
     .collection('event_config')
     .doc('event_type_images');
+
+final _allowedCategoriesRef = FirebaseFirestore.instance
+    .collection('appSettings')
+    .doc('allowedCategories');
 
 class CreateEventScreen extends StatefulWidget {
   final String? existingEventId;
@@ -38,7 +43,7 @@ class _CreateEventScreenState extends State<CreateEventScreen>
 
   // ── Type selection ───────────────────────────────────────────────────────
   EventTypeData? _selectedType;
-  late final TabController _tabCtrl;
+  late TabController _tabCtrl;
 
   // ── Details form ─────────────────────────────────────────────────────────
   final _nameCtrl = TextEditingController();
@@ -47,6 +52,7 @@ class _CreateEventScreenState extends State<CreateEventScreen>
   final _perFlatCtrl = TextEditingController();
   String _startDate = '';
   String _endDate = '';
+  String _status = 'active'; // 'active' (Ongoing) | 'upcoming' — only used at creation
   bool _saving = false;
   bool _loading = false;
   String _error = '';
@@ -164,7 +170,7 @@ class _CreateEventScreenState extends State<CreateEventScreen>
           colorScheme: ColorScheme.light(
             primary: _selectedType != null
                 ? _selectedType!.gradient.first
-                : Colors.deepPurple,
+                : AppTheme.accent,
           ),
         ),
         child: child!,
@@ -244,7 +250,7 @@ class _CreateEventScreenState extends State<CreateEventScreen>
           ...payload,
           'totalCollected': 0,
           'totalSpent': 0,
-          'status': 'active',
+          'status': _status,
           'createdAt': DateTime.now().toIso8601String(),
           'createdBy': FirebaseAuth.instance.currentUser?.uid ?? '',
         });
@@ -264,62 +270,94 @@ class _CreateEventScreenState extends State<CreateEventScreen>
 
   // ── Build ─────────────────────────────────────────────────────────────────
 
+  void _ensureTabController(int length) {
+    if (_tabCtrl.length == length) return;
+    final oldIndex = _tabCtrl.index;
+    _tabCtrl.dispose();
+    _tabCtrl = TabController(
+      length: length,
+      vsync: this,
+      initialIndex: oldIndex < length ? oldIndex : 0,
+    );
+    _tabCtrl.addListener(() => setState(() {}));
+  }
+
   @override
   Widget build(BuildContext context) {
-    final accentColor = _selectedType?.gradient.first ?? Colors.deepPurple;
+    final accentColor = _selectedType?.gradient.first ?? AppTheme.accent;
 
-    return Scaffold(
-      backgroundColor: Colors.grey.shade50,
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: _goBack,
-        ),
-        title: Text(
-          _step == 0
-              ? 'Choose Event Type'
-              : widget.isEdit
-                  ? 'Edit Event'
-                  : 'Event Details',
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        backgroundColor: accentColor,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        actions: [
-          if (_loading)
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                      color: Colors.white, strokeWidth: 2)),
+    return StreamBuilder<DocumentSnapshot>(
+      stream: _allowedCategoriesRef.snapshots(),
+      builder: (context, allowedSnap) {
+        final data = allowedSnap.data?.data() as Map<String, dynamic>?;
+        final rawCats = data?['enabledCategories'] as List?;
+        final visibleCats = rawCats == null
+            ? EventCategory.values.toList()
+            : EventCategory.values
+                .where((c) => rawCats.contains(c.name))
+                .toList();
+        final rawTypeIds = data?['enabledEventTypeIds'] as List?;
+        final allowedTypeIds = rawTypeIds == null
+            ? kAllEventTypes.map((t) => t.id).toSet()
+            : rawTypeIds.cast<String>().toSet();
+
+        _ensureTabController(visibleCats.length);
+
+        return Scaffold(
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          appBar: AppBar(
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back),
+              onPressed: _goBack,
             ),
-        ],
-        bottom: _step == 0
-            ? PreferredSize(
-                preferredSize: const Size.fromHeight(40),
-                child: _buildTabBar(),
-              )
-            : null,
-      ),
-      body: PageView(
-        controller: _pageCtrl,
-        physics: const NeverScrollableScrollPhysics(),
-        children: [
-          _buildTypePicker(),
-          _buildDetailsForm(accentColor),
-        ],
-      ),
+            title: Text(
+              _step == 0
+                  ? 'Choose Event Type'
+                  : widget.isEdit
+                      ? 'Edit Event'
+                      : 'Event Details',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            backgroundColor: accentColor,
+            foregroundColor: Colors.white,
+            elevation: 0,
+            actions: [
+              if (_loading)
+                const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          color: Colors.white, strokeWidth: 2)),
+                ),
+            ],
+            bottom: _step == 0
+                ? PreferredSize(
+                    preferredSize: const Size.fromHeight(40),
+                    child: _buildTabBar(visibleCats),
+                  )
+                : null,
+          ),
+          body: PageView(
+            controller: _pageCtrl,
+            physics: const NeverScrollableScrollPhysics(),
+            children: [
+              _buildTypePicker(visibleCats, allowedTypeIds),
+              _buildDetailsForm(accentColor),
+            ],
+          ),
+        );
+      },
     );
   }
 
   // ── Tab Bar (step 0) ─────────────────────────────────────────────────────
 
-  Widget _buildTabBar() {
+  Widget _buildTabBar(List<EventCategory> cats) {
+    if (cats.isEmpty) return const SizedBox.shrink();
     return Container(
-      color: (_selectedType?.gradient.first ?? Colors.deepPurple),
+      color: (_selectedType?.gradient.first ?? AppTheme.accent),
       child: TabBar(
         controller: _tabCtrl,
         isScrollable: true,
@@ -330,16 +368,26 @@ class _CreateEventScreenState extends State<CreateEventScreen>
         labelStyle:
             const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
         tabAlignment: TabAlignment.start,
-        tabs: EventCategory.values
-            .map((c) => Tab(text: '${c.emoji} ${c.label}'))
-            .toList(),
+        tabs: cats.map((c) => Tab(text: '${c.emoji} ${c.label}')).toList(),
       ),
     );
   }
 
   // ── Step 0: Type Picker ──────────────────────────────────────────────────
 
-  Widget _buildTypePicker() {
+  Widget _buildTypePicker(List<EventCategory> cats, Set<String> allowedTypeIds) {
+    if (cats.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            'No event categories are enabled.\nAsk an admin to enable them in Event Settings.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey.shade500),
+          ),
+        ),
+      );
+    }
     return StreamBuilder<DocumentSnapshot>(
       stream: _eventTypeImagesRef.snapshots(),
       builder: (context, snap) {
@@ -348,8 +396,16 @@ class _CreateEventScreenState extends State<CreateEventScreen>
 
         return TabBarView(
           controller: _tabCtrl,
-          children: EventCategory.values.map((category) {
-            final types = eventTypesByCategory(category);
+          children: cats.map((category) {
+            final types = eventTypesByCategory(category)
+                .where((t) => allowedTypeIds.contains(t.id))
+                .toList();
+            if (types.isEmpty) {
+              return Center(
+                child: Text('No event types enabled in this category',
+                    style: TextStyle(color: Colors.grey.shade500)),
+              );
+            }
             return GridView.builder(
               padding: const EdgeInsets.all(16),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -688,6 +744,27 @@ class _CreateEventScreenState extends State<CreateEventScreen>
             ],
           ),
 
+          // Event status — only choosable at creation; use Start/Close/Reopen
+          // actions on the event dashboard to change it afterwards.
+          if (!widget.isEdit) ...[
+            const SizedBox(height: 20),
+            _label('Event Status'),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _statusChoiceChip(
+                    label: 'Upcoming', value: 'upcoming', accent: accent),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _statusChoiceChip(
+                    label: 'Ongoing', value: 'active', accent: accent),
+                ),
+              ],
+            ),
+          ],
+
           // Expense categories hint
           if (_selectedType != null &&
               _selectedType!.id != 'other') ...[
@@ -820,13 +897,38 @@ class _CreateEventScreenState extends State<CreateEventScreen>
         fillColor: Colors.white,
       );
 
+  Widget _statusChoiceChip({
+    required String label,
+    required String value,
+    required Color accent,
+  }) {
+    final selected = _status == value;
+    return GestureDetector(
+      onTap: () => setState(() => _status = value),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? accent.withValues(alpha: 0.1) : Colors.white,
+          border: Border.all(color: selected ? accent : Colors.grey.shade300, width: selected ? 2 : 1),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(label,
+            style: TextStyle(
+                fontSize: 14,
+                fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                color: selected ? accent : Colors.grey.shade600)),
+      ),
+    );
+  }
+
   Widget _datePicker(bool isStart, Color accent) => GestureDetector(
         onTap: () => _pickDate(isStart),
         child: Container(
           padding:
               const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).cardColor,
             border: Border.all(color: Colors.grey.shade300),
             borderRadius: BorderRadius.circular(12),
           ),

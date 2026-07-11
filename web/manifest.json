@@ -1,6 +1,6 @@
 {
-    "name": "gateflow",
-    "short_name": "gateflow",
+    "name": "GateFlow",
+    "short_name": "GateFlow",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'event_types.dart';
 import 'expense_categories_screen.dart'
     show kEmojiPicker, eventTypeCategoriesRef;
+import '../../theme/app_theme.dart';
 
 // Firestore layout — all sections use the same opt-in pattern: an event type
 // is OFF for a feature unless its id is in enabledTypeIds.
@@ -20,44 +21,373 @@ const List<String> _kDefaultVolRoles = [
   'Music & Sound', 'Collection', 'Photography', 'Transport', 'Other',
 ];
 
-class EventTypeSettingsScreen extends StatelessWidget {
+class EventTypeSettingsScreen extends StatefulWidget {
   const EventTypeSettingsScreen({super.key});
+
+  @override
+  State<EventTypeSettingsScreen> createState() => _EventTypeSettingsScreenState();
+}
+
+class _EventTypeSettingsScreenState extends State<EventTypeSettingsScreen> {
+  static final DocumentReference _allowedCategoriesRef = FirebaseFirestore
+      .instance
+      .collection('appSettings')
+      .doc('allowedCategories');
+
+  final Set<String> _collapsedGroups = {
+    'Money & Contributions',
+    'Visibility & Recognition',
+    'Scheduling & Volunteers',
+    'Admin Controls',
+  };
+
+  Widget _group(String label, List<Widget> children) {
+    final collapsed = _collapsedGroups.contains(label);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: () => setState(() {
+            collapsed ? _collapsedGroups.remove(label) : _collapsedGroups.add(label);
+          }),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+            child: Row(children: [
+              Expanded(
+                child: Text(label.toUpperCase(),
+                    style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11,
+                        letterSpacing: 0.6,
+                        color: Colors.grey.shade500)),
+              ),
+              Icon(collapsed ? Icons.expand_more : Icons.expand_less,
+                  size: 18, color: Colors.grey.shade500),
+            ]),
+          ),
+        ),
+        if (!collapsed) ...children,
+        const SizedBox(height: 20),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: Colors.deepPurple,
+        backgroundColor: AppTheme.accent,
         foregroundColor: Colors.white,
         title: const Text('Event Settings',
             style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
         elevation: 0,
       ),
-      body: const SingleChildScrollView(
-        padding: EdgeInsets.all(16),
-        child: Column(children: [
-          _PoojaScheduleSection(),
-          SizedBox(height: 12),
-          _PaymentsSection(),
-          SizedBox(height: 12),
-          _CollectionStatusByBlockSection(),
-          SizedBox(height: 12),
-          _OverviewStatsSection(),
-          SizedBox(height: 12),
-          _LeaderboardSection(),
-          SizedBox(height: 12),
-          _SponsorPackagesSection(),
-          SizedBox(height: 12),
-          _SpecialContributionSection(),
-          SizedBox(height: 12),
-          _ExpenseCategoriesSection(),
-          SizedBox(height: 12),
-          _VolunteerRolesSection(),
-          SizedBox(height: 12),
-          _DeleteEventsSection(),
-          SizedBox(height: 40),
-        ]),
+      body: StreamBuilder<DocumentSnapshot>(
+        stream: _allowedCategoriesRef.snapshots(),
+        builder: (context, snap) {
+          final data = snap.data?.data() as Map<String, dynamic>?;
+          final rawList = data?['enabledCategories'] as List?;
+          // Unset/no doc yet => every category is allowed (keeps existing
+          // behavior for communities that haven't touched this setting).
+          final Set<EventCategory> allowedCategories = rawList == null
+              ? EventCategory.values.toSet()
+              : EventCategory.values
+                  .where((c) => rawList.contains(c.name))
+                  .toSet();
+
+          final rawTypeIds = data?['enabledEventTypeIds'] as List?;
+          // Unset/no doc yet => every event type is allowed (same
+          // backward-compatible default as the category filter above).
+          final Set<String> allowedEventTypeIds = rawTypeIds == null
+              ? kAllEventTypes.map((t) => t.id).toSet()
+              : rawTypeIds.cast<String>().toSet();
+
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(children: [
+              _AllowedCategoriesSection(
+                allowedCategories: allowedCategories,
+                allowedEventTypeIds: allowedEventTypeIds,
+              ),
+              const SizedBox(height: 20),
+
+              _group('Money & Contributions', [
+                _PaymentsSection(
+                    allowedCategories: allowedCategories,
+                    allowedEventTypeIds: allowedEventTypeIds),
+                const SizedBox(height: 12),
+                _SpecialContributionSection(
+                    allowedCategories: allowedCategories,
+                    allowedEventTypeIds: allowedEventTypeIds),
+                const SizedBox(height: 12),
+                _CollectionStatusByBlockSection(
+                    allowedCategories: allowedCategories,
+                    allowedEventTypeIds: allowedEventTypeIds),
+                const SizedBox(height: 12),
+                _ExpenseCategoriesSection(
+                    allowedCategories: allowedCategories,
+                    allowedEventTypeIds: allowedEventTypeIds),
+              ]),
+
+              _group('Visibility & Recognition', [
+                _OverviewStatsSection(
+                    allowedCategories: allowedCategories,
+                    allowedEventTypeIds: allowedEventTypeIds),
+                const SizedBox(height: 12),
+                _LeaderboardSection(
+                    allowedCategories: allowedCategories,
+                    allowedEventTypeIds: allowedEventTypeIds),
+                const SizedBox(height: 12),
+                _SponsorPackagesSection(
+                    allowedCategories: allowedCategories,
+                    allowedEventTypeIds: allowedEventTypeIds),
+              ]),
+
+              _group('Scheduling & Volunteers', [
+                _PoojaScheduleSection(
+                    allowedCategories: allowedCategories,
+                    allowedEventTypeIds: allowedEventTypeIds),
+                const SizedBox(height: 12),
+                _VolunteerRolesSection(
+                    allowedCategories: allowedCategories,
+                    allowedEventTypeIds: allowedEventTypeIds),
+              ]),
+
+              _group('Admin Controls', [
+                _DeleteEventsSection(
+                    allowedCategories: allowedCategories,
+                    allowedEventTypeIds: allowedEventTypeIds),
+              ]),
+              const SizedBox(height: 20),
+            ]),
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ── Allowed Event Categories — master filter for the whole screen ───────────
+// Lets an admin restrict which EventCategory values this community actually
+// uses (e.g. only Festive), so every section below only shows event types
+// from the categories selected here instead of all 8 by default.
+
+class _AllowedCategoriesSection extends StatefulWidget {
+  final Set<EventCategory> allowedCategories;
+  final Set<String> allowedEventTypeIds;
+  const _AllowedCategoriesSection({
+    required this.allowedCategories,
+    required this.allowedEventTypeIds,
+  });
+
+  @override
+  State<_AllowedCategoriesSection> createState() => _AllowedCategoriesSectionState();
+}
+
+class _AllowedCategoriesSectionState extends State<_AllowedCategoriesSection> {
+  final Set<EventCategory> _expandedCats = {};
+  bool _headerExpanded = false;
+
+  static final DocumentReference _ref = FirebaseFirestore.instance
+      .collection('appSettings')
+      .doc('allowedCategories');
+
+  Future<void> _setAllowedCategories(Set<EventCategory> cats) =>
+      _ref.set({'enabledCategories': cats.map((c) => c.name).toList()},
+          SetOptions(merge: true));
+
+  Future<void> _setAllowedEventTypeIds(Set<String> ids) =>
+      _ref.set({'enabledEventTypeIds': ids.toList()}, SetOptions(merge: true));
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.accent.shade200, width: 1.5),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 3)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: () => setState(() => _headerExpanded = !_headerExpanded),
+            child: Row(children: [
+              const Text('🗂️', style: TextStyle(fontSize: 20)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const Text('Allowed Event Categories',
+                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                  Text(
+                    _headerExpanded
+                        ? 'Enable a category, then expand it to pick exactly which '
+                            'events show up in every setting below.'
+                        : '${widget.allowedCategories.length}/${EventCategory.values.length} categories · '
+                            '${widget.allowedEventTypeIds.length}/${kAllEventTypes.length} events enabled',
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                  ),
+                ]),
+              ),
+              Icon(_headerExpanded ? Icons.expand_less : Icons.expand_more,
+                  color: Colors.grey.shade500),
+            ]),
+          ),
+          if (_headerExpanded) ...[
+          const SizedBox(height: 12),
+          Row(children: [
+            TextButton(
+              onPressed: () => _setAllowedCategories(EventCategory.values.toSet()),
+              child: const Text('Select All'),
+            ),
+            TextButton(
+              onPressed: () => _setAllowedCategories(<EventCategory>{}),
+              child: const Text('Clear All'),
+            ),
+          ]),
+          ...EventCategory.values.map((cat) {
+            final categoryTypes =
+                kAllEventTypes.where((t) => t.category == cat).toList();
+            if (categoryTypes.isEmpty) return const SizedBox.shrink();
+            final catEnabled = widget.allowedCategories.contains(cat);
+            final selectedCount = categoryTypes
+                .where((t) => widget.allowedEventTypeIds.contains(t.id))
+                .length;
+            final expanded = _expandedCats.contains(cat);
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                InkWell(
+                  onTap: catEnabled
+                      ? () => setState(() {
+                            expanded ? _expandedCats.remove(cat) : _expandedCats.add(cat);
+                          })
+                      : null,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(children: [
+                      Checkbox(
+                        value: catEnabled,
+                        activeColor: AppTheme.accent,
+                        onChanged: (v) {
+                          final updated = Set<EventCategory>.from(widget.allowedCategories);
+                          (v ?? false) ? updated.add(cat) : updated.remove(cat);
+                          _setAllowedCategories(updated);
+                        },
+                      ),
+                      Text(cat.emoji, style: const TextStyle(fontSize: 16)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(cat.label,
+                            style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                                color: catEnabled ? null : Colors.grey.shade400)),
+                      ),
+                      if (catEnabled) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppTheme.accent.shade50,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text('$selectedCount/${categoryTypes.length}',
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppTheme.accent.shade600)),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(expanded ? Icons.expand_less : Icons.expand_more,
+                            size: 18, color: Colors.grey.shade400),
+                      ],
+                    ]),
+                  ),
+                ),
+                if (catEnabled && expanded) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(38, 0, 8, 4),
+                    child: Row(children: [
+                      TextButton(
+                        style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            minimumSize: const Size(0, 28),
+                            visualDensity: VisualDensity.compact),
+                        onPressed: () {
+                          final updated = Set<String>.from(widget.allowedEventTypeIds)
+                            ..addAll(categoryTypes.map((t) => t.id));
+                          _setAllowedEventTypeIds(updated);
+                        },
+                        child: const Text('Enable All', style: TextStyle(fontSize: 11)),
+                      ),
+                      TextButton(
+                        style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            minimumSize: const Size(0, 28),
+                            visualDensity: VisualDensity.compact),
+                        onPressed: () {
+                          final updated = Set<String>.from(widget.allowedEventTypeIds)
+                            ..removeAll(categoryTypes.map((t) => t.id));
+                          _setAllowedEventTypeIds(updated);
+                        },
+                        child: const Text('Disable All', style: TextStyle(fontSize: 11)),
+                      ),
+                    ]),
+                  ),
+                  ...categoryTypes.map((type) {
+                    final typeEnabled = widget.allowedEventTypeIds.contains(type.id);
+                    return InkWell(
+                      onTap: () {
+                        final updated = Set<String>.from(widget.allowedEventTypeIds);
+                        typeEnabled ? updated.remove(type.id) : updated.add(type.id);
+                        _setAllowedEventTypeIds(updated);
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(38, 2, 8, 2),
+                        child: Row(children: [
+                          Text(type.emoji, style: const TextStyle(fontSize: 14)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                              child: Text(type.name,
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight:
+                                          typeEnabled ? FontWeight.w600 : FontWeight.normal,
+                                      color: typeEnabled
+                                          ? null
+                                          : Colors.grey.shade400))),
+                          Checkbox(
+                            value: typeEnabled,
+                            activeColor: AppTheme.accent,
+                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: VisualDensity.compact,
+                            onChanged: (v) {
+                              final updated = Set<String>.from(widget.allowedEventTypeIds);
+                              (v ?? false) ? updated.add(type.id) : updated.remove(type.id);
+                              _setAllowedEventTypeIds(updated);
+                            },
+                          ),
+                        ]),
+                      ),
+                    );
+                  }),
+                  const SizedBox(height: 4),
+                ],
+                const Divider(height: 1),
+              ],
+            );
+          }),
+          ],
+        ],
       ),
     );
   }
@@ -66,7 +396,9 @@ class EventTypeSettingsScreen extends StatelessWidget {
 // ── Top-level Pooja Schedule collapsable ──────────────────────────────────────
 
 class _PoojaScheduleSection extends StatefulWidget {
-  const _PoojaScheduleSection();
+  final Set<EventCategory> allowedCategories;
+  final Set<String> allowedEventTypeIds;
+  const _PoojaScheduleSection({required this.allowedCategories, required this.allowedEventTypeIds});
 
   @override
   State<_PoojaScheduleSection> createState() => _PoojaScheduleSectionState();
@@ -106,13 +438,21 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
           save(updated, morningCap, afternoonCap, eveningCap);
         }
 
+        void toggleAllIds(List<String> ids, bool enabled) {
+          final updated = Set<String>.from(enabledIds);
+          enabled ? updated.addAll(ids) : updated.removeAll(ids);
+          save(updated.toList(), morningCap, afternoonCap, eveningCap);
+        }
+
         final categories = EventCategory.values
-            .where((cat) => kAllEventTypes.any((t) => t.category == cat))
+            .where((cat) =>
+                widget.allowedCategories.contains(cat) &&
+                kAllEventTypes.any((t) => t.category == cat))
             .toList();
 
         return Container(
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(14),
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
           ),
@@ -139,7 +479,7 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
                             : '$totalSelected event type${totalSelected == 1 ? '' : 's'} enabled',
                         style: TextStyle(
                           fontSize: 11,
-                          color: totalSelected > 0 ? Colors.deepPurple.shade400 : Colors.grey.shade400,
+                          color: totalSelected > 0 ? AppTheme.accent.shade400 : Colors.grey.shade400,
                         ),
                       ),
                     ]),
@@ -208,7 +548,9 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
 
               // ── Per-category collapsable sections ──
               ...categories.map((cat) {
-                final types = kAllEventTypes.where((t) => t.category == cat).toList();
+                final types = kAllEventTypes
+                    .where((t) => t.category == cat && widget.allowedEventTypeIds.contains(t.id))
+                    .toList();
                 final selectedCount = types.where((t) => enabledIds.contains(t.id)).length;
                 return _CategorySection(
                   category: cat,
@@ -216,6 +558,7 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
                   enabledIds: enabledIds,
                   selectedCount: selectedCount,
                   onToggle: toggleId,
+                  onToggleAll: toggleAllIds,
                 );
               }),
 
@@ -231,7 +574,9 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
 // ── Top-level Payments / Contributions collapsable ────────────────────────────
 
 class _PaymentsSection extends StatefulWidget {
-  const _PaymentsSection();
+  final Set<EventCategory> allowedCategories;
+  final Set<String> allowedEventTypeIds;
+  const _PaymentsSection({required this.allowedCategories, required this.allowedEventTypeIds});
   @override
   State<_PaymentsSection> createState() => _PaymentsSectionState();
 }
@@ -258,13 +603,21 @@ class _PaymentsSectionState extends State<_PaymentsSection> {
           _ref.set({'enabledTypeIds': updated});
         }
 
+        void toggleAllIds(List<String> ids, bool enabled) {
+          final updated = Set<String>.from(enabledIds);
+          enabled ? updated.addAll(ids) : updated.removeAll(ids);
+          _ref.set({'enabledTypeIds': updated.toList()});
+        }
+
         final categories = EventCategory.values
-            .where((cat) => kAllEventTypes.any((t) => t.category == cat))
+            .where((cat) =>
+                widget.allowedCategories.contains(cat) &&
+                kAllEventTypes.any((t) => t.category == cat))
             .toList();
 
         return Container(
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(14),
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
           ),
@@ -317,7 +670,9 @@ class _PaymentsSectionState extends State<_PaymentsSection> {
 
               // ── Per-category collapsable sections ──
               ...categories.map((cat) {
-                final types = kAllEventTypes.where((t) => t.category == cat).toList();
+                final types = kAllEventTypes
+                    .where((t) => t.category == cat && widget.allowedEventTypeIds.contains(t.id))
+                    .toList();
                 final selectedCount = types.where((t) => enabledIds.contains(t.id)).length;
                 return _CategorySection(
                   category: cat,
@@ -325,6 +680,7 @@ class _PaymentsSectionState extends State<_PaymentsSection> {
                   enabledIds: enabledIds,
                   selectedCount: selectedCount,
                   onToggle: toggleId,
+                  onToggleAll: toggleAllIds,
                 );
               }),
 
@@ -340,7 +696,9 @@ class _PaymentsSectionState extends State<_PaymentsSection> {
 // ── Top-level Collection Status by Block collapsable ──────────────────────────
 
 class _CollectionStatusByBlockSection extends StatefulWidget {
-  const _CollectionStatusByBlockSection();
+  final Set<EventCategory> allowedCategories;
+  final Set<String> allowedEventTypeIds;
+  const _CollectionStatusByBlockSection({required this.allowedCategories, required this.allowedEventTypeIds});
   @override
   State<_CollectionStatusByBlockSection> createState() => _CollectionStatusByBlockSectionState();
 }
@@ -367,13 +725,21 @@ class _CollectionStatusByBlockSectionState extends State<_CollectionStatusByBloc
           _ref.set({'enabledTypeIds': updated});
         }
 
+        void toggleAllIds(List<String> ids, bool enabled) {
+          final updated = Set<String>.from(enabledIds);
+          enabled ? updated.addAll(ids) : updated.removeAll(ids);
+          _ref.set({'enabledTypeIds': updated.toList()});
+        }
+
         final categories = EventCategory.values
-            .where((cat) => kAllEventTypes.any((t) => t.category == cat))
+            .where((cat) =>
+                widget.allowedCategories.contains(cat) &&
+                kAllEventTypes.any((t) => t.category == cat))
             .toList();
 
         return Container(
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(14),
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
           ),
@@ -419,7 +785,9 @@ class _CollectionStatusByBlockSectionState extends State<_CollectionStatusByBloc
               ),
               const SizedBox(height: 4),
               ...categories.map((cat) {
-                final types = kAllEventTypes.where((t) => t.category == cat).toList();
+                final types = kAllEventTypes
+                    .where((t) => t.category == cat && widget.allowedEventTypeIds.contains(t.id))
+                    .toList();
                 final selectedCount = types.where((t) => enabledIds.contains(t.id)).length;
                 return _CategorySection(
                   category: cat,
@@ -427,6 +795,7 @@ class _CollectionStatusByBlockSectionState extends State<_CollectionStatusByBloc
                   enabledIds: enabledIds,
                   selectedCount: selectedCount,
                   onToggle: toggleId,
+                  onToggleAll: toggleAllIds,
                 );
               }),
               const SizedBox(height: 8),
@@ -458,7 +827,9 @@ const List<(String, String)> kOverviewChipDefs = [
 List<String> defaultOverviewChips() => kOverviewChipDefs.map((c) => c.$1).toList();
 
 class _OverviewStatsSection extends StatefulWidget {
-  const _OverviewStatsSection();
+  final Set<EventCategory> allowedCategories;
+  final Set<String> allowedEventTypeIds;
+  const _OverviewStatsSection({required this.allowedCategories, required this.allowedEventTypeIds});
   @override
   State<_OverviewStatsSection> createState() => _OverviewStatsSectionState();
 }
@@ -469,12 +840,14 @@ class _OverviewStatsSectionState extends State<_OverviewStatsSection> {
   @override
   Widget build(BuildContext context) {
     final categories = EventCategory.values
-        .where((cat) => kAllEventTypes.any((t) => t.category == cat))
+        .where((cat) =>
+            widget.allowedCategories.contains(cat) &&
+            kAllEventTypes.any((t) => t.category == cat))
         .toList();
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(14),
         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
       ),
@@ -514,7 +887,8 @@ class _OverviewStatsSectionState extends State<_OverviewStatsSection> {
             ),
           ),
           const SizedBox(height: 4),
-          ...categories.map((cat) => _OverviewStatsCategoryGroup(category: cat)),
+          ...categories.map((cat) => _OverviewStatsCategoryGroup(
+              category: cat, allowedEventTypeIds: widget.allowedEventTypeIds)),
           const SizedBox(height: 8),
         ],
       ]),
@@ -524,7 +898,8 @@ class _OverviewStatsSectionState extends State<_OverviewStatsSection> {
 
 class _OverviewStatsCategoryGroup extends StatefulWidget {
   final EventCategory category;
-  const _OverviewStatsCategoryGroup({required this.category});
+  final Set<String> allowedEventTypeIds;
+  const _OverviewStatsCategoryGroup({required this.category, required this.allowedEventTypeIds});
   @override
   State<_OverviewStatsCategoryGroup> createState() => _OverviewStatsCategoryGroupState();
 }
@@ -534,7 +909,9 @@ class _OverviewStatsCategoryGroupState extends State<_OverviewStatsCategoryGroup
 
   @override
   Widget build(BuildContext context) {
-    final types = kAllEventTypes.where((t) => t.category == widget.category).toList();
+    final types = kAllEventTypes
+        .where((t) => t.category == widget.category && widget.allowedEventTypeIds.contains(t.id))
+        .toList();
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       InkWell(
         onTap: () => setState(() => _expanded = !_expanded),
@@ -604,12 +981,12 @@ class _OverviewStatsTypeEditorState extends State<_OverviewStatsTypeEditor> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Colors.deepPurple.shade50,
+                  color: AppTheme.accent.shade50,
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text('$selectedCount/${kOverviewChipDefs.length}',
                     style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600,
-                        color: Colors.deepPurple.shade600)),
+                        color: AppTheme.accent.shade600)),
               ),
               const SizedBox(width: 6),
               GestureDetector(
@@ -618,10 +995,10 @@ class _OverviewStatsTypeEditorState extends State<_OverviewStatsTypeEditor> {
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
                     Text('Configure',
-                        style: TextStyle(fontSize: 10, color: Colors.deepPurple.shade400,
+                        style: TextStyle(fontSize: 10, color: AppTheme.accent.shade400,
                             fontWeight: FontWeight.w600)),
                     Icon(_configExpanded ? Icons.expand_less : Icons.expand_more,
-                        size: 14, color: Colors.deepPurple.shade400),
+                        size: 14, color: AppTheme.accent.shade400),
                   ]),
                 ),
               ),
@@ -632,9 +1009,9 @@ class _OverviewStatsTypeEditorState extends State<_OverviewStatsTypeEditor> {
               margin: const EdgeInsets.fromLTRB(32, 0, 16, 8),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.deepPurple.shade50,
+                color: AppTheme.accent.shade50,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.deepPurple.shade100),
+                border: Border.all(color: AppTheme.accent.shade100),
               ),
               child: Wrap(
                 spacing: 8,
@@ -648,10 +1025,10 @@ class _OverviewStatsTypeEditorState extends State<_OverviewStatsTypeEditor> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
-                        color: on ? Colors.deepPurple.shade600 : Colors.white,
+                        color: on ? AppTheme.accent.shade600 : Colors.white,
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                            color: on ? Colors.deepPurple.shade600 : Colors.grey.shade300),
+                            color: on ? AppTheme.accent.shade600 : Colors.grey.shade300),
                       ),
                       child: Row(mainAxisSize: MainAxisSize.min, children: [
                         if (on) ...[
@@ -678,7 +1055,9 @@ class _OverviewStatsTypeEditorState extends State<_OverviewStatsTypeEditor> {
 // ── Top-level Leaderboard collapsable ─────────────────────────────────────────
 
 class _LeaderboardSection extends StatefulWidget {
-  const _LeaderboardSection();
+  final Set<EventCategory> allowedCategories;
+  final Set<String> allowedEventTypeIds;
+  const _LeaderboardSection({required this.allowedCategories, required this.allowedEventTypeIds});
   @override
   State<_LeaderboardSection> createState() => _LeaderboardSectionState();
 }
@@ -705,13 +1084,21 @@ class _LeaderboardSectionState extends State<_LeaderboardSection> {
           _ref.set({'enabledTypeIds': updated});
         }
 
+        void toggleAllIds(List<String> ids, bool enabled) {
+          final updated = Set<String>.from(enabledIds);
+          enabled ? updated.addAll(ids) : updated.removeAll(ids);
+          _ref.set({'enabledTypeIds': updated.toList()});
+        }
+
         final categories = EventCategory.values
-            .where((cat) => kAllEventTypes.any((t) => t.category == cat))
+            .where((cat) =>
+                widget.allowedCategories.contains(cat) &&
+                kAllEventTypes.any((t) => t.category == cat))
             .toList();
 
         return Container(
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(14),
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
           ),
@@ -757,7 +1144,9 @@ class _LeaderboardSectionState extends State<_LeaderboardSection> {
               ),
               const SizedBox(height: 4),
               ...categories.map((cat) {
-                final types = kAllEventTypes.where((t) => t.category == cat).toList();
+                final types = kAllEventTypes
+                    .where((t) => t.category == cat && widget.allowedEventTypeIds.contains(t.id))
+                    .toList();
                 final selectedCount = types.where((t) => enabledIds.contains(t.id)).length;
                 return _CategorySection(
                   category: cat,
@@ -765,6 +1154,7 @@ class _LeaderboardSectionState extends State<_LeaderboardSection> {
                   enabledIds: enabledIds,
                   selectedCount: selectedCount,
                   onToggle: toggleId,
+                  onToggleAll: toggleAllIds,
                 );
               }),
               const SizedBox(height: 8),
@@ -779,7 +1169,9 @@ class _LeaderboardSectionState extends State<_LeaderboardSection> {
 // ── Top-level Sponsor Packages collapsable ────────────────────────────────────
 
 class _SponsorPackagesSection extends StatefulWidget {
-  const _SponsorPackagesSection();
+  final Set<EventCategory> allowedCategories;
+  final Set<String> allowedEventTypeIds;
+  const _SponsorPackagesSection({required this.allowedCategories, required this.allowedEventTypeIds});
   @override
   State<_SponsorPackagesSection> createState() => _SponsorPackagesSectionState();
 }
@@ -806,13 +1198,21 @@ class _SponsorPackagesSectionState extends State<_SponsorPackagesSection> {
           _ref.set({'enabledTypeIds': updated});
         }
 
+        void toggleAllIds(List<String> ids, bool enabled) {
+          final updated = Set<String>.from(enabledIds);
+          enabled ? updated.addAll(ids) : updated.removeAll(ids);
+          _ref.set({'enabledTypeIds': updated.toList()});
+        }
+
         final categories = EventCategory.values
-            .where((cat) => kAllEventTypes.any((t) => t.category == cat))
+            .where((cat) =>
+                widget.allowedCategories.contains(cat) &&
+                kAllEventTypes.any((t) => t.category == cat))
             .toList();
 
         return Container(
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(14),
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
           ),
@@ -859,7 +1259,9 @@ class _SponsorPackagesSectionState extends State<_SponsorPackagesSection> {
               ),
               const SizedBox(height: 4),
               ...categories.map((cat) {
-                final types = kAllEventTypes.where((t) => t.category == cat).toList();
+                final types = kAllEventTypes
+                    .where((t) => t.category == cat && widget.allowedEventTypeIds.contains(t.id))
+                    .toList();
                 final selectedCount = types.where((t) => enabledIds.contains(t.id)).length;
                 return _CategorySection(
                   category: cat,
@@ -867,6 +1269,7 @@ class _SponsorPackagesSectionState extends State<_SponsorPackagesSection> {
                   enabledIds: enabledIds,
                   selectedCount: selectedCount,
                   onToggle: toggleId,
+                  onToggleAll: toggleAllIds,
                 );
               }),
               const SizedBox(height: 8),
@@ -881,7 +1284,9 @@ class _SponsorPackagesSectionState extends State<_SponsorPackagesSection> {
 // ── Top-level Delete Events collapsable ────────────────────────────────────────
 
 class _DeleteEventsSection extends StatefulWidget {
-  const _DeleteEventsSection();
+  final Set<EventCategory> allowedCategories;
+  final Set<String> allowedEventTypeIds;
+  const _DeleteEventsSection({required this.allowedCategories, required this.allowedEventTypeIds});
   @override
   State<_DeleteEventsSection> createState() => _DeleteEventsSectionState();
 }
@@ -908,13 +1313,21 @@ class _DeleteEventsSectionState extends State<_DeleteEventsSection> {
           _ref.set({'enabledTypeIds': updated});
         }
 
+        void toggleAllIds(List<String> ids, bool enabled) {
+          final updated = Set<String>.from(enabledIds);
+          enabled ? updated.addAll(ids) : updated.removeAll(ids);
+          _ref.set({'enabledTypeIds': updated.toList()});
+        }
+
         final categories = EventCategory.values
-            .where((cat) => kAllEventTypes.any((t) => t.category == cat))
+            .where((cat) =>
+                widget.allowedCategories.contains(cat) &&
+                kAllEventTypes.any((t) => t.category == cat))
             .toList();
 
         return Container(
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(14),
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
           ),
@@ -960,7 +1373,9 @@ class _DeleteEventsSectionState extends State<_DeleteEventsSection> {
               ),
               const SizedBox(height: 4),
               ...categories.map((cat) {
-                final types = kAllEventTypes.where((t) => t.category == cat).toList();
+                final types = kAllEventTypes
+                    .where((t) => t.category == cat && widget.allowedEventTypeIds.contains(t.id))
+                    .toList();
                 final selectedCount = types.where((t) => enabledIds.contains(t.id)).length;
                 return _CategorySection(
                   category: cat,
@@ -968,6 +1383,7 @@ class _DeleteEventsSectionState extends State<_DeleteEventsSection> {
                   enabledIds: enabledIds,
                   selectedCount: selectedCount,
                   onToggle: toggleId,
+                  onToggleAll: toggleAllIds,
                 );
               }),
               const SizedBox(height: 8),
@@ -987,6 +1403,7 @@ class _CategorySection extends StatefulWidget {
   final List<String> enabledIds;
   final int selectedCount;
   final void Function(String id, bool enabled) onToggle;
+  final void Function(List<String> typeIds, bool enabled) onToggleAll;
 
   const _CategorySection({
     required this.category,
@@ -994,6 +1411,7 @@ class _CategorySection extends StatefulWidget {
     required this.enabledIds,
     required this.selectedCount,
     required this.onToggle,
+    required this.onToggleAll,
   });
 
   @override
@@ -1022,12 +1440,12 @@ class _CategorySectionState extends State<_CategorySection> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Colors.deepPurple.shade50,
+                  color: AppTheme.accent.shade50,
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text('${widget.selectedCount}/${widget.types.length}',
                     style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600,
-                        color: Colors.deepPurple.shade600)),
+                        color: AppTheme.accent.shade600)),
               ),
             const SizedBox(width: 4),
             Icon(
@@ -1040,6 +1458,29 @@ class _CategorySectionState extends State<_CategorySection> {
 
       // Sub-events (checkboxes)
       if (_expanded) ...[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(38, 0, 8, 4),
+          child: Row(children: [
+            TextButton(
+              style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: const Size(0, 28),
+                  visualDensity: VisualDensity.compact),
+              onPressed: () => widget.onToggleAll(
+                  widget.types.map((t) => t.id).toList(), true),
+              child: const Text('Enable All', style: TextStyle(fontSize: 11)),
+            ),
+            TextButton(
+              style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: const Size(0, 28),
+                  visualDensity: VisualDensity.compact),
+              onPressed: () => widget.onToggleAll(
+                  widget.types.map((t) => t.id).toList(), false),
+              child: const Text('Disable All', style: TextStyle(fontSize: 11)),
+            ),
+          ]),
+        ),
         ...widget.types.map((type) {
           final enabled = widget.enabledIds.contains(type.id);
           return InkWell(
@@ -1054,12 +1495,12 @@ class _CategorySectionState extends State<_CategorySection> {
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: enabled ? FontWeight.w600 : FontWeight.normal,
-                        color: enabled ? Colors.grey.shade900 : Colors.grey.shade600,
+                        color: enabled ? null : Colors.grey.shade600,
                       )),
                 ),
                 Checkbox(
                   value: enabled,
-                  activeColor: Colors.deepPurple,
+                  activeColor: AppTheme.accent,
                   materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   visualDensity: VisualDensity.compact,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
@@ -1082,7 +1523,9 @@ class _CategorySectionState extends State<_CategorySection> {
 // /eventTypeConfig/{typeId}        → { specialDescriptions: [...], specialDefaultNote: '' }
 
 class _SpecialContributionSection extends StatefulWidget {
-  const _SpecialContributionSection();
+  final Set<EventCategory> allowedCategories;
+  final Set<String> allowedEventTypeIds;
+  const _SpecialContributionSection({required this.allowedCategories, required this.allowedEventTypeIds});
   @override
   State<_SpecialContributionSection> createState() => _SpecialContributionSectionState();
 }
@@ -1109,13 +1552,21 @@ class _SpecialContributionSectionState extends State<_SpecialContributionSection
           _ref.set({'enabledTypeIds': updated});
         }
 
+        void toggleAllIds(List<String> ids, bool on) {
+          final updated = Set<String>.from(enabledIds);
+          on ? updated.addAll(ids) : updated.removeAll(ids);
+          _ref.set({'enabledTypeIds': updated.toList()});
+        }
+
         final categories = EventCategory.values
-            .where((cat) => kAllEventTypes.any((t) => t.category == cat))
+            .where((cat) =>
+                widget.allowedCategories.contains(cat) &&
+                kAllEventTypes.any((t) => t.category == cat))
             .toList();
 
         return Container(
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(14),
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
           ),
@@ -1175,6 +1626,8 @@ class _SpecialContributionSectionState extends State<_SpecialContributionSection
                     category: cat,
                     enabledIds: enabledIds,
                     onToggle: toggleId,
+                    onToggleAll: toggleAllIds,
+                    allowedEventTypeIds: widget.allowedEventTypeIds,
                   )),
               const SizedBox(height: 8),
             ],
@@ -1189,7 +1642,15 @@ class _SpecialCatGroup extends StatefulWidget {
   final EventCategory category;
   final List<String> enabledIds;
   final void Function(String, bool) onToggle;
-  const _SpecialCatGroup({required this.category, required this.enabledIds, required this.onToggle});
+  final void Function(List<String>, bool) onToggleAll;
+  final Set<String> allowedEventTypeIds;
+  const _SpecialCatGroup({
+    required this.category,
+    required this.enabledIds,
+    required this.onToggle,
+    required this.onToggleAll,
+    required this.allowedEventTypeIds,
+  });
   @override
   State<_SpecialCatGroup> createState() => _SpecialCatGroupState();
 }
@@ -1199,7 +1660,9 @@ class _SpecialCatGroupState extends State<_SpecialCatGroup> {
 
   @override
   Widget build(BuildContext context) {
-    final types = kAllEventTypes.where((t) => t.category == widget.category).toList();
+    final types = kAllEventTypes
+        .where((t) => t.category == widget.category && widget.allowedEventTypeIds.contains(t.id))
+        .toList();
     final selectedCount = types.where((t) => widget.enabledIds.contains(t.id)).length;
 
     return Column(children: [
@@ -1229,12 +1692,36 @@ class _SpecialCatGroupState extends State<_SpecialCatGroup> {
           ]),
         ),
       ),
-      if (_expanded)
+      if (_expanded) ...[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(38, 0, 8, 4),
+          child: Row(children: [
+            TextButton(
+              style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: const Size(0, 28),
+                  visualDensity: VisualDensity.compact),
+              onPressed: () =>
+                  widget.onToggleAll(types.map((t) => t.id).toList(), true),
+              child: const Text('Enable All', style: TextStyle(fontSize: 11)),
+            ),
+            TextButton(
+              style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: const Size(0, 28),
+                  visualDensity: VisualDensity.compact),
+              onPressed: () =>
+                  widget.onToggleAll(types.map((t) => t.id).toList(), false),
+              child: const Text('Disable All', style: TextStyle(fontSize: 11)),
+            ),
+          ]),
+        ),
         ...types.map((type) => _SpecialTypeRow(
               eventType: type,
               enabled: widget.enabledIds.contains(type.id),
               onToggle: (on) => widget.onToggle(type.id, on),
             )),
+      ],
       const Divider(height: 1, indent: 16, endIndent: 16),
     ]);
   }
@@ -1310,7 +1797,7 @@ class _SpecialTypeRowState extends State<_SpecialTypeRow> {
                 child: Text(widget.eventType.name,
                     style: TextStyle(fontSize: 13,
                         fontWeight: widget.enabled ? FontWeight.w600 : FontWeight.normal,
-                        color: widget.enabled ? Colors.grey.shade900 : Colors.grey.shade600)),
+                        color: widget.enabled ? null : Colors.grey.shade600)),
               ),
               if (widget.enabled)
                 GestureDetector(
@@ -1391,7 +1878,7 @@ class _SpecialTypeRowState extends State<_SpecialTypeRow> {
                       child: Container(
                         padding: const EdgeInsets.fromLTRB(8, 4, 6, 4),
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: Theme.of(context).cardColor,
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(color: Colors.purple.shade200),
                         ),
@@ -1477,7 +1964,7 @@ class _DefaultNoteFieldState extends State<_DefaultNoteField> {
           focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
               borderSide: BorderSide(color: Colors.purple.shade400)),
           filled: true,
-          fillColor: Colors.white,
+          fillColor: Theme.of(context).cardColor,
         ),
       ),
     ),
@@ -1511,7 +1998,9 @@ class _DefaultNoteFieldState extends State<_DefaultNoteField> {
 // /eventTypeConfig/{typeId}      → { expenseCategories: [...] }
 
 class _ExpenseCategoriesSection extends StatefulWidget {
-  const _ExpenseCategoriesSection();
+  final Set<EventCategory> allowedCategories;
+  final Set<String> allowedEventTypeIds;
+  const _ExpenseCategoriesSection({required this.allowedCategories, required this.allowedEventTypeIds});
   @override
   State<_ExpenseCategoriesSection> createState() => _ExpenseCategoriesSectionState();
 }
@@ -1538,13 +2027,21 @@ class _ExpenseCategoriesSectionState extends State<_ExpenseCategoriesSection> {
           _ref.set({'enabledTypeIds': updated});
         }
 
+        void toggleAllIds(List<String> ids, bool on) {
+          final updated = Set<String>.from(enabledIds);
+          on ? updated.addAll(ids) : updated.removeAll(ids);
+          _ref.set({'enabledTypeIds': updated.toList()});
+        }
+
         final categories = EventCategory.values
-            .where((cat) => kAllEventTypes.any((t) => t.category == cat))
+            .where((cat) =>
+                widget.allowedCategories.contains(cat) &&
+                kAllEventTypes.any((t) => t.category == cat))
             .toList();
 
         return Container(
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(14),
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
           ),
@@ -1570,7 +2067,7 @@ class _ExpenseCategoriesSectionState extends State<_ExpenseCategoriesSection> {
                             ? 'Not enabled for any event'
                             : '$totalSelected event type${totalSelected == 1 ? '' : 's'} enabled',
                         style: TextStyle(fontSize: 11,
-                            color: totalSelected > 0 ? Colors.deepPurple.shade400 : Colors.grey.shade400),
+                            color: totalSelected > 0 ? AppTheme.accent.shade400 : Colors.grey.shade400),
                       ),
                     ]),
                   ),
@@ -1598,6 +2095,8 @@ class _ExpenseCategoriesSectionState extends State<_ExpenseCategoriesSection> {
                     category: cat,
                     enabledIds: enabledIds,
                     onToggle: toggleId,
+                    onToggleAll: toggleAllIds,
+                    allowedEventTypeIds: widget.allowedEventTypeIds,
                   )),
               const SizedBox(height: 8),
             ],
@@ -1614,7 +2113,15 @@ class _ExpCategoryGroup extends StatefulWidget {
   final EventCategory category;
   final List<String> enabledIds;
   final void Function(String, bool) onToggle;
-  const _ExpCategoryGroup({required this.category, required this.enabledIds, required this.onToggle});
+  final void Function(List<String>, bool) onToggleAll;
+  final Set<String> allowedEventTypeIds;
+  const _ExpCategoryGroup({
+    required this.category,
+    required this.enabledIds,
+    required this.onToggle,
+    required this.onToggleAll,
+    required this.allowedEventTypeIds,
+  });
   @override
   State<_ExpCategoryGroup> createState() => _ExpCategoryGroupState();
 }
@@ -1624,7 +2131,9 @@ class _ExpCategoryGroupState extends State<_ExpCategoryGroup> {
 
   @override
   Widget build(BuildContext context) {
-    final types = kAllEventTypes.where((t) => t.category == widget.category).toList();
+    final types = kAllEventTypes
+        .where((t) => t.category == widget.category && widget.allowedEventTypeIds.contains(t.id))
+        .toList();
     final selectedCount = types.where((t) => widget.enabledIds.contains(t.id)).length;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       InkWell(
@@ -1640,12 +2149,12 @@ class _ExpCategoryGroupState extends State<_ExpCategoryGroup> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Colors.deepPurple.shade50,
+                  color: AppTheme.accent.shade50,
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text('$selectedCount/${types.length}',
                     style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600,
-                        color: Colors.deepPurple.shade600)),
+                        color: AppTheme.accent.shade600)),
               ),
             const SizedBox(width: 4),
             Icon(_expanded ? Icons.expand_less : Icons.expand_more,
@@ -1654,6 +2163,29 @@ class _ExpCategoryGroupState extends State<_ExpCategoryGroup> {
         ),
       ),
       if (_expanded) ...[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(38, 0, 8, 4),
+          child: Row(children: [
+            TextButton(
+              style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: const Size(0, 28),
+                  visualDensity: VisualDensity.compact),
+              onPressed: () =>
+                  widget.onToggleAll(types.map((t) => t.id).toList(), true),
+              child: const Text('Enable All', style: TextStyle(fontSize: 11)),
+            ),
+            TextButton(
+              style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: const Size(0, 28),
+                  visualDensity: VisualDensity.compact),
+              onPressed: () =>
+                  widget.onToggleAll(types.map((t) => t.id).toList(), false),
+              child: const Text('Disable All', style: TextStyle(fontSize: 11)),
+            ),
+          ]),
+        ),
         ...types.map((type) => _ExpTypeEditor(
               eventType: type,
               enabled: widget.enabledIds.contains(type.id),
@@ -1712,9 +2244,9 @@ class _ExpTypeEditorState extends State<_ExpTypeEditor> {
             },
             child: Container(
               width: 44, height: 44,
-              decoration: BoxDecoration(color: Colors.deepPurple.shade50,
+              decoration: BoxDecoration(color: AppTheme.accent.shade50,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.deepPurple.shade200)),
+                  border: Border.all(color: AppTheme.accent.shade200)),
               child: Center(child: Text(emoji, style: const TextStyle(fontSize: 22))),
             ),
           ),
@@ -1728,7 +2260,7 @@ class _ExpTypeEditorState extends State<_ExpTypeEditor> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           ElevatedButton(onPressed: () => Navigator.pop(ctx, true),
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple),
+              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accent),
               child: const Text('Add', style: TextStyle(color: Colors.white))),
         ],
       )),
@@ -1856,9 +2388,9 @@ class _ExpTypeEditorState extends State<_ExpTypeEditor> {
                 child: Container(
                   width: 42, height: 42,
                   decoration: BoxDecoration(
-                    color: current == e ? Colors.deepPurple.shade50 : Colors.grey.shade100,
+                    color: current == e ? AppTheme.accent.shade50 : Colors.grey.shade100,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: current == e ? Colors.deepPurple.shade300 : Colors.transparent),
+                    border: Border.all(color: current == e ? AppTheme.accent.shade300 : Colors.transparent),
                   ),
                   child: Center(child: Text(e, style: const TextStyle(fontSize: 20))),
                 ),
@@ -1895,7 +2427,7 @@ class _ExpTypeEditorState extends State<_ExpTypeEditor> {
               Expanded(child: Text(widget.eventType.name,
                   style: TextStyle(fontSize: 13,
                       fontWeight: widget.enabled ? FontWeight.w600 : FontWeight.normal,
-                      color: widget.enabled ? Colors.grey.shade900 : Colors.grey.shade700))),
+                      color: widget.enabled ? null : Colors.grey.shade700))),
               if (widget.enabled)
                 GestureDetector(
                   onTap: () => setState(() => _configExpanded = !_configExpanded),
@@ -1903,16 +2435,16 @@ class _ExpTypeEditorState extends State<_ExpTypeEditor> {
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
                       Text('Configure',
-                          style: TextStyle(fontSize: 10, color: Colors.deepPurple.shade400,
+                          style: TextStyle(fontSize: 10, color: AppTheme.accent.shade400,
                               fontWeight: FontWeight.w600)),
                       Icon(_configExpanded ? Icons.expand_less : Icons.expand_more,
-                          size: 14, color: Colors.deepPurple.shade400),
+                          size: 14, color: AppTheme.accent.shade400),
                     ]),
                   ),
                 ),
               Checkbox(
                 value: widget.enabled,
-                activeColor: Colors.deepPurple,
+                activeColor: AppTheme.accent,
                 materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 visualDensity: VisualDensity.compact,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
@@ -1936,9 +2468,9 @@ class _ExpTypeEditorState extends State<_ExpTypeEditor> {
                 margin: const EdgeInsets.fromLTRB(20, 0, 16, 8),
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.deepPurple.shade50,
+                  color: AppTheme.accent.shade50,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.deepPurple.shade100),
+                  border: Border.all(color: AppTheme.accent.shade100),
                 ),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   ...cats.map((cat) {
@@ -1969,7 +2501,7 @@ class _ExpTypeEditorState extends State<_ExpTypeEditor> {
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                                   decoration: BoxDecoration(
-                                    color: Colors.white,
+                                    color: Theme.of(context).cardColor,
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -1986,10 +2518,10 @@ class _ExpTypeEditorState extends State<_ExpTypeEditor> {
                           child: Padding(
                             padding: const EdgeInsets.only(left: 20),
                             child: Row(mainAxisSize: MainAxisSize.min, children: [
-                              Icon(Icons.add, size: 12, color: Colors.deepPurple.shade300),
+                              Icon(Icons.add, size: 12, color: AppTheme.accent.shade300),
                               const SizedBox(width: 3),
                               Text('Add sub-category',
-                                  style: TextStyle(fontSize: 10, color: Colors.deepPurple.shade300)),
+                                  style: TextStyle(fontSize: 10, color: AppTheme.accent.shade300)),
                             ]),
                           ),
                         ),
@@ -2003,14 +2535,14 @@ class _ExpTypeEditorState extends State<_ExpTypeEditor> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: Theme.of(context).cardColor,
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          Icon(Icons.add, size: 13, color: Colors.deepPurple.shade600),
+                          Icon(Icons.add, size: 13, color: AppTheme.accent.shade600),
                           const SizedBox(width: 4),
                           Text('Add category',
-                              style: TextStyle(fontSize: 11, color: Colors.deepPurple.shade600,
+                              style: TextStyle(fontSize: 11, color: AppTheme.accent.shade600,
                                   fontWeight: FontWeight.w600)),
                         ]),
                       ),
@@ -2065,7 +2597,9 @@ class _ExpTypeEditorState extends State<_ExpTypeEditor> {
 // /eventTypeConfig/{typeId}   → { volunteerRoles: [...] }
 
 class _VolunteerRolesSection extends StatefulWidget {
-  const _VolunteerRolesSection();
+  final Set<EventCategory> allowedCategories;
+  final Set<String> allowedEventTypeIds;
+  const _VolunteerRolesSection({required this.allowedCategories, required this.allowedEventTypeIds});
   @override
   State<_VolunteerRolesSection> createState() => _VolunteerRolesSectionState();
 }
@@ -2092,7 +2626,15 @@ class _VolunteerRolesSectionState extends State<_VolunteerRolesSection> {
           _ref.set({'enabledTypeIds': updated});
         }
 
-        final categories = EventCategory.values;
+        void toggleAllIds(List<String> ids, bool on) {
+          final updated = Set<String>.from(enabledIds);
+          on ? updated.addAll(ids) : updated.removeAll(ids);
+          _ref.set({'enabledTypeIds': updated.toList()});
+        }
+
+        final categories = EventCategory.values
+            .where((cat) => widget.allowedCategories.contains(cat))
+            .toList();
 
         return Card(
           elevation: 0,
@@ -2143,6 +2685,8 @@ class _VolunteerRolesSectionState extends State<_VolunteerRolesSection> {
                     category: cat,
                     enabledIds: enabledIds,
                     onToggle: toggleId,
+                    onToggleAll: toggleAllIds,
+                    allowedEventTypeIds: widget.allowedEventTypeIds,
                   )),
               const SizedBox(height: 8),
             ],
@@ -2157,7 +2701,15 @@ class _VolRoleCatGroup extends StatefulWidget {
   final EventCategory category;
   final List<String> enabledIds;
   final void Function(String, bool) onToggle;
-  const _VolRoleCatGroup({required this.category, required this.enabledIds, required this.onToggle});
+  final void Function(List<String>, bool) onToggleAll;
+  final Set<String> allowedEventTypeIds;
+  const _VolRoleCatGroup({
+    required this.category,
+    required this.enabledIds,
+    required this.onToggle,
+    required this.onToggleAll,
+    required this.allowedEventTypeIds,
+  });
   @override
   State<_VolRoleCatGroup> createState() => _VolRoleCatGroupState();
 }
@@ -2166,7 +2718,9 @@ class _VolRoleCatGroupState extends State<_VolRoleCatGroup> {
   bool _expanded = false;
   @override
   Widget build(BuildContext context) {
-    final types = kAllEventTypes.where((t) => t.category == widget.category).toList();
+    final types = kAllEventTypes
+        .where((t) => t.category == widget.category && widget.allowedEventTypeIds.contains(t.id))
+        .toList();
     if (types.isEmpty) return const SizedBox.shrink();
     final selectedCount = types.where((t) => widget.enabledIds.contains(t.id)).length;
     final label = widget.category.label;
@@ -2198,6 +2752,29 @@ class _VolRoleCatGroupState extends State<_VolRoleCatGroup> {
         ),
       ),
       if (_expanded) ...[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(38, 0, 8, 4),
+          child: Row(children: [
+            TextButton(
+              style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: const Size(0, 28),
+                  visualDensity: VisualDensity.compact),
+              onPressed: () =>
+                  widget.onToggleAll(types.map((t) => t.id).toList(), true),
+              child: const Text('Enable All', style: TextStyle(fontSize: 11)),
+            ),
+            TextButton(
+              style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: const Size(0, 28),
+                  visualDensity: VisualDensity.compact),
+              onPressed: () =>
+                  widget.onToggleAll(types.map((t) => t.id).toList(), false),
+              child: const Text('Disable All', style: TextStyle(fontSize: 11)),
+            ),
+          ]),
+        ),
         ...types.map((type) => _VolRoleTypeEditor(
               eventType: type,
               enabled: widget.enabledIds.contains(type.id),
@@ -2382,7 +2959,7 @@ class _VolRoleTypeEditorState extends State<_VolRoleTypeEditor> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: Theme.of(context).cardColor,
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(color: Colors.teal.shade200),
                         ),
@@ -2403,7 +2980,7 @@ class _VolRoleTypeEditorState extends State<_VolRoleTypeEditor> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: Theme.of(context).cardColor,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Row(mainAxisSize: MainAxisSize.min, children: [

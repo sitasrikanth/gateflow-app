@@ -127,7 +127,7 @@ class _SponsorPackagesScreenState extends State<SponsorPackagesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('Sponsor Packages',
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
@@ -184,7 +184,7 @@ class _SponsorPackagesScreenState extends State<SponsorPackagesScreen> {
                             margin: const EdgeInsets.only(bottom: 10),
                             padding: const EdgeInsets.all(14),
                             decoration: BoxDecoration(
-                              color: Colors.white,
+                              color: Theme.of(context).cardColor,
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(color: Colors.grey.shade200),
                             ),

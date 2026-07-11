@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'event_types.dart';
+import '../../theme/app_theme.dart';
 
 // ── Canonical Firestore location for event expense categories ──────────────────
 // Path: event_config/categories  field: expenseCategories
@@ -357,11 +358,11 @@ class _ExpenseCategoriesScreenState extends State<ExpenseCategoriesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('Expense Categories',
             style: TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.deepPurple,
+        backgroundColor: AppTheme.accent,
         foregroundColor: Colors.white,
       ),
       body: StreamBuilder<DocumentSnapshot>(
@@ -390,14 +391,14 @@ class _ExpenseCategoriesScreenState extends State<ExpenseCategoriesScreen> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.deepPurple.shade50,
+                  color: AppTheme.accent.shade50,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.deepPurple.shade100),
+                  border: Border.all(color: AppTheme.accent.shade100),
                 ),
                 child: Row(
                   children: [
                     Icon(Icons.info_outline,
-                        color: Colors.deepPurple.shade400, size: 16),
+                        color: AppTheme.accent.shade400, size: 16),
                     const SizedBox(width: 8),
                     const Expanded(
                       child: Text(
@@ -418,11 +419,11 @@ class _ExpenseCategoriesScreenState extends State<ExpenseCategoriesScreen> {
                     child: OutlinedButton.icon(
                       onPressed: () => _seedDefaults(cats),
                       icon: Icon(Icons.auto_fix_high,
-                          size: 16, color: Colors.deepPurple.shade600),
+                          size: 16, color: AppTheme.accent.shade600),
                       label: Text('Load Defaults',
-                          style: TextStyle(color: Colors.deepPurple.shade700)),
+                          style: TextStyle(color: AppTheme.accent.shade700)),
                       style: OutlinedButton.styleFrom(
-                        side: BorderSide(color: Colors.deepPurple.shade200),
+                        side: BorderSide(color: AppTheme.accent.shade200),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8)),
                       ),
@@ -513,7 +514,7 @@ class _CategoryTile extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.grey.shade200),
         boxShadow: [

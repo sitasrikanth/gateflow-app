@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../main.dart';
+import '../../theme/app_theme.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -181,8 +182,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final accent = AppTheme.accent;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 32),
@@ -193,18 +196,15 @@ class _LoginScreenState extends State<LoginScreen> {
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1A73E8).withValues(alpha: 0.08),
+                  color: accent.withValues(alpha: 0.08),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.apartment,
-                    size: 56, color: Color(0xFF1A73E8)),
+                child: Icon(Icons.apartment, size: 56, color: accent),
               ),
               const SizedBox(height: 20),
-              const Text('GateFlow',
+              Text('GateFlow',
                   style: TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF1A1A1A))),
+                      fontSize: 32, fontWeight: FontWeight.bold)),
               const SizedBox(height: 6),
               const Text('Your community, connected.',
                   style: TextStyle(fontSize: 15, color: Colors.grey)),
@@ -245,7 +245,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         decoration: InputDecoration(
                           counterText: '',
                           filled: true,
-                          fillColor: Colors.grey.shade50,
+                          fillColor: isDark
+                              ? Colors.grey.shade800
+                              : Colors.grey.shade50,
                           border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                               borderSide:
@@ -256,8 +258,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   BorderSide(color: Colors.grey.shade300)),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                                color: Color(0xFF1A73E8), width: 2),
+                            borderSide: BorderSide(color: accent, width: 2),
                           ),
                         ),
                         onChanged: (value) => _onDigitChanged(index, value),
@@ -312,7 +313,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: ElevatedButton(
                   onPressed: _isLoading ? null : _verifyCode,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1A73E8),
+                    backgroundColor: accent,
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12)),
                   ),
@@ -337,9 +338,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       MaterialPageRoute(
                           builder: (_) => const RegisterScreen()),
                     ),
-                    child: const Text('Request Access',
+                    child: Text('Request Access',
                         style: TextStyle(
-                            color: Color(0xFF1A73E8),
+                            color: accent,
                             fontWeight: FontWeight.w600,
                             fontSize: 14)),
                   ),

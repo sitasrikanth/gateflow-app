@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../theme/app_theme.dart';
 
 const kTaskStatusPending = 'pending';
 const kTaskStatusInProgress = 'in_progress';
@@ -200,7 +201,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                       });
                       Navigator.pop(ctx);
                     },
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple),
+                    style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accent),
                     child: const Text('Done', style: TextStyle(color: Colors.white)),
                   ),
                 ),
@@ -290,7 +291,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                       });
                       Navigator.pop(ctx);
                     },
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple),
+                    style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accent),
                     child: const Text('Done', style: TextStyle(color: Colors.white)),
                   ),
                 ),
@@ -399,10 +400,10 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: Text(_isEdit ? 'Edit Task' : 'Create Task'),
-        backgroundColor: Colors.deepPurple,
+        backgroundColor: AppTheme.accent,
         foregroundColor: Colors.white,
         actions: [
           if (_isEdit)
@@ -511,7 +512,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
               ),
             ),
             IconButton(
-                icon: const Icon(Icons.add_circle, color: Colors.deepPurple), onPressed: _addChecklistItem),
+                icon: Icon(Icons.add_circle, color: AppTheme.accent), onPressed: _addChecklistItem),
           ]),
           const SizedBox(height: 16),
           _sectionLabel('Dependencies'),
@@ -543,7 +544,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
             child: ElevatedButton(
               onPressed: _saving ? null : _save,
               style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.deepPurple, padding: const EdgeInsets.symmetric(vertical: 14)),
+                  backgroundColor: AppTheme.accent, padding: const EdgeInsets.symmetric(vertical: 14)),
               child: _saving
                   ? const SizedBox(
                       width: 20, height: 20,

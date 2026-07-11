@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../theme/app_theme.dart';
 
 class SendNotificationScreen extends StatefulWidget {
   final String eventId;
@@ -21,7 +22,7 @@ class _SendNotificationScreenState
 
   final List<Map<String, dynamic>> _types = [
     {'name': 'Announcement', 'icon': '📢', 'color': Colors.blue},
-    {'name': 'Pooja Alert', 'icon': '🙏', 'color': Colors.deepPurple},
+    {'name': 'Pooja Alert', 'icon': '🙏', 'color': AppTheme.accent},
     {'name': 'Prasad', 'icon': '🍱', 'color': Colors.orange},
     {'name': 'Reminder', 'icon': '⏰', 'color': Colors.green},
   ];
@@ -62,9 +63,9 @@ class _SendNotificationScreenState
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Notification sent to all residents ✅'),
-          backgroundColor: Colors.deepPurple,
+        SnackBar(
+          content: const Text('Notification sent to all residents ✅'),
+          backgroundColor: AppTheme.accent,
         ),
       );
       Navigator.pop(context);
@@ -78,7 +79,7 @@ class _SendNotificationScreenState
       appBar: AppBar(
         title: const Text('Send Notification',
             style: TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.deepPurple,
+        backgroundColor: AppTheme.accent,
         foregroundColor: Colors.white,
       ),
       body: SingleChildScrollView(
@@ -90,13 +91,13 @@ class _SendNotificationScreenState
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.deepPurple.shade50,
+                color: AppTheme.accent.shade50,
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.celebration,
-                      color: Colors.deepPurple, size: 20),
+                  Icon(Icons.celebration,
+                      color: AppTheme.accent, size: 20),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(widget.eventName,
@@ -166,8 +167,8 @@ class _SendNotificationScreenState
                     borderRadius: BorderRadius.circular(12)),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(
-                      color: Colors.deepPurple, width: 2),
+                  borderSide: BorderSide(
+                      color: AppTheme.accent, width: 2),
                 ),
               ),
             ),
@@ -212,8 +213,8 @@ class _SendNotificationScreenState
                     borderRadius: BorderRadius.circular(12)),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(
-                      color: Colors.deepPurple, width: 2),
+                  borderSide: BorderSide(
+                      color: AppTheme.accent, width: 2),
                 ),
               ),
             ),
@@ -225,7 +226,7 @@ class _SendNotificationScreenState
               child: ElevatedButton.icon(
                 onPressed: _sending ? null : _sendNotification,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.deepPurple,
+                  backgroundColor: AppTheme.accent,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),

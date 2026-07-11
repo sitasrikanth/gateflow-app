@@ -8,10 +8,12 @@ import 'screens/guard/guard_home_screen.dart';
 import 'screens/resident/resident_home_screen.dart';
 import 'screens/resident/resident_events_screen.dart';
 import 'screens/admin/admin_home_screen.dart';
+import 'theme/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await AppTheme.instance.load();
 
   FlutterError.onError = (FlutterErrorDetails details) {
     FlutterError.presentError(details);
@@ -29,14 +31,25 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'GateFlow',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1A73E8)),
-        useMaterial3: true,
+    return AnimatedBuilder(
+      animation: AppTheme.instance,
+      builder: (context, _) => MaterialApp(
+        title: 'GateFlow',
+        debugShowCheckedModeBanner: false,
+        themeMode: AppTheme.instance.mode,
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(seedColor: AppTheme.accent),
+          scaffoldBackgroundColor: Colors.grey.shade50,
+          useMaterial3: true,
+        ),
+        darkTheme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+              seedColor: AppTheme.accent, brightness: Brightness.dark),
+          scaffoldBackgroundColor: const Color(0xFF121212),
+          useMaterial3: true,
+        ),
+        home: const AuthWrapper(),
       ),
-      home: const AuthWrapper(),
     );
   }
 }

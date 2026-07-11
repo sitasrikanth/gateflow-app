@@ -8,6 +8,9 @@ import 'create_event_screen.dart';
 import 'expense_categories_screen.dart';
 import 'event_types.dart';
 import 'event_type_settings_screen.dart';
+import '../../utils/event_status.dart';
+import 'featured_event_banner.dart';
+import '../../theme/app_theme.dart';
 
 // Fallback color palette for events without a type
 const List<Color> _kEventColors = [
@@ -21,9 +24,31 @@ const List<Color> _kEventColors = [
   Color(0xFF37474F),
 ];
 
-class EventListScreen extends StatelessWidget {
+class EventListScreen extends StatefulWidget {
   final bool isAdmin;
   const EventListScreen({super.key, required this.isAdmin});
+
+  @override
+  State<EventListScreen> createState() => _EventListScreenState();
+}
+
+class _EventListScreenState extends State<EventListScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 3, vsync: this, initialIndex: 1);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  bool get isAdmin => widget.isAdmin;
 
   Color _colorFor(int index) => _kEventColors[index % _kEventColors.length];
 
@@ -39,184 +64,203 @@ class EventListScreen extends StatelessWidget {
     }
   }
 
+  Widget _buildEventsGrid(String status) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('events')
+          .where('status', isEqualTo: status)
+          .orderBy('createdAt', descending: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final events = snapshot.data?.docs ?? [];
+
+        if (events.isEmpty) {
+          final emptyLabel = status == 'upcoming'
+              ? 'No upcoming events yet'
+              : status == 'active'
+                  ? 'No ongoing events right now'
+                  : 'No past events yet';
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.celebration_outlined,
+                    size: 64, color: Colors.grey.shade300),
+                const SizedBox(height: 12),
+                Text(emptyLabel,
+                    style: TextStyle(
+                        color: Colors.grey.shade400, fontSize: 16)),
+                const SizedBox(height: 4),
+                if (isAdmin && status == 'upcoming')
+                  Text('Tap + below to create your first event',
+                      style: TextStyle(
+                          color: Colors.grey.shade400, fontSize: 13)),
+              ],
+            ),
+          );
+        }
+
+        return GridView.builder(
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 100),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            mainAxisSpacing: 14,
+            crossAxisSpacing: 14,
+            childAspectRatio: 0.78,
+          ),
+          itemCount: events.length,
+          itemBuilder: (ctx, i) {
+            final data = events[i].data() as Map<String, dynamic>;
+            final double target =
+                ((data['targetAmount'] ?? 0) as num).toDouble();
+            final double collected =
+                ((data['totalCollected'] ?? 0) as num).toDouble();
+            final double spent =
+                ((data['totalSpent'] ?? 0) as num).toDouble();
+            final double balance = collected - spent;
+            final double progress = target > 0
+                ? (collected / target).clamp(0.0, 1.0)
+                : 0.0;
+            final eventType =
+                eventTypeById(data['eventTypeId'] as String?) ??
+                eventTypeByName(data['name'] as String?);
+            final List<Color> gradientColors = eventType?.gradient ??
+                [_colorFor(i), _colorFor(i).withValues(alpha: 0.75)];
+            final String typeEmoji = eventType?.emoji ?? '🎉';
+            // Per-event banner takes priority over event type image
+            final String imageUrl =
+                (data['bannerUrl'] as String?)?.isNotEmpty == true
+                    ? data['bannerUrl'] as String
+                    : (eventType?.imageUrl ?? '');
+
+            return GestureDetector(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => _EventPageView(
+                    events: events,
+                    initialIndex: i,
+                    isAdmin: isAdmin,
+                  ),
+                ),
+              ),
+              child: _EventGridCard(
+                name: data['name'] ?? '',
+                status: status,
+                collected: collected,
+                spent: spent,
+                balance: balance,
+                target: target,
+                progress: progress,
+                gradientColors: gradientColors,
+                typeEmoji: typeEmoji,
+                imageUrl: imageUrl,
+                startDate: data['startDate'] as String? ?? '',
+                tagline: eventType?.tagline ?? '',
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final canPop = Navigator.canPop(context);
 
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
-      body: CustomScrollView(
-        slivers: [
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      body: Column(
+        children: [
           // Header
-          SliverToBoxAdapter(
-            child: Container(
-              color: Colors.deepPurple,
-              padding: EdgeInsets.fromLTRB(16, canPop ? 52 : 52, 16, 20),
-              child: Row(
-                children: [
-                  if (canPop)
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back, color: Colors.white),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  const Icon(Icons.celebration, color: Colors.white, size: 28),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Event Fund Manager',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold)),
-                        Text('Tap an event to view dashboard',
-                            style: TextStyle(
-                                color: Colors.white70, fontSize: 13)),
-                      ],
-                    ),
-                  ),
-                  if (isAdmin)
-                    IconButton(
-                      icon: const Icon(Icons.tune, color: Colors.white70),
-                      tooltip: 'Event Settings',
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const EventTypeSettingsScreen()),
-                      ),
-                    ),
-                  if (isAdmin)
-                    IconButton(
-                      icon: const Icon(Icons.category_outlined,
-                          color: Colors.white70),
-                      tooltip: 'Expense Categories',
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) =>
-                                const ExpenseCategoriesScreen()),
-                      ),
-                    ),
+          Container(
+            color: AppTheme.accent,
+            padding: EdgeInsets.fromLTRB(16, canPop ? 52 : 52, 16, 12),
+            child: Row(
+              children: [
+                if (canPop)
                   IconButton(
-                    icon: const Icon(Icons.logout, color: Colors.white70),
-                    tooltip: 'Logout',
-                    onPressed: () => _logout(context),
+                    icon: const Icon(Icons.arrow_back, color: Colors.white),
+                    onPressed: () => Navigator.pop(context),
                   ),
-                ],
-              ),
-            ),
-          ),
-
-          StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('events')
-                .orderBy('createdAt', descending: true)
-                .snapshots(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.only(top: 80),
-                    child: Center(child: CircularProgressIndicator()),
-                  ),
-                );
-              }
-
-              final events = snapshot.data?.docs ?? [];
-
-              if (events.isEmpty) {
-                return SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 80),
-                    child: Column(
-                      children: [
-                        Icon(Icons.celebration_outlined,
-                            size: 64, color: Colors.grey.shade300),
-                        const SizedBox(height: 12),
-                        Text('No events yet',
-                            style: TextStyle(
-                                color: Colors.grey.shade400, fontSize: 16)),
-                        const SizedBox(height: 4),
-                        if (isAdmin)
-                          Text('Tap + below to create your first event',
-                              style: TextStyle(
-                                  color: Colors.grey.shade400, fontSize: 13)),
-                      ],
-                    ),
-                  ),
-                );
-              }
-
-              return SliverPadding(
-                padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
-                sliver: SliverGrid(
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    mainAxisSpacing: 14,
-                    crossAxisSpacing: 14,
-                    childAspectRatio: 0.78,
-                  ),
-                  delegate: SliverChildBuilderDelegate(
-                    (ctx, i) {
-                      final data = events[i].data() as Map<String, dynamic>;
-                      final status = data['status'] ?? 'active';
-                      final double target =
-                          ((data['targetAmount'] ?? 0) as num).toDouble();
-                      final double collected =
-                          ((data['totalCollected'] ?? 0) as num).toDouble();
-                      final double spent =
-                          ((data['totalSpent'] ?? 0) as num).toDouble();
-                      final double balance = collected - spent;
-                      final double progress = target > 0
-                          ? (collected / target).clamp(0.0, 1.0)
-                          : 0.0;
-                      final eventType =
-                          eventTypeById(data['eventTypeId'] as String?) ??
-                          eventTypeByName(data['name'] as String?);
-                      final List<Color> gradientColors = eventType?.gradient ??
-                          [_colorFor(i), _colorFor(i).withValues(alpha: 0.75)];
-                      final String typeEmoji = eventType?.emoji ?? '🎉';
-                      // Per-event banner takes priority over event type image
-                      final String imageUrl =
-                          (data['bannerUrl'] as String?)?.isNotEmpty == true
-                              ? data['bannerUrl'] as String
-                              : (eventType?.imageUrl ?? '');
-
-                      return GestureDetector(
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => _EventPageView(
-                              events: events,
-                              initialIndex: i,
-                              isAdmin: isAdmin,
-                            ),
-                          ),
-                        ),
-                        child: _EventGridCard(
-                          name: data['name'] ?? '',
-                          status: status,
-                          collected: collected,
-                          spent: spent,
-                          balance: balance,
-                          target: target,
-                          progress: progress,
-                          gradientColors: gradientColors,
-                          typeEmoji: typeEmoji,
-                          imageUrl: imageUrl,
-                          startDate: data['startDate'] as String? ?? '',
-                          tagline: eventType?.tagline ?? '',
-                        ),
-                      );
-                    },
-                    childCount: events.length,
+                const Icon(Icons.celebration, color: Colors.white, size: 28),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Event Fund Manager',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold)),
+                      Text('Tap an event to view dashboard',
+                          style: TextStyle(
+                              color: Colors.white70, fontSize: 13)),
+                    ],
                   ),
                 ),
-              );
-            },
+                if (isAdmin)
+                  IconButton(
+                    icon: const Icon(Icons.tune, color: Colors.white70),
+                    tooltip: 'Event Settings',
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const EventTypeSettingsScreen()),
+                    ),
+                  ),
+                if (isAdmin)
+                  IconButton(
+                    icon: const Icon(Icons.category_outlined,
+                        color: Colors.white70),
+                    tooltip: 'Expense Categories',
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) =>
+                              const ExpenseCategoriesScreen()),
+                    ),
+                  ),
+                IconButton(
+                  icon: const Icon(Icons.logout, color: Colors.white70),
+                  tooltip: 'Logout',
+                  onPressed: () => _logout(context),
+                ),
+              ],
+            ),
           ),
-          const SliverToBoxAdapter(child: SizedBox(height: 100)),
+          FeaturedEventBanner(isAdmin: isAdmin),
+          Container(
+            color: AppTheme.accent,
+            child: TabBar(
+              controller: _tabController,
+              indicatorColor: Colors.white,
+              labelColor: Colors.white,
+              unselectedLabelColor: Colors.white60,
+              labelStyle: const TextStyle(fontWeight: FontWeight.w600),
+              tabs: const [
+                Tab(text: 'Upcoming'),
+                Tab(text: 'Ongoing'),
+                Tab(text: 'Past'),
+              ],
+            ),
+          ),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildEventsGrid('upcoming'),
+                _buildEventsGrid('active'),
+                _buildEventsGrid('closed'),
+              ],
+            ),
+          ),
         ],
       ),
       floatingActionButton: isAdmin
@@ -226,7 +270,7 @@ class EventListScreen extends StatelessWidget {
                 MaterialPageRoute(
                     builder: (_) => CreateEventScreen(isAdmin: isAdmin)),
               ),
-              backgroundColor: Colors.deepPurple,
+              backgroundColor: AppTheme.accent,
               icon: const Icon(Icons.add, color: Colors.white),
               label: const Text('Create Event',
                   style: TextStyle(
@@ -388,13 +432,11 @@ class _EventGridCard extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 6, vertical: 3),
                         decoration: BoxDecoration(
-                          color: status == 'active'
-                              ? Colors.green.withValues(alpha: 0.85)
-                              : Colors.red.withValues(alpha: 0.85),
+                          color: eventStatusColor(status).withValues(alpha: 0.85),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
-                          status == 'active' ? 'Active' : 'Closed',
+                          eventStatusLabel(status),
                           style: const TextStyle(
                               color: Colors.white,
                               fontSize: 9,
@@ -435,9 +477,6 @@ class _EventGridCard extends StatelessWidget {
                     children: [
                       _MiniStat(label: '₹${_fmt(collected)}', sub: 'Collected',
                           color: Colors.greenAccent),
-                      const SizedBox(width: 6),
-                      _MiniStat(label: '₹${_fmt(balance)}', sub: 'Balance',
-                          color: Colors.lightBlueAccent),
                     ],
                   ),
 
@@ -461,6 +500,31 @@ class _EventGridCard extends StatelessWidget {
                     ),
                   ],
                 ],
+              ),
+            ),
+
+            // Balance badge — pinned to the bottom-right corner
+            Positioned(
+              bottom: 10,
+              right: 10,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text('₹${_fmt(balance)}',
+                        style: const TextStyle(
+                            color: Colors.lightBlueAccent,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold)),
+                    const Text('Balance',
+                        style: TextStyle(color: Colors.white54, fontSize: 8)),
+                  ],
+                ),
               ),
             ),
           ],
@@ -543,7 +607,7 @@ class _EventPageViewState extends State<_EventPageView> {
     final data = widget.events[_current].data() as Map<String, dynamic>;
     final eventType = eventTypeById(data['eventTypeId'] as String?) ??
         eventTypeByName(data['name'] as String?);
-    final accentColor = eventType?.gradient.first ?? Colors.deepPurple;
+    final accentColor = eventType?.gradient.first ?? AppTheme.accent;
 
     return Scaffold(
       body: PageView.builder(

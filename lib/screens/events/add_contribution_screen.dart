@@ -356,7 +356,7 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: Text(_isEditing ? 'Edit Contribution' : 'Record Contribution',
             style: const TextStyle(fontWeight: FontWeight.bold)),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../utils/event_pdf_report.dart';
+import '../../theme/app_theme.dart';
 
 // ── My Contribution History ───────────────────────────────────────────────────
 // Cross-event history for a resident's own flat. Contributions live in
@@ -167,11 +168,11 @@ class _ContributionHistoryScreenState extends State<ContributionHistoryScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('My Contribution History',
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        backgroundColor: Colors.deepPurple,
+        backgroundColor: AppTheme.accent,
         foregroundColor: Colors.white,
         elevation: 0,
       ),
@@ -254,7 +255,7 @@ class _HistoryCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
             color: isPending ? Colors.orange.shade200 : Colors.grey.shade200),
@@ -340,13 +341,13 @@ class _HistoryCard extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(Icons.download_rounded,
-                            size: 14, color: Colors.deepPurple.shade400),
+                            size: 14, color: AppTheme.accent.shade400),
                         const SizedBox(width: 4),
                         Text('Download Receipt',
                             style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w600,
-                                color: Colors.deepPurple.shade400)),
+                                color: AppTheme.accent.shade400)),
                       ],
                     ),
                   ),

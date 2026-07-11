@@ -8,6 +8,8 @@ import 'package:image_picker/image_picker.dart';
 import '../auth/login_screen.dart';
 import '../events/event_list_screen.dart';
 import 'resident_events_screen.dart';
+import '../../theme/app_theme.dart';
+import '../settings/theme_settings_sheet.dart';
 
 class ResidentHomeScreen extends StatefulWidget {
   const ResidentHomeScreen({super.key});
@@ -382,6 +384,12 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen> {
                         onPressed: _changeCode,
                       ),
                       IconButton(
+                        icon: const Icon(Icons.palette_outlined,
+                            color: Colors.white70, size: 20),
+                        tooltip: 'Theme',
+                        onPressed: () => showThemeSettingsSheet(context),
+                      ),
+                      IconButton(
                         icon: const Icon(Icons.logout,
                             color: Colors.white70, size: 20),
                         tooltip: 'Logout',
@@ -442,7 +450,7 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen> {
                         icon: Icons.celebration,
                         label: 'My Events',
                         subtitle: 'Contributions',
-                        color: Colors.deepPurple,
+                        color: AppTheme.accent,
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -648,7 +656,7 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen> {
                       margin: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 5),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: Theme.of(context).cardColor,
                         borderRadius: BorderRadius.circular(12),
                         boxShadow: [
                           BoxShadow(
@@ -796,7 +804,7 @@ class _MyContributionsSection extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: Theme.of(context).cardColor,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: Colors.grey.shade200),
               ),
@@ -878,7 +886,7 @@ class _EventContributionCardState extends State<_EventContributionCard> {
       child: Container(
         margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Theme.of(context).cardColor,
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
@@ -894,21 +902,21 @@ class _EventContributionCardState extends State<_EventContributionCard> {
             Container(
               padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
               decoration: BoxDecoration(
-                color: Colors.deepPurple.shade50,
+                color: AppTheme.accent.shade50,
                 borderRadius: const BorderRadius.vertical(
                     top: Radius.circular(12)),
               ),
               child: Row(
                 children: [
                   Icon(Icons.celebration,
-                      color: Colors.deepPurple.shade400, size: 18),
+                      color: AppTheme.accent.shade400, size: 18),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(eventName,
                         style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 14,
-                            color: Colors.deepPurple.shade700)),
+                            color: AppTheme.accent.shade700)),
                   ),
                   Container(
                     padding: const EdgeInsets.symmetric(
@@ -1086,7 +1094,7 @@ class _QuickActionCard extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
@@ -1141,7 +1149,7 @@ class _StatCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Theme.of(context).cardColor,
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
