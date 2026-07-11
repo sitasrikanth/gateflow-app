@@ -223,10 +223,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // â"€â"€ Flats â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
-  Future<void> _addFlat(
-      Map<String, dynamic> wingBlocks, String wing, String block) async {
+  Future<void> _addFlat(Map<String, dynamic> wingBlocks, String wing,
+      String block, int? currentFlatsPerFloor) async {
     final fromCtrl = TextEditingController();
     final toCtrl = TextEditingController();
+    final perFloorCtrl = TextEditingController(
+        text: currentFlatsPerFloor != null ? '$currentFlatsPerFloor' : '');
     final smartPrefix = (wing.isNotEmpty ? wing[0].toUpperCase() : '') +
         (block.isNotEmpty ? block[0].toUpperCase() : '');
     final prefixCtrl = TextEditingController(text: smartPrefix);
@@ -367,9 +369,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: perFloorCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: 'Flats per floor (optional)',
+                      hintText: 'e.g. 12',
+                      helperText:
+                          'If set, "From"/"To" are read as floor+unit (101 to 512 with '
+                          '12/floor -> 101-112, 201-212 ... 501-512)',
+                      helperMaxLines: 2,
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
                   const SizedBox(height: 6),
                   Text(
-                    'e.g. prefix "\$smartPrefix", from 101 to 112 -> \${smartPrefix}101 ... \${smartPrefix}112',
+                    'Without "Flats per floor": prefix "\$smartPrefix", from 101 to 112 -> \${smartPrefix}101 ... \${smartPrefix}112',
                     style: TextStyle(
                         color: Colors.grey.shade500, fontSize: 11),
                   ),
@@ -395,10 +412,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     final from = int.tryParse(fromCtrl.text.trim());
                     final to = int.tryParse(toCtrl.text.trim());
                     final prefix = prefixCtrl.text.trim().toUpperCase();
+                    final perFloor = int.tryParse(perFloorCtrl.text.trim());
                     if (from != null && to != null && to >= from) {
-                      final flats = List.generate(
-                          to - from + 1,
-                          (i) => '$prefix${from + i}');
+                      List<String> flats;
+                      if (perFloor != null && perFloor > 0) {
+                        // Floor-aware: "From"/"To" are floor+unit numbers
+                        // (e.g. 101, 512), not a flat sequential range -
+                        // generate exactly `perFloor` units per floor.
+                        final fromFloor = from ~/ 100;
+                        final toFloor = to ~/ 100;
+                        flats = [
+                          for (var floor = fromFloor; floor <= toFloor; floor++)
+                            for (var unit = 1; unit <= perFloor; unit++)
+                              '$prefix${floor * 100 + unit}',
+                        ];
+                      } else {
+                        flats = List.generate(
+                            to - from + 1, (i) => '$prefix${from + i}');
+                      }
                       Navigator.pop(ctx, flats);
                     }
                   }
@@ -411,14 +442,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
       },
     );
 
+    final enteredPerFloor = int.tryParse(perFloorCtrl.text.trim());
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       singleCtrl.dispose();
       fromCtrl.dispose();
       toCtrl.dispose();
       prefixCtrl.dispose();
+      perFloorCtrl.dispose();
     });
 
     if (result == null || result.isEmpty) return;
+
+    if (enteredPerFloor != null &&
+        enteredPerFloor > 0 &&
+        enteredPerFloor != currentFlatsPerFloor) {
+      await _setFlatsPerFloor(wing, block, enteredPerFloor);
+    }
 
     final currentFlats = _flatsFor(wingBlocks, wing, block);
     final toAdd = result
@@ -626,7 +666,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         onAddBlock: () => _addBlock(wingBlocks, wing),
                         onDeleteBlock: (b) => _deleteBlock(wingBlocks, wing, b),
                         onRenameBlock: (b) => _renameBlock(wingBlocks, wing, b),
-                        onAddFlat: (b) => _addFlat(wingBlocks, wing, b),
+                        onAddFlat: (b, fpf) => _addFlat(wingBlocks, wing, b, fpf),
                         onDeleteFlats: (b, flats) =>
                             _deleteFlats(wingBlocks, wing, b, flats),
                         onRenameFlat: (b, f) =>
@@ -1105,7 +1145,7 @@ class _WingTile extends StatelessWidget {
   final VoidCallback onAddBlock;
   final void Function(String block) onDeleteBlock;
   final void Function(String block) onRenameBlock;
-  final void Function(String block) onAddFlat;
+  final void Function(String block, int? currentFlatsPerFloor) onAddFlat;
   final void Function(String block, List<String> flats) onDeleteFlats;
   final void Function(String block, String flat) onRenameFlat;
   final Map<String, int> flatsPerFloor;
@@ -1268,7 +1308,8 @@ class _WingTile extends StatelessWidget {
                             icon: Icon(Icons.add_circle_outline,
                                 color: Colors.teal.shade600, size: 20),
                             tooltip: 'Add Flat',
-                            onPressed: () => onAddFlat(block),
+                            onPressed: () =>
+                                onAddFlat(block, flatsPerFloor['${wing}_$block']),
                             padding: const EdgeInsets.all(4),
                             constraints: const BoxConstraints(),
                             visualDensity: VisualDensity.compact,
@@ -1305,7 +1346,8 @@ class _WingTile extends StatelessWidget {
                                 onDeleteFlats(block, selected),
                             onRenameFlat: (flat) =>
                                 onRenameFlat(block, flat),
-                            onAddFlat: () => onAddFlat(block),
+                            onAddFlat: () =>
+                                onAddFlat(block, flatsPerFloor['${wing}_$block']),
                             onSetFlatsPerFloor: (n) =>
                                 onSetFlatsPerFloor(block, n),
                             onSetFlatGridRows: (n) =>

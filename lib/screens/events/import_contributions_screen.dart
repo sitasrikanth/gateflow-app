@@ -9,6 +9,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../theme/app_theme.dart';
+import 'add_contribution_screen.dart' show kTypeRegular;
 
 // ── Data model for a parsed row ───────────────────────────────────────────────
 
@@ -86,7 +87,8 @@ class _ImportContributionsScreenState
         blocks.forEach((block, flats) {
           if (flats is List) {
             for (final f in flats) {
-              lookup[f.toString()] = {'wing': wing, 'block': block.toString()};
+              lookup[f.toString().toUpperCase()] =
+                  {'wing': wing, 'block': block.toString()};
             }
           }
         });
@@ -197,12 +199,18 @@ DA103,Priya Nair,1500,Bank Transfer,17/10/2025,Regular,TXN123456,Festival contri
       String cell(int idx) =>
           idx < r.length ? r[idx].toString().trim() : '';
 
-      final flat = cell(0);
+      final flat = cell(0).toUpperCase();
       final name = cell(1);
       final amtStr = cell(2).replaceAll(',', '').replaceAll('₹', '').replaceAll('Rs.', '').trim();
       final mode = cell(3).isEmpty ? 'Cash' : cell(3);
       final dateStr = cell(4);
-      final type = cell(5).isEmpty ? 'Regular' : cell(5);
+      final rawType = cell(5);
+      // Accept the short form "Regular" (e.g. typed in a spreadsheet) as a
+      // synonym for the canonical kTypeRegular string the rest of the app
+      // compares against.
+      final type = (rawType.isEmpty || rawType == 'Regular')
+          ? kTypeRegular
+          : rawType;
       final ref = cell(6);
       final note = cell(7);
 

@@ -891,9 +891,14 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
   }
 
   String _fmt(double v) {
-    if (v >= 100000) return '${(v / 100000).toStringAsFixed(1)}L';
-    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
-    return v.toStringAsFixed(0);
+    final s = v.toStringAsFixed(0);
+    final buf = StringBuffer();
+    for (var i = 0; i < s.length; i++) {
+      final fromEnd = s.length - i;
+      if (i > 0 && fromEnd % 3 == 0) buf.write(',');
+      buf.write(s[i]);
+    }
+    return buf.toString();
   }
 }
 
@@ -1052,9 +1057,14 @@ class _OverviewTab extends StatelessWidget {
   });
 
   String _fmt(double v) {
-    if (v >= 100000) return '${(v / 100000).toStringAsFixed(1)}L';
-    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
-    return v.toStringAsFixed(0);
+    final s = v.toStringAsFixed(0);
+    final buf = StringBuffer();
+    for (var i = 0; i < s.length; i++) {
+      final fromEnd = s.length - i;
+      if (i > 0 && fromEnd % 3 == 0) buf.write(',');
+      buf.write(s[i]);
+    }
+    return buf.toString();
   }
 
   @override
@@ -1389,9 +1399,14 @@ class _OverviewTab extends StatelessWidget {
   }
 
   static String _fmtAmt(double v) {
-    if (v >= 100000) return '${(v / 100000).toStringAsFixed(1)}L';
-    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
-    return v.toStringAsFixed(0);
+    final s = v.toStringAsFixed(0);
+    final buf = StringBuffer();
+    for (var i = 0; i < s.length; i++) {
+      final fromEnd = s.length - i;
+      if (i > 0 && fromEnd % 3 == 0) buf.write(',');
+      buf.write(s[i]);
+    }
+    return buf.toString();
   }
 
 }
@@ -1420,9 +1435,14 @@ class _MyContributionWidget extends StatelessWidget {
   });
 
   static String _fmt(double v) {
-    if (v >= 100000) return '${(v / 100000).toStringAsFixed(1)}L';
-    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
-    return v.toStringAsFixed(0);
+    final s = v.toStringAsFixed(0);
+    final buf = StringBuffer();
+    for (var i = 0; i < s.length; i++) {
+      final fromEnd = s.length - i;
+      if (i > 0 && fromEnd % 3 == 0) buf.write(',');
+      buf.write(s[i]);
+    }
+    return buf.toString();
   }
 
   void _showDetail(BuildContext context) {
@@ -1810,9 +1830,14 @@ class _AnonymousExternalCard extends StatelessWidget {
   });
 
   static String _fmt(double v) {
-    if (v >= 100000) return '${(v / 100000).toStringAsFixed(1)}L';
-    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
-    return v.toStringAsFixed(0);
+    final s = v.toStringAsFixed(0);
+    final buf = StringBuffer();
+    for (var i = 0; i < s.length; i++) {
+      final fromEnd = s.length - i;
+      if (i > 0 && fromEnd % 3 == 0) buf.write(',');
+      buf.write(s[i]);
+    }
+    return buf.toString();
   }
 
   @override
@@ -1875,9 +1900,14 @@ class _SpecialContributionsWidget extends StatelessWidget {
   const _SpecialContributionsWidget({required this.eventId});
 
   static String _fmt(double v) {
-    if (v >= 100000) return '${(v / 100000).toStringAsFixed(1)}L';
-    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
-    return v.toStringAsFixed(0);
+    final s = v.toStringAsFixed(0);
+    final buf = StringBuffer();
+    for (var i = 0; i < s.length; i++) {
+      final fromEnd = s.length - i;
+      if (i > 0 && fromEnd % 3 == 0) buf.write(',');
+      buf.write(s[i]);
+    }
+    return buf.toString();
   }
 
   @override
@@ -2005,9 +2035,14 @@ class _ExternalDonationsWidget extends StatelessWidget {
   const _ExternalDonationsWidget({required this.eventId});
 
   static String _fmt(double v) {
-    if (v >= 100000) return '${(v / 100000).toStringAsFixed(1)}L';
-    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
-    return v.toStringAsFixed(0);
+    final s = v.toStringAsFixed(0);
+    final buf = StringBuffer();
+    for (var i = 0; i < s.length; i++) {
+      final fromEnd = s.length - i;
+      if (i > 0 && fromEnd % 3 == 0) buf.write(',');
+      buf.write(s[i]);
+    }
+    return buf.toString();
   }
 
   @override
@@ -2178,9 +2213,14 @@ class _BlockStatsWidgetState extends State<_BlockStatsWidget> {
   }
 
   static String _fmt(double v) {
-    if (v >= 100000) return '${(v / 100000).toStringAsFixed(1)}L';
-    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
-    return v.toStringAsFixed(0);
+    final s = v.toStringAsFixed(0);
+    final buf = StringBuffer();
+    for (var i = 0; i < s.length; i++) {
+      final fromEnd = s.length - i;
+      if (i > 0 && fromEnd % 3 == 0) buf.write(',');
+      buf.write(s[i]);
+    }
+    return buf.toString();
   }
 
   void _showBlockDetail(
@@ -2192,11 +2232,14 @@ class _BlockStatsWidgetState extends State<_BlockStatsWidget> {
     Map<String, double> flatAmount,
     Map<String, String> flatName,
   ) {
-    // Same exact/suffix matching used for the paid counts above.
+    // Same exact/suffix matching used for the paid counts above. Flat
+    // numbers are matched case-insensitively so "ra302" and "RA302" are
+    // treated as the same flat regardless of how each was entered.
     String? _matchedPaidFlat(String f) {
-      if (paidFlats.contains(f)) return f;
+      final fUpper = f.toUpperCase();
+      if (paidFlats.contains(fUpper)) return fUpper;
       final match = paidFlats.firstWhere(
-          (p) => f.endsWith(p) || p.endsWith(f), orElse: () => '');
+          (p) => fUpper.endsWith(p) || p.endsWith(fUpper), orElse: () => '');
       return match.isEmpty ? null : match;
     }
 
@@ -2318,7 +2361,7 @@ class _BlockStatsWidgetState extends State<_BlockStatsWidget> {
           if (d['amountReceived'] == true &&
               d['status'] != 'rejected' &&
               d['status'] != 'deleted') {
-            final f = (d['flatNumber'] ?? '').toString().trim();
+            final f = (d['flatNumber'] ?? '').toString().trim().toUpperCase();
             final amt = (d['amount'] as num?)?.toDouble() ?? 0;
             if (f.isNotEmpty) {
               paidFlats.add(f);
@@ -2342,9 +2385,11 @@ class _BlockStatsWidgetState extends State<_BlockStatsWidget> {
           for (final block in sortedBlocks) {
             final flats = List<String>.from((blocks[block] as List?) ?? []);
             if (flats.isEmpty) continue;
-            // Match paid flats: exact first, then suffix (for short flat numbers)
+            // Match paid flats: exact first, then suffix (for short flat
+            // numbers). Case-insensitive so "ra302" and "RA302" match.
             int paid = 0;
-            for (final f in flats) {
+            for (final rawF in flats) {
+              final f = rawF.toUpperCase();
               if (paidFlats.contains(f)) {
                 paid++;
                 wingAmt += flatAmount[f] ?? 0;
@@ -2478,9 +2523,14 @@ class _LeaderboardWidget extends StatelessWidget {
   const _LeaderboardWidget({required this.eventId});
 
   static String _fmt(double v) {
-    if (v >= 100000) return '${(v / 100000).toStringAsFixed(1)}L';
-    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
-    return v.toStringAsFixed(0);
+    final s = v.toStringAsFixed(0);
+    final buf = StringBuffer();
+    for (var i = 0; i < s.length; i++) {
+      final fromEnd = s.length - i;
+      if (i > 0 && fromEnd % 3 == 0) buf.write(',');
+      buf.write(s[i]);
+    }
+    return buf.toString();
   }
 
   @override
@@ -3778,7 +3828,7 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
             const Text('Morning capacity:', style: TextStyle(fontWeight: FontWeight.w500)),
             const Spacer(),
             IconButton(icon: const Icon(Icons.remove_circle_outline), iconSize: 20,
-                onPressed: morning > 1 ? () => setSt(() => morning--) : null),
+                onPressed: morning > 0 ? () => setSt(() => morning--) : null),
             Text('$morning', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             IconButton(icon: const Icon(Icons.add_circle_outline), iconSize: 20,
                 onPressed: () => setSt(() => morning++)),
@@ -3789,7 +3839,7 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
             const Text('Afternoon capacity:', style: TextStyle(fontWeight: FontWeight.w500)),
             const Spacer(),
             IconButton(icon: const Icon(Icons.remove_circle_outline), iconSize: 20,
-                onPressed: afternoon > 1 ? () => setSt(() => afternoon--) : null),
+                onPressed: afternoon > 0 ? () => setSt(() => afternoon--) : null),
             Text('$afternoon', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             IconButton(icon: const Icon(Icons.add_circle_outline), iconSize: 20,
                 onPressed: () => setSt(() => afternoon++)),
@@ -3800,7 +3850,7 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
             const Text('Evening capacity:', style: TextStyle(fontWeight: FontWeight.w500)),
             const Spacer(),
             IconButton(icon: const Icon(Icons.remove_circle_outline), iconSize: 20,
-                onPressed: evening > 1 ? () => setSt(() => evening--) : null),
+                onPressed: evening > 0 ? () => setSt(() => evening--) : null),
             Text('$evening', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             IconButton(icon: const Icon(Icons.add_circle_outline), iconSize: 20,
                 onPressed: () => setSt(() => evening++)),
@@ -4133,58 +4183,76 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
                           child: Text('No pooja scheduled on this day',
                               style: TextStyle(fontSize: 12, color: Colors.grey.shade500, fontStyle: FontStyle.italic)),
                         )
-                      else ...[
-                        // Morning shift
-                        _PoojaShift(
-                          shift: 'morning',
-                          label: 'Morning',
-                          icon: Icons.wb_sunny_outlined,
-                          color: const Color(0xFFF59E0B),
-                          regs: morningRegs,
-                          capacity: morningCap,
-                          isAdmin: widget.isAdmin,
-                          myReg: myMorning,
-                          onRegister: () => _showRegisterDialog(date, 'morning', morningRegs, morningCap,
-                              myReg: myMorning, myRegId: myMorning?['_id'] as String?,
-                              registrableDates: registrableDates),
-                          onApprove: (id) => _updateStatus(id, 'approved'),
-                          onReject: (id) => _updateStatus(id, 'rejected'),
-                        ),
-                        const Divider(height: 1, indent: 14, endIndent: 14),
-                        // Afternoon shift
-                        _PoojaShift(
-                          shift: 'afternoon',
-                          label: 'Afternoon',
-                          icon: Icons.light_mode_outlined,
-                          color: const Color(0xFFFB923C),
-                          regs: afternoonRegs,
-                          capacity: afternoonCap,
-                          isAdmin: widget.isAdmin,
-                          myReg: myAfternoon,
-                          onRegister: () => _showRegisterDialog(date, 'afternoon', afternoonRegs, afternoonCap,
-                              myReg: myAfternoon, myRegId: myAfternoon?['_id'] as String?,
-                              registrableDates: registrableDates),
-                          onApprove: (id) => _updateStatus(id, 'approved'),
-                          onReject: (id) => _updateStatus(id, 'rejected'),
-                        ),
-                        const Divider(height: 1, indent: 14, endIndent: 14),
-                        // Evening shift
-                        _PoojaShift(
-                          shift: 'evening',
-                          label: 'Evening',
-                          icon: Icons.nights_stay_outlined,
-                          color: const Color(0xFF8B5CF6),
-                          regs: eveningRegs,
-                          capacity: eveningCap,
-                          isAdmin: widget.isAdmin,
-                          myReg: myEvening,
-                          onRegister: () => _showRegisterDialog(date, 'evening', eveningRegs, eveningCap,
-                              myReg: myEvening, myRegId: myEvening?['_id'] as String?,
-                              registrableDates: registrableDates),
-                          onApprove: (id) => _updateStatus(id, 'approved'),
-                          onReject: (id) => _updateStatus(id, 'rejected'),
-                        ),
-                      ],
+                      else ...() {
+                        // A capacity of 0 means that shift doesn't run at all
+                        // (distinct from "No Schedule" for the whole day) —
+                        // skip rendering it entirely, including its divider.
+                        final shifts = <Widget>[
+                          if (morningCap > 0)
+                            _PoojaShift(
+                              shift: 'morning',
+                              label: 'Morning',
+                              icon: Icons.wb_sunny_outlined,
+                              color: const Color(0xFFF59E0B),
+                              regs: morningRegs,
+                              capacity: morningCap,
+                              isAdmin: widget.isAdmin,
+                              myReg: myMorning,
+                              onRegister: () => _showRegisterDialog(date, 'morning', morningRegs, morningCap,
+                                  myReg: myMorning, myRegId: myMorning?['_id'] as String?,
+                                  registrableDates: registrableDates),
+                              onApprove: (id) => _updateStatus(id, 'approved'),
+                              onReject: (id) => _updateStatus(id, 'rejected'),
+                            ),
+                          if (afternoonCap > 0)
+                            _PoojaShift(
+                              shift: 'afternoon',
+                              label: 'Afternoon',
+                              icon: Icons.light_mode_outlined,
+                              color: const Color(0xFFFB923C),
+                              regs: afternoonRegs,
+                              capacity: afternoonCap,
+                              isAdmin: widget.isAdmin,
+                              myReg: myAfternoon,
+                              onRegister: () => _showRegisterDialog(date, 'afternoon', afternoonRegs, afternoonCap,
+                                  myReg: myAfternoon, myRegId: myAfternoon?['_id'] as String?,
+                                  registrableDates: registrableDates),
+                              onApprove: (id) => _updateStatus(id, 'approved'),
+                              onReject: (id) => _updateStatus(id, 'rejected'),
+                            ),
+                          if (eveningCap > 0)
+                            _PoojaShift(
+                              shift: 'evening',
+                              label: 'Evening',
+                              icon: Icons.nights_stay_outlined,
+                              color: const Color(0xFF8B5CF6),
+                              regs: eveningRegs,
+                              capacity: eveningCap,
+                              isAdmin: widget.isAdmin,
+                              myReg: myEvening,
+                              onRegister: () => _showRegisterDialog(date, 'evening', eveningRegs, eveningCap,
+                                  myReg: myEvening, myRegId: myEvening?['_id'] as String?,
+                                  registrableDates: registrableDates),
+                              onApprove: (id) => _updateStatus(id, 'approved'),
+                              onReject: (id) => _updateStatus(id, 'rejected'),
+                            ),
+                        ];
+                        if (shifts.isEmpty) {
+                          return [
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+                              child: Text('No pooja shifts configured for this day',
+                                  style: TextStyle(fontSize: 12, color: Colors.grey.shade500, fontStyle: FontStyle.italic)),
+                            ),
+                          ];
+                        }
+                        return [
+                          for (var i = 0; i < shifts.length; i++) ...[
+                            if (i > 0) const Divider(height: 1, indent: 14, endIndent: 14),
+                            shifts[i],
+                          ],
+                        ];
+                      }(),
                     ]),
                   );
                 }),
@@ -5815,7 +5883,14 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                       final d = doc.data() as Map<String, dynamic>;
                       final isRejected = d['status'] == 'rejected';
                       final isPending = d['amountReceived'] == false && !isRejected;
-                      final cType = d['contributionType'] ?? kTypeRegular;
+                      // "Regular" (short form, e.g. from a CSV import) is a
+                      // synonym for the canonical kTypeRegular string.
+                      final rawCType = d['contributionType'] as String?;
+                      final cType = (rawCType == null ||
+                              rawCType.isEmpty ||
+                              rawCType == 'Regular')
+                          ? kTypeRegular
+                          : rawCType;
                       final amt = (d['amount'] as num?)?.toDouble() ?? 0;
                       final rejReason = (d['rejectionReason'] ?? '').toString().trim();
                       final isAnonymous = d['isAnonymous'] == true;
@@ -7085,9 +7160,14 @@ class _ContributionsTabState extends State<_ContributionsTab> {
   }
 
   String _fmt(double v) {
-    if (v >= 100000) return '${(v / 100000).toStringAsFixed(1)}L';
-    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
-    return v.toStringAsFixed(0);
+    final s = v.toStringAsFixed(0);
+    final buf = StringBuffer();
+    for (var i = 0; i < s.length; i++) {
+      final fromEnd = s.length - i;
+      if (i > 0 && fromEnd % 3 == 0) buf.write(',');
+      buf.write(s[i]);
+    }
+    return buf.toString();
   }
 
   Widget _typeBadge(String type) {
@@ -7097,11 +7177,17 @@ class _ContributionsTabState extends State<_ContributionsTab> {
       label = 'Carry Fwd';
       bg = Colors.blue.shade50;
       fg = Colors.blue.shade700;
-    } else if (type == kTypeGaneshLaddu) {
-      label = 'Special';
-      bg = Colors.purple.shade50;
-      fg = Colors.purple.shade700;
+    } else if (type == kTypeExternal) {
+      label = 'External';
+      bg = Colors.teal.shade50;
+      fg = Colors.teal.shade700;
+    } else if (type == kTypeSponsor) {
+      label = 'Sponsor';
+      bg = Colors.amber.shade50;
+      fg = Colors.amber.shade800;
     } else {
+      // Ganesh Laddu (legacy) and any custom special-contribution
+      // description all read as a generic "Special" badge.
       label = 'Special';
       bg = Colors.purple.shade50;
       fg = Colors.purple.shade700;
@@ -9497,9 +9583,14 @@ class _ActivityTabState extends State<_ActivityTab> {
   ];
 
   String _fmt(double v) {
-    if (v >= 100000) return '${(v / 100000).toStringAsFixed(1)}L';
-    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
-    return v.toStringAsFixed(0);
+    final s = v.toStringAsFixed(0);
+    final buf = StringBuffer();
+    for (var i = 0; i < s.length; i++) {
+      final fromEnd = s.length - i;
+      if (i > 0 && fromEnd % 3 == 0) buf.write(',');
+      buf.write(s[i]);
+    }
+    return buf.toString();
   }
 
   // Returns just HH:mm for the inline time on each row

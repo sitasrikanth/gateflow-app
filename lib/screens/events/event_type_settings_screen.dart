@@ -3049,21 +3049,24 @@ class _CapacityRow extends StatelessWidget {
       Expanded(child: Text(label,
           style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500))),
       GestureDetector(
-        onTap: value > 1 ? () => onChanged(value - 1) : null,
+        onTap: value > 0 ? () => onChanged(value - 1) : null,
         child: Container(
           width: 30, height: 30,
           decoration: BoxDecoration(
-            color: value > 1 ? color.withValues(alpha: 0.1) : Colors.grey.shade100,
+            color: value > 0 ? color.withValues(alpha: 0.1) : Colors.grey.shade100,
             borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(Icons.remove, size: 16,
-              color: value > 1 ? color : Colors.grey.shade400),
+              color: value > 0 ? color : Colors.grey.shade400),
         ),
       ),
       SizedBox(
         width: 40,
-        child: Text('$value', textAlign: TextAlign.center,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        child: Text(value == 0 ? 'Off' : '$value', textAlign: TextAlign.center,
+            style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: value == 0 ? 12 : 18,
+                color: value == 0 ? Colors.grey.shade500 : null)),
       ),
       GestureDetector(
         onTap: () => onChanged(value + 1),
