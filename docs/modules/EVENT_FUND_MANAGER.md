@@ -150,6 +150,7 @@ Birds-eye view of task management for volunteer coordination. See §6 for full d
   createdAt: Timestamp
 }
 ```
+**Session 9:** the actual expense date (`addedAt`, ISO string) is now user-settable via a date picker in Add Expense — previously always stamped to the moment of save, with no way to backdate an expense entered after the fact. CSV import also now requires a Date column value (previously silently defaulted blank dates to "today").
 
 ### `/events/{eventId}/tasks/{taskId}` — new in Session 8
 ```
@@ -423,6 +424,18 @@ Accessed from Admin panel → Events tab → tune icon (⚙️).
 
 **Sponsor Packages:**
 - Opt-in per event type; admin then defines the actual tiers per-event via Event Tools → Manage Sponsor Packages
+
+**Applicable Tabs (Session 9):**
+- Per event type, which of the 11 dashboard tabs even apply to this kind of event (e.g. no Prasad tab for a Community Potluck)
+- Hides the tab for **both** admin and resident — different from Resident Visibility below, which is resident-only
+- Stored as `/eventTypeConfig/{typeId}.applicableTabs`; unset means all 11 shown (opt-out, safe default for existing events); at least one tab must stay applicable (Overview is the forced minimum)
+
+**Resident Visibility (Session 9):**
+- Per event type: which of the 7 resident-facing tabs (Event, Overview, Expenses, Volunteers, Competitions, Prasad, Leaderboard) residents see, plus section-level toggles within each of those tabs (e.g. Overview's Budget vs Actual / Stat Chips / Block Stats / Sponsors; Volunteers' invitation/appreciation banners and My Registrations; etc.)
+- Opt-in (unset means nothing shown to residents) — the inverse default from Applicable Tabs, since this is a deliberate "turn on what residents should see" control, not a safety fallback
+- Stored as `/eventTypeConfig/{typeId}.residentTabs`, `.residentOverviewSections`, and `.residentTabSections.{tabId}`
+- Effective resident tabs = `residentTabs` ∩ `applicableTabs` — a tab only shows to residents if it's both marked applicable to the event type and explicitly enabled for residents
+- Admins always see everything regardless of Resident Visibility (but are still subject to Applicable Tabs)
 
 ---
 

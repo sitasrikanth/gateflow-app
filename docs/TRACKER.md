@@ -1,5 +1,5 @@
 # GateFlow — 12-Week Progress Tracker
-> Last updated: 2026-07-04 (Session 8) | Tell Claude what you completed and this file gets updated automatically.
+> Last updated: 2026-07-17 (Session 9) | Tell Claude what you completed and this file gets updated automatically.
 
 ---
 
@@ -626,6 +626,32 @@ New admin-only "Tasks" tab per event, scoped to that event's approved volunteers
 
 ---
 
+## SESSION 9 — TAB VISIBILITY CONTROLS, EXPENSE DATES, IMPORT SAFETY (2026-07-17)
+
+Live 2024 Ganesh Chaturthi data import (141 contributions, 40 expenses, cross-validated against the source spreadsheet's own check totals), several bug fixes surfaced during that import, a new app icon, and a two-tier tab/section visibility system for the event dashboard.
+
+| # | Feature | Status | Notes |
+|---|---|---|---|
+| 1 | Live 2024 Ganesh Chaturthi data import | ✅ Done | Contributions + Expenses CSVs extracted from the source spreadsheet, cross-validated against its own summary totals, pushed to device and imported in-app. |
+| 2 | Floor-aware bulk "Add Flats" range | ✅ Built | Range + "flats per floor" input generates 101–112, 201–212, etc. instead of one flat run. |
+| 3 | Case-insensitive flat number matching | ✅ Fixed | CSV import wing/block tagging and Collection Status by Block both normalize flat numbers to uppercase before comparing. |
+| 4 | Exact (non-abbreviated) amounts everywhere | ✅ Built | All 11 duplicated K/L-abbreviation `_fmt` helpers across the event dashboard replaced with comma-grouped exact figures. |
+| 5 | Pooja Schedule 0-capacity slots | ✅ Built | Admin can set Morning/Afternoon/Evening capacity to 0; a 0-capacity shift is hidden from residents instead of shown as bookable. |
+| 6 | Regular/Special contribution badge fix | ✅ Fixed | CSV import now normalizes the short "Regular" string to the canonical `kTypeRegular`; `_typeBadge()`'s catch-all no longer mislabels every non-Special contribution as "Special". |
+| 7 | App icon — "GF" monogram | ✅ Built | Iterated through a gate+house design and a community-circle design before settling on a bold white "GF" monogram on the brand purple gradient, for legibility at small launcher sizes. |
+| 8 | Event Settings visual restyle | ✅ Built | Bold border around every settings group (matching Allowed Event Categories); thinner matching border added to every sub-section card inside. |
+| 9 | Resident Visibility — tabs | ✅ Built | New per-event-type setting: admin chooses which of the 7 resident-facing tabs residents see. Opt-in (unset = nothing shown); dashboard always keeps the Event tab as a safety-net minimum. Admins always see everything. |
+| 10 | Resident Visibility — Overview sections | ✅ Built | Budget vs Actual, Stat Chips, Block Stats, Sponsors individually toggleable for residents, same opt-in policy. |
+| 11 | Resident Visibility — per-tab sections (fast-follow) | ✅ Built | Extended the same section-toggle pattern to Event (Details/Schedule/Pooja), Expenses (Summary/By Category/List), Volunteers (Invitation/Appreciation/My Registrations), Competitions (list), Prasad (Today/Other Days), and Leaderboard (Main/Most Active Volunteers/Competition Winners/Apartment Participation) — one generalized settings-UI component reused across all 6 tabs instead of duplicating code per tab. |
+| 12 | Applicable Tabs (two-tier visibility model) | ✅ Built | New event-type-scoped setting, separate from Resident Visibility: a tab can be marked as not applicable to a given event type at all (e.g. no Prasad tab for a Community Potluck), hiding it for **both** admin and resident. Opt-out (unset = all 11 tabs applicable), so existing event types are unaffected until narrowed down. Required making the admin tab bar/`TabController` dynamic (previously a fixed 11-tab list) and rewriting the FAB's tab detection from raw index checks to tab-identity checks. |
+| 13 | Expense date picker | ✅ Built | Add Expense form previously had no date field at all (always stamped `DateTime.now()`); added a date picker mirroring Add Contribution's UX, backdatable, used for both new and edited expenses. |
+| 14 | Mandatory date in Expenses CSV import | ✅ Built | Blank Date column now rejected as an error row instead of silently defaulting to today. |
+| 15 | Duplicate-import protection | ✅ Built | Both Contributions and Expenses CSV import now fetch existing records once before parsing and flag rows matching an existing record's flat/item + amount + date as duplicates — auto-excluded from the import and shown in a distinct blue-grey "duplicate" style in the preview, instead of silently creating duplicate records and double-counting `totalCollected`/`totalSpent` on repeat imports. |
+
+**Status legend:** ✅ Built | 🟡 Partial | 🔲 Planned
+
+---
+
 ## KEY DECISIONS LOG
 
 | Date | Decision | Reason |
@@ -661,6 +687,11 @@ New admin-only "Tasks" tab per event, scoped to that event's approved volunteers
 | 2026-07-04 | Resident "My Tasks" view embedded in the existing Volunteers tab instead of a new resident-facing tab | Volunteers only have a resident login (no separate account); admin explicitly asked for the Tasks tab itself to stay admin-only |
 | 2026-07-04 | Task checklist and dependencies stored as embedded arrays on the task doc; comments as a subcollection | Checklist/dependency lists are small and bounded (whole-array rewrite is cheap); comments grow unbounded over an event's lifetime and benefit from their own live stream, consistent with how contributions/expenses/volunteers are already modeled as subcollections |
 | 2026-07-04 | Overview Stats chips configurable per event type via `eventTypeConfig/{typeId}.overviewChips` | Different event types care about different numbers (e.g. a small pooja may not need a Sponsor/External chip); unset = all shown, so existing events aren't affected by default |
+| 2026-07-17 | Resident Visibility settings are opt-in (unset = nothing shown to residents) | Admin explicitly asked to flip from the initial opt-out default — wants full deliberate control over what's exposed per event type rather than everything on by default |
+| 2026-07-17 | Applicable Tabs is a separate, opt-out setting from Resident Visibility | Two different questions: "does this tab even make sense for this event type" (affects admin too, e.g. no Prasad tab for a Potluck) vs. "should residents specifically see it" (resident-only, opt-in). Conflating them would force admins to lose their own access just to hide something from residents |
+| 2026-07-17 | Admin tab bar/`TabController` made dynamic (built from `applicableTabs`) instead of a fixed 11-tab list | Required for Applicable Tabs to actually hide tabs from admins; the FAB's tab-detection logic was changed from raw index checks (`tab == 2`) to tab-identity checks since tab positions can now shift per event type |
+| 2026-07-17 | One generalized `_ResidentTabSectionsSection` widget trio reused across all 6 non-Overview tabs' section toggles | Avoids ~18 near-identical classes (3 per tab × 6 tabs); parameterized by tab id, emoji, title, help text, and section defs instead |
+| 2026-07-17 | Duplicate-import signature = flat/item + amount + date (not a full-row match) | Matches the realistic "accidentally re-imported the same file" case without requiring every column (payment mode, note, vendor) to also match; existing records fetched once per import, not per row |
 
 ---
 

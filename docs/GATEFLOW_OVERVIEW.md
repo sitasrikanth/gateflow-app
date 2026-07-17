@@ -1,6 +1,6 @@
 # GateFlow — Product & Architecture Overview
 ### "Your community, connected."
-**Version:** 1.4 | **Date:** 2026-07-04 | **Stage:** Active Development (Week 8 of 12)
+**Version:** 1.5 | **Date:** 2026-07-17 | **Stage:** Active Development (Week 9 of 12)
 
 ---
 
