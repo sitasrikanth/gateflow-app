@@ -22,6 +22,7 @@ class _Row {
   final String note;
   final DateTime date;
   final String? error;
+  final bool isDuplicate;
 
   const _Row({
     required this.lineNo,
@@ -33,6 +34,7 @@ class _Row {
     required this.note,
     required this.date,
     this.error,
+    this.isDuplicate = false,
   });
 }
 
@@ -56,7 +58,36 @@ class _ImportExpensesScreenState extends State<ImportExpensesScreen> {
   List<_Row> _rows = [];
   bool _hasParsed = false;
   bool _importing = false;
+  bool _checkingDuplicates = false;
   String? _fileName;
+
+  // ── Duplicate detection ─────────────────────────────────────────────────
+  // Builds an "item|amount|date" signature for every existing expense on
+  // this event, so re-importing the same file (or overlapping rows) can be
+  // caught and skipped instead of silently creating duplicates and
+  // double-counting totalSpent.
+
+  String _signature(String item, double amount, DateTime date) =>
+      '${item.trim().toLowerCase()}|${amount.toStringAsFixed(2)}|${_fmtDate(date)}';
+
+  Future<Set<String>> _loadExistingSignatures() async {
+    final snap = await FirebaseFirestore.instance
+        .collection('events')
+        .doc(widget.eventId)
+        .collection('expenses')
+        .get();
+
+    final signatures = <String>{};
+    for (final doc in snap.docs) {
+      final d = doc.data();
+      final item = (d['item'] as String? ?? '');
+      final amount = (d['amount'] as num?)?.toDouble();
+      final date = DateTime.tryParse(d['addedAt'] as String? ?? '');
+      if (item.isEmpty || amount == null || date == null) continue;
+      signatures.add(_signature(item, amount, date));
+    }
+    return signatures;
+  }
 
   // ── Template CSV ─────────────────────────────────────────────────────────
 
@@ -124,14 +155,19 @@ Catering Service,Food & Catering,Catering Service,Annapurna Caterers,25000,Lunch
           .toList();
     }
 
+    setState(() => _checkingDuplicates = true);
+    final existingSignatures = await _loadExistingSignatures();
+
     setState(() {
       _fileName = file.name;
-      _rows = _parseRows(rawRows);
+      _rows = _parseRows(rawRows, existingSignatures);
       _hasParsed = true;
+      _checkingDuplicates = false;
     });
   }
 
-  List<_Row> _parseRows(List<List<dynamic>> rawRows) {
+  List<_Row> _parseRows(
+      List<List<dynamic>> rawRows, Set<String> existingSignatures) {
     if (rawRows.isEmpty) return [];
 
     int start = 0;
@@ -168,6 +204,10 @@ Catering Service,Food & Catering,Catering Service,Annapurna Caterers,25000,Lunch
         rows.add(_errorRow(i + 1, 'Invalid amount "$amtStr" for "$item"'));
         continue;
       }
+      if (dateStr.isEmpty) {
+        rows.add(_errorRow(i + 1, 'Date is missing for "$item" — use DD/MM/YYYY'));
+        continue;
+      }
       final date = _parseDate(dateStr);
       if (date == null) {
         rows.add(_errorRow(i + 1, 'Invalid date "$dateStr" — use DD/MM/YYYY for "$item"'));
@@ -183,6 +223,7 @@ Catering Service,Food & Catering,Catering Service,Annapurna Caterers,25000,Lunch
         amount: amount,
         note: note,
         date: date,
+        isDuplicate: existingSignatures.contains(_signature(item, amount, date)),
       ));
     }
     return rows;
@@ -201,7 +242,6 @@ Catering Service,Food & Catering,Catering Service,Annapurna Caterers,25000,Lunch
       );
 
   DateTime? _parseDate(String s) {
-    if (s.isEmpty) return DateTime.now();
     // Google Sheets/Excel often export dates as ISO (YYYY-MM-DD), which uses
     // the same '-' delimiter as DD-MM-YYYY — disambiguate by checking whether
     // the first segment is a 4-digit year.
@@ -228,7 +268,8 @@ Catering Service,Food & Catering,Catering Service,Annapurna Caterers,25000,Lunch
   // ── Import ────────────────────────────────────────────────────────────────
 
   Future<void> _import() async {
-    final valid = _rows.where((r) => r.error == null).toList();
+    final valid =
+        _rows.where((r) => r.error == null && !r.isDuplicate).toList();
     if (valid.isEmpty) return;
 
     setState(() => _importing = true);
@@ -303,7 +344,9 @@ Catering Service,Food & Catering,Catering Service,Annapurna Caterers,25000,Lunch
 
   @override
   Widget build(BuildContext context) {
-    final validRows = _rows.where((r) => r.error == null).toList();
+    final okRows = _rows.where((r) => r.error == null).toList();
+    final duplicateRows = okRows.where((r) => r.isDuplicate).toList();
+    final validRows = okRows.where((r) => !r.isDuplicate).toList();
     final errorRows = _rows.where((r) => r.error != null).toList();
     final totalAmount = validRows.fold(0.0, (s, r) => s + r.amount);
 
@@ -342,7 +385,7 @@ Catering Service,Food & Catering,Catering Service,Annapurna Caterers,25000,Lunch
                 _columnHint('Vendor', 'e.g. Green Leaf Florist'),
                 _columnHint('Amount', 'e.g. 3500', required: true),
                 _columnHint('Note', 'Optional notes'),
-                _columnHint('Date', 'DD/MM/YYYY  e.g. 15/10/2025'),
+                _columnHint('Date', 'DD/MM/YYYY  e.g. 15/10/2025', required: true),
                 const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,
@@ -367,9 +410,18 @@ Catering Service,Food & Catering,Catering Service,Annapurna Caterers,25000,Lunch
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  onPressed: _pickAndParse,
-                  icon: const Icon(Icons.upload_file_rounded),
-                  label: Text(_fileName == null ? 'Pick CSV or Excel File' : 'Change File'),
+                  onPressed: _checkingDuplicates ? null : _pickAndParse,
+                  icon: _checkingDuplicates
+                      ? const SizedBox(
+                          width: 18, height: 18,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white))
+                      : const Icon(Icons.upload_file_rounded),
+                  label: Text(_checkingDuplicates
+                      ? 'Checking for duplicates…'
+                      : _fileName == null
+                          ? 'Pick CSV or Excel File'
+                          : 'Change File'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.accent,
                     foregroundColor: Colors.white,
@@ -400,6 +452,9 @@ Catering Service,Food & Catering,Catering Service,Annapurna Caterers,25000,Lunch
                 children: [
                   Wrap(spacing: 8, runSpacing: 6, children: [
                     _Chip('${validRows.length} valid', Colors.green.shade700, Colors.green.shade50),
+                    if (duplicateRows.isNotEmpty)
+                      _Chip('${duplicateRows.length} duplicates (skipped)',
+                          Colors.blueGrey.shade700, Colors.blueGrey.shade50),
                     if (errorRows.isNotEmpty)
                       _Chip('${errorRows.length} errors', Colors.red.shade700, Colors.red.shade50),
                     if (totalAmount > 0)
@@ -486,14 +541,25 @@ class _RowCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isError = row.error != null;
+    final isDuplicate = !isError && row.isDuplicate;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: isError ? Colors.red.shade50 : Colors.green.shade50,
+        color: isError
+            ? Colors.red.shade50
+            : isDuplicate
+                ? Colors.blueGrey.shade50
+                : Colors.green.shade50,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: isError ? Colors.red.shade200 : Colors.green.shade200),
+        border: Border.all(
+          color: isError
+              ? Colors.red.shade200
+              : isDuplicate
+                  ? Colors.blueGrey.shade200
+                  : Colors.green.shade200,
+        ),
       ),
       child: isError
           ? Row(children: [
@@ -505,7 +571,11 @@ class _RowCard extends StatelessWidget {
               ),
             ])
           : Row(children: [
-              Icon(Icons.check_circle_rounded, color: Colors.green.shade700, size: 18),
+              Icon(
+                isDuplicate ? Icons.content_copy_rounded : Icons.check_circle_rounded,
+                color: isDuplicate ? Colors.blueGrey.shade600 : Colors.green.shade700,
+                size: 18,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Column(
@@ -517,6 +587,9 @@ class _RowCard extends StatelessWidget {
                       '${row.category}${row.subCategory.isNotEmpty ? ' • ${row.subCategory}' : ''}  •  ${fmtDate(row.date)}',
                       style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
                     ),
+                    if (isDuplicate)
+                      Text('Same item/amount/date already exists — skipping',
+                          style: TextStyle(fontSize: 10, color: Colors.blueGrey.shade600)),
                   ],
                 ),
               ),

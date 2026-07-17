@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../theme/app_theme.dart';
+import 'event_type_settings_screen.dart' show residentTabSectionsFor;
 
 const List<String> kPresetCompetitions = [
   'Singing', 'Dancing', 'Rangoli', 'Cricket', 'Chess', 'Fancy Dress',
@@ -15,7 +16,13 @@ const Map<String, String> _kPlaceLabels = {
 class CompetitionsTab extends StatelessWidget {
   final String eventId;
   final bool isAdmin;
-  const CompetitionsTab({super.key, required this.eventId, required this.isAdmin});
+  final String eventTypeId;
+  const CompetitionsTab({
+    super.key,
+    required this.eventId,
+    required this.isAdmin,
+    this.eventTypeId = '',
+  });
 
   CollectionReference get _col => FirebaseFirestore.instance
       .collection('events').doc(eventId).collection('competitions');
@@ -209,7 +216,21 @@ class CompetitionsTab extends StatelessWidget {
               ),
             )
           : null,
-      body: StreamBuilder<QuerySnapshot>(
+      body: StreamBuilder<DocumentSnapshot>(
+        stream: !isAdmin && eventTypeId.isNotEmpty
+            ? FirebaseFirestore.instance
+                .collection('eventTypeConfig')
+                .doc(eventTypeId)
+                .snapshots()
+            : const Stream<DocumentSnapshot>.empty(),
+        builder: (context, configSnap) {
+          final configData = configSnap.data?.data() as Map<String, dynamic>?;
+          final enabledSections = residentTabSectionsFor(configData, 'competitions');
+          if (!isAdmin && !enabledSections.contains('competitions_list')) {
+            return const SizedBox.shrink();
+          }
+
+          return StreamBuilder<QuerySnapshot>(
         stream: _col.orderBy('createdAt', descending: true).snapshots(),
         builder: (context, snap) {
           if (!snap.hasData) return const Center(child: CircularProgressIndicator());
@@ -314,6 +335,8 @@ class CompetitionsTab extends StatelessWidget {
               );
             },
           );
+        },
+      );
         },
       ),
     );

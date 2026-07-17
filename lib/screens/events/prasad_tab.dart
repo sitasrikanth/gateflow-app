@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../theme/app_theme.dart';
+import 'event_type_settings_screen.dart' show residentTabSectionsFor;
 
 const _kMonthNames = [
   '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -15,7 +16,13 @@ String _dateLabel(DateTime d) => '${d.day} ${_kMonthNames[d.month]} ${d.year}';
 class PrasadTab extends StatelessWidget {
   final String eventId;
   final bool isAdmin;
-  const PrasadTab({super.key, required this.eventId, required this.isAdmin});
+  final String eventTypeId;
+  const PrasadTab({
+    super.key,
+    required this.eventId,
+    required this.isAdmin,
+    this.eventTypeId = '',
+  });
 
   CollectionReference get _col => FirebaseFirestore.instance
       .collection('events').doc(eventId).collection('prasad');
@@ -162,7 +169,19 @@ class PrasadTab extends StatelessWidget {
               ),
             )
           : null,
-      body: StreamBuilder<QuerySnapshot>(
+      body: StreamBuilder<DocumentSnapshot>(
+        stream: !isAdmin && eventTypeId.isNotEmpty
+            ? FirebaseFirestore.instance
+                .collection('eventTypeConfig')
+                .doc(eventTypeId)
+                .snapshots()
+            : const Stream<DocumentSnapshot>.empty(),
+        builder: (context, configSnap) {
+          final configData = configSnap.data?.data() as Map<String, dynamic>?;
+          final enabledSections = residentTabSectionsFor(configData, 'prasad');
+          bool sectionVisible(String id) => isAdmin || enabledSections.contains(id);
+
+          return StreamBuilder<QuerySnapshot>(
         stream: _col.orderBy('date', descending: false).snapshots(),
         builder: (context, snap) {
           if (!snap.hasData) return const Center(child: CircularProgressIndicator());
@@ -271,8 +290,9 @@ class PrasadTab extends StatelessWidget {
           return ListView(
             padding: const EdgeInsets.fromLTRB(14, 14, 14, 90),
             children: [
+              if (sectionVisible('prasad_today'))
               ...todayDoc.map((d) => menuCard(d, isToday: true)),
-              if (otherDocs.isNotEmpty) ...[
+              if (sectionVisible('prasad_other_days') && otherDocs.isNotEmpty) ...[
                 if (todayDoc.isNotEmpty) const SizedBox(height: 4),
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
@@ -284,6 +304,8 @@ class PrasadTab extends StatelessWidget {
               ],
             ],
           );
+        },
+      );
         },
       ),
     );

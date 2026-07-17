@@ -39,6 +39,8 @@ class _EventTypeSettingsScreenState extends State<EventTypeSettingsScreen> {
     'Visibility & Recognition',
     'Scheduling & Volunteers',
     'Admin Controls',
+    'Applicable Tabs',
+    'Resident Visibility',
   };
 
   Widget _group(String label, List<Widget> children) {
@@ -46,27 +48,39 @@ class _EventTypeSettingsScreenState extends State<EventTypeSettingsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        InkWell(
-          onTap: () => setState(() {
-            collapsed ? _collapsedGroups.remove(label) : _collapsedGroups.add(label);
-          }),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-            child: Row(children: [
-              Expanded(
-                child: Text(label.toUpperCase(),
-                    style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 11,
-                        letterSpacing: 0.6,
-                        color: Colors.grey.shade500)),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            border: Border.all(color: AppTheme.accent.shade200, width: 1.5),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              InkWell(
+                onTap: () => setState(() {
+                  collapsed ? _collapsedGroups.remove(label) : _collapsedGroups.add(label);
+                }),
+                child: Row(children: [
+                  Expanded(
+                    child: Text(label.toUpperCase(),
+                        style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 11,
+                            letterSpacing: 0.6,
+                            color: Colors.grey.shade500)),
+                  ),
+                  Icon(collapsed ? Icons.expand_more : Icons.expand_less,
+                      size: 18, color: Colors.grey.shade500),
+                ]),
               ),
-              Icon(collapsed ? Icons.expand_more : Icons.expand_less,
-                  size: 18, color: Colors.grey.shade500),
-            ]),
+              if (!collapsed) ...[
+                const SizedBox(height: 10),
+                ...children,
+              ],
+            ],
           ),
         ),
-        if (!collapsed) ...children,
         const SizedBox(height: 20),
       ],
     );
@@ -156,6 +170,96 @@ class _EventTypeSettingsScreenState extends State<EventTypeSettingsScreen> {
 
               _group('Admin Controls', [
                 _DeleteEventsSection(
+                    allowedCategories: allowedCategories,
+                    allowedEventTypeIds: allowedEventTypeIds),
+              ]),
+
+              _group('Applicable Tabs', [
+                _ApplicableTabsSection(
+                    allowedCategories: allowedCategories,
+                    allowedEventTypeIds: allowedEventTypeIds),
+              ]),
+
+              _group('Resident Visibility', [
+                _ResidentTabsSection(
+                    allowedCategories: allowedCategories,
+                    allowedEventTypeIds: allowedEventTypeIds),
+                const SizedBox(height: 12),
+                _ResidentOverviewSectionsSection(
+                    allowedCategories: allowedCategories,
+                    allowedEventTypeIds: allowedEventTypeIds),
+                const SizedBox(height: 12),
+                _ResidentTabSectionsSection(
+                    tabId: 'event',
+                    emoji: '📅',
+                    title: 'Event Tab Sections',
+                    helpText:
+                        'Controls the Event Details, Event Schedule and Pooja Schedule '
+                        'cards in the resident Event tab. None show to residents until '
+                        'enabled here. Admins always see every section.',
+                    sectionDefs: kEventTabSectionDefs,
+                    allowedCategories: allowedCategories,
+                    allowedEventTypeIds: allowedEventTypeIds),
+                const SizedBox(height: 12),
+                _ResidentTabSectionsSection(
+                    tabId: 'expenses',
+                    emoji: '🧾',
+                    title: 'Expenses Tab Sections',
+                    helpText:
+                        'Controls the Total Banner, By Category breakdown and Expense '
+                        'List in the resident Expenses tab. None show to residents until '
+                        'enabled here. Admins always see every section.',
+                    sectionDefs: kExpensesTabSectionDefs,
+                    allowedCategories: allowedCategories,
+                    allowedEventTypeIds: allowedEventTypeIds),
+                const SizedBox(height: 12),
+                _ResidentTabSectionsSection(
+                    tabId: 'volunteers',
+                    emoji: '🙋',
+                    title: 'Volunteers Tab Sections',
+                    helpText:
+                        'Controls the Volunteer Invitation banner, Volunteer '
+                        'Appreciation banner, and My Registrations list in the resident '
+                        'Volunteers tab. None show to residents until enabled here. '
+                        'Admins always see every section.',
+                    sectionDefs: kVolunteersTabSectionDefs,
+                    allowedCategories: allowedCategories,
+                    allowedEventTypeIds: allowedEventTypeIds),
+                const SizedBox(height: 12),
+                _ResidentTabSectionsSection(
+                    tabId: 'competitions',
+                    emoji: '🏆',
+                    title: 'Competitions Tab Sections',
+                    helpText:
+                        'Controls the Competitions & Winners list in the resident '
+                        'Competitions tab. Not shown to residents until enabled here. '
+                        'Admins always see it.',
+                    sectionDefs: kCompetitionsTabSectionDefs,
+                    allowedCategories: allowedCategories,
+                    allowedEventTypeIds: allowedEventTypeIds),
+                const SizedBox(height: 12),
+                _ResidentTabSectionsSection(
+                    tabId: 'prasad',
+                    emoji: '🍽️',
+                    title: 'Prasad Tab Sections',
+                    helpText:
+                        "Controls Today's Menu and Other Days' Menus in the resident "
+                        'Prasad tab. None show to residents until enabled here. Admins '
+                        'always see every section.',
+                    sectionDefs: kPrasadTabSectionDefs,
+                    allowedCategories: allowedCategories,
+                    allowedEventTypeIds: allowedEventTypeIds),
+                const SizedBox(height: 12),
+                _ResidentTabSectionsSection(
+                    tabId: 'leaderboard',
+                    emoji: '🏅',
+                    title: 'Leaderboard Tab Sections',
+                    helpText:
+                        'Controls the Main Leaderboard, Most Active Volunteers, '
+                        'Competition Winners and Apartment Participation cards in the '
+                        'resident Leaderboard tab. None show to residents until enabled '
+                        'here. Admins always see every section.',
+                    sectionDefs: kLeaderboardTabSectionDefs,
                     allowedCategories: allowedCategories,
                     allowedEventTypeIds: allowedEventTypeIds),
               ]),
@@ -454,6 +558,7 @@ class _PoojaScheduleSectionState extends State<_PoojaScheduleSection> {
           decoration: BoxDecoration(
             color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppTheme.accent.shade100, width: 1),
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
           ),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -619,6 +724,7 @@ class _PaymentsSectionState extends State<_PaymentsSection> {
           decoration: BoxDecoration(
             color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppTheme.accent.shade100, width: 1),
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
           ),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -741,6 +847,7 @@ class _CollectionStatusByBlockSectionState extends State<_CollectionStatusByBloc
           decoration: BoxDecoration(
             color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppTheme.accent.shade100, width: 1),
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
           ),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -826,6 +933,110 @@ const List<(String, String)> kOverviewChipDefs = [
 
 List<String> defaultOverviewChips() => kOverviewChipDefs.map((c) => c.$1).toList();
 
+// ── Applicable tabs ──────────────────────────────────────────────────────────
+// Lets admins say a tab simply doesn't apply to a given event type (e.g. no
+// Prasad tab for a Community Potluck) — hides it for BOTH admin and resident,
+// unlike Resident Visibility below which only trims what residents see.
+// Stored on eventTypeConfig/{typeId}.applicableTabs — unset means "all shown"
+// (opt-out), so existing events keep their current behavior until an admin
+// explicitly narrows them down. The dashboard always keeps 'Overview' visible
+// as a safety-net minimum even if applicableTabs resolves to an empty list.
+
+const List<(String, String)> kAdminTabDefs = [
+  ('overview', 'Overview'),
+  ('event', 'Event'),
+  ('contributions', 'Contributions'),
+  ('expenses', 'Expenses'),
+  ('followup', 'Follow-up'),
+  ('volunteers', 'Volunteers'),
+  ('tasks', 'Tasks'),
+  ('activity', 'Activity'),
+  ('competitions', 'Competitions'),
+  ('prasad', 'Prasad'),
+  ('leaderboard', 'Leaderboard'),
+];
+
+List<String> defaultApplicableTabs() => kAdminTabDefs.map((t) => t.$1).toList();
+
+// ── Resident visibility ─────────────────────────────────────────────────────
+// Lets admins choose which tabs residents see, and which Overview sections
+// residents see, per event type. Stored on eventTypeConfig/{typeId} as
+// residentTabs / residentOverviewSections — unset means "nothing shown" (opt-in):
+// an admin must explicitly enable a tab/section here before residents see it.
+// The dashboard always keeps the 'Event' tab visible as a safety-net minimum
+// even if residentTabs resolves to an empty list. Admins always see every tab
+// and section regardless of these settings.
+
+const List<(String, String)> kResidentTabDefs = [
+  ('event', 'Event'),
+  ('overview', 'Overview'),
+  ('expenses', 'Expenses'),
+  ('volunteers', 'Volunteers'),
+  ('competitions', 'Competitions'),
+  ('prasad', 'Prasad'),
+  ('leaderboard', 'Leaderboard'),
+];
+
+List<String> defaultResidentTabs() => [];
+
+const List<(String, String)> kResidentOverviewSectionDefs = [
+  ('budget_vs_actual', 'Budget vs Actual'),
+  ('stat_chips', 'Stat Chips (Cash/Online/Collected/etc.)'),
+  ('block_stats', 'Block Stats'),
+  ('sponsors', 'Sponsors'),
+];
+
+List<String> defaultResidentOverviewSections() => [];
+
+// ── Per-tab section defs (fast-follow of Overview's section toggles) ───────
+// Stored on eventTypeConfig/{typeId}.residentTabSections.{tabId} — unset
+// means "nothing shown" (opt-in), same policy as residentTabs/
+// residentOverviewSections above.
+
+const List<(String, String)> kEventTabSectionDefs = [
+  ('event_details', 'Event Details'),
+  ('event_schedule', 'Event Schedule'),
+  ('pooja_schedule', 'Pooja Schedule'),
+];
+
+const List<(String, String)> kExpensesTabSectionDefs = [
+  ('expenses_summary', 'Total Banner'),
+  ('expenses_by_category', 'By Category'),
+  ('expenses_list', 'Expense List'),
+];
+
+const List<(String, String)> kVolunteersTabSectionDefs = [
+  ('volunteer_invitation', 'Volunteer Invitation Banner'),
+  ('volunteer_appreciation', 'Volunteer Appreciation Banner'),
+  ('my_registrations', 'My Registrations'),
+];
+
+const List<(String, String)> kCompetitionsTabSectionDefs = [
+  ('competitions_list', 'Competitions & Winners'),
+];
+
+const List<(String, String)> kPrasadTabSectionDefs = [
+  ('prasad_today', "Today's Menu"),
+  ('prasad_other_days', "Other Days' Menus"),
+];
+
+const List<(String, String)> kLeaderboardTabSectionDefs = [
+  ('main_leaderboard', 'Main Leaderboard'),
+  ('most_active_volunteers', 'Most Active Volunteers'),
+  ('competition_winners', 'Competition Winners'),
+  ('apartment_participation', 'Apartment Participation'),
+];
+
+/// Reads eventTypeConfig/{typeId}.residentTabSections.{tabId} from an
+/// already-fetched config doc's data, defaulting to "nothing enabled" if
+/// unset. Used both by the settings UI editors and by the dashboard tabs
+/// that gate their own sections.
+List<String> residentTabSectionsFor(Map<String, dynamic>? configData, String tabId) {
+  final tabSections = configData?['residentTabSections'] as Map<String, dynamic>? ?? {};
+  final raw = tabSections[tabId];
+  return raw != null ? List<String>.from(raw as List) : <String>[];
+}
+
 class _OverviewStatsSection extends StatefulWidget {
   final Set<EventCategory> allowedCategories;
   final Set<String> allowedEventTypeIds;
@@ -849,6 +1060,7 @@ class _OverviewStatsSectionState extends State<_OverviewStatsSection> {
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.accent.shade100, width: 1),
         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1052,6 +1264,982 @@ class _OverviewStatsTypeEditorState extends State<_OverviewStatsTypeEditor> {
   }
 }
 
+// ── Applicable Tabs collapsable ────────────────────────────────────────────
+// Lets admins say a tab doesn't apply to a given event type at all (e.g. no
+// Prasad tab for a Community Potluck) — hides it for BOTH admin and resident.
+// Stored on eventTypeConfig/{typeId}.applicableTabs — unset means "all shown"
+// (opt-out), so existing events keep today's behavior until narrowed down.
+
+class _ApplicableTabsSection extends StatefulWidget {
+  final Set<EventCategory> allowedCategories;
+  final Set<String> allowedEventTypeIds;
+  const _ApplicableTabsSection({required this.allowedCategories, required this.allowedEventTypeIds});
+  @override
+  State<_ApplicableTabsSection> createState() => _ApplicableTabsSectionState();
+}
+
+class _ApplicableTabsSectionState extends State<_ApplicableTabsSection> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final categories = EventCategory.values
+        .where((cat) =>
+            widget.allowedCategories.contains(cat) &&
+            kAllEventTypes.any((t) => t.category == cat))
+        .toList();
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.accent.shade100, width: 1),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        InkWell(
+          borderRadius: BorderRadius.vertical(
+            top: const Radius.circular(14),
+            bottom: _expanded ? Radius.zero : const Radius.circular(14),
+          ),
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+            child: Row(children: [
+              const Text('🧭', style: TextStyle(fontSize: 20)),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Applicable Tabs',
+                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                  Text('Choose which tabs even apply to this event type',
+                      style: TextStyle(fontSize: 11, color: Colors.grey)),
+                ]),
+              ),
+              Icon(_expanded ? Icons.expand_less : Icons.expand_more,
+                  color: Colors.grey.shade500),
+            ]),
+          ),
+        ),
+        if (_expanded) ...[
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+            child: Text(
+              'Turns a tab off for EVERYONE — admin and residents — for event '
+              'types where it makes no sense (e.g. no Prasad tab for a Community '
+              'Potluck). All tabs apply by default until narrowed down here. '
+              'Compare to Resident Visibility below, which only trims what '
+              'residents see among the tabs still applicable here.',
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade400, height: 1.4),
+            ),
+          ),
+          const SizedBox(height: 4),
+          ...categories.map((cat) => _ApplicableTabsCategoryGroup(
+              category: cat, allowedEventTypeIds: widget.allowedEventTypeIds)),
+          const SizedBox(height: 8),
+        ],
+      ]),
+    );
+  }
+}
+
+class _ApplicableTabsCategoryGroup extends StatefulWidget {
+  final EventCategory category;
+  final Set<String> allowedEventTypeIds;
+  const _ApplicableTabsCategoryGroup({required this.category, required this.allowedEventTypeIds});
+  @override
+  State<_ApplicableTabsCategoryGroup> createState() => _ApplicableTabsCategoryGroupState();
+}
+
+class _ApplicableTabsCategoryGroupState extends State<_ApplicableTabsCategoryGroup> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final types = kAllEventTypes
+        .where((t) => t.category == widget.category && widget.allowedEventTypeIds.contains(t.id))
+        .toList();
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      InkWell(
+        onTap: () => setState(() => _expanded = !_expanded),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
+          child: Row(children: [
+            Text(widget.category.emoji, style: const TextStyle(fontSize: 16)),
+            const SizedBox(width: 10),
+            Expanded(child: Text(widget.category.label,
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13))),
+            Icon(_expanded ? Icons.expand_less : Icons.expand_more,
+                size: 18, color: Colors.grey.shade400),
+          ]),
+        ),
+      ),
+      if (_expanded)
+        ...types.map((type) => _ApplicableTabsTypeEditor(eventType: type)),
+      const Divider(height: 1, indent: 16, endIndent: 16),
+    ]);
+  }
+}
+
+class _ApplicableTabsTypeEditor extends StatefulWidget {
+  final EventTypeData eventType;
+  const _ApplicableTabsTypeEditor({required this.eventType});
+  @override
+  State<_ApplicableTabsTypeEditor> createState() => _ApplicableTabsTypeEditorState();
+}
+
+class _ApplicableTabsTypeEditorState extends State<_ApplicableTabsTypeEditor> {
+  bool _configExpanded = false;
+
+  DocumentReference get _ref =>
+      FirebaseFirestore.instance.collection('eventTypeConfig').doc(widget.eventType.id);
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: _ref.snapshots(),
+      builder: (context, snap) {
+        final d = snap.data?.data() as Map<String, dynamic>? ?? {};
+        final raw = d['applicableTabs'];
+        final enabledTabs = raw != null
+            ? List<String>.from(raw as List)
+            : defaultApplicableTabs();
+
+        Future<void> toggle(String key, bool on) async {
+          final updated = List<String>.from(enabledTabs);
+          if (on) {
+            if (!updated.contains(key)) updated.add(key);
+          } else {
+            if (updated.length <= 1) {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('At least one tab must stay applicable to this event type')));
+              return;
+            }
+            updated.remove(key);
+          }
+          await _ref.set({'applicableTabs': updated}, SetOptions(merge: true));
+        }
+
+        final selectedCount = enabledTabs.length;
+
+        return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(32, 6, 12, 6),
+            child: Row(children: [
+              Text(widget.eventType.emoji, style: const TextStyle(fontSize: 14)),
+              const SizedBox(width: 8),
+              Expanded(child: Text(widget.eventType.name,
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500))),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppTheme.accent.shade50,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text('$selectedCount/${kAdminTabDefs.length}',
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600,
+                        color: AppTheme.accent.shade600)),
+              ),
+              const SizedBox(width: 6),
+              GestureDetector(
+                onTap: () => setState(() => _configExpanded = !_configExpanded),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Text('Configure',
+                        style: TextStyle(fontSize: 10, color: AppTheme.accent.shade400,
+                            fontWeight: FontWeight.w600)),
+                    Icon(_configExpanded ? Icons.expand_less : Icons.expand_more,
+                        size: 14, color: AppTheme.accent.shade400),
+                  ]),
+                ),
+              ),
+            ]),
+          ),
+          if (_configExpanded)
+            Container(
+              margin: const EdgeInsets.fromLTRB(32, 0, 16, 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppTheme.accent.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppTheme.accent.shade100),
+              ),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: kAdminTabDefs.map((tab) {
+                  final key = tab.$1;
+                  final label = tab.$2;
+                  final on = enabledTabs.contains(key);
+                  return GestureDetector(
+                    onTap: () => toggle(key, !on),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: on ? AppTheme.accent.shade600 : Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                            color: on ? AppTheme.accent.shade600 : Colors.grey.shade300),
+                      ),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        if (on) ...[
+                          const Icon(Icons.check, size: 12, color: Colors.white),
+                          const SizedBox(width: 4),
+                        ],
+                        Text(label,
+                            style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: on ? Colors.white : Colors.grey.shade700)),
+                      ]),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+        ]);
+      },
+    );
+  }
+}
+
+// ── Resident Tabs collapsable ─────────────────────────────────────────────────
+// Lets admins choose which tabs residents see in the event dashboard, per
+// event type. Stored on eventTypeConfig/{typeId}.residentTabs — unset means
+// "nothing shown" (opt-in): an admin must explicitly enable tabs here before
+// residents see them among the tabs still applicable per Applicable Tabs above.
+
+class _ResidentTabsSection extends StatefulWidget {
+  final Set<EventCategory> allowedCategories;
+  final Set<String> allowedEventTypeIds;
+  const _ResidentTabsSection({required this.allowedCategories, required this.allowedEventTypeIds});
+  @override
+  State<_ResidentTabsSection> createState() => _ResidentTabsSectionState();
+}
+
+class _ResidentTabsSectionState extends State<_ResidentTabsSection> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final categories = EventCategory.values
+        .where((cat) =>
+            widget.allowedCategories.contains(cat) &&
+            kAllEventTypes.any((t) => t.category == cat))
+        .toList();
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.accent.shade100, width: 1),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        InkWell(
+          borderRadius: BorderRadius.vertical(
+            top: const Radius.circular(14),
+            bottom: _expanded ? Radius.zero : const Radius.circular(14),
+          ),
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+            child: Row(children: [
+              const Text('📑', style: TextStyle(fontSize: 20)),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Resident Tabs',
+                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                  Text('Choose which dashboard tabs residents see, per event type',
+                      style: TextStyle(fontSize: 11, color: Colors.grey)),
+                ]),
+              ),
+              Icon(_expanded ? Icons.expand_less : Icons.expand_more,
+                  color: Colors.grey.shade500),
+            ]),
+          ),
+        ),
+        if (_expanded) ...[
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+            child: Text(
+              'Controls which tabs show in the resident event dashboard. No tabs '
+              'show to residents until enabled here (the Event tab always stays '
+              'visible as a minimum). Admins always see every tab.',
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade400, height: 1.4),
+            ),
+          ),
+          const SizedBox(height: 4),
+          ...categories.map((cat) => _ResidentTabsCategoryGroup(
+              category: cat, allowedEventTypeIds: widget.allowedEventTypeIds)),
+          const SizedBox(height: 8),
+        ],
+      ]),
+    );
+  }
+}
+
+class _ResidentTabsCategoryGroup extends StatefulWidget {
+  final EventCategory category;
+  final Set<String> allowedEventTypeIds;
+  const _ResidentTabsCategoryGroup({required this.category, required this.allowedEventTypeIds});
+  @override
+  State<_ResidentTabsCategoryGroup> createState() => _ResidentTabsCategoryGroupState();
+}
+
+class _ResidentTabsCategoryGroupState extends State<_ResidentTabsCategoryGroup> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final types = kAllEventTypes
+        .where((t) => t.category == widget.category && widget.allowedEventTypeIds.contains(t.id))
+        .toList();
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      InkWell(
+        onTap: () => setState(() => _expanded = !_expanded),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
+          child: Row(children: [
+            Text(widget.category.emoji, style: const TextStyle(fontSize: 16)),
+            const SizedBox(width: 10),
+            Expanded(child: Text(widget.category.label,
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13))),
+            Icon(_expanded ? Icons.expand_less : Icons.expand_more,
+                size: 18, color: Colors.grey.shade400),
+          ]),
+        ),
+      ),
+      if (_expanded)
+        ...types.map((type) => _ResidentTabsTypeEditor(eventType: type)),
+      const Divider(height: 1, indent: 16, endIndent: 16),
+    ]);
+  }
+}
+
+class _ResidentTabsTypeEditor extends StatefulWidget {
+  final EventTypeData eventType;
+  const _ResidentTabsTypeEditor({required this.eventType});
+  @override
+  State<_ResidentTabsTypeEditor> createState() => _ResidentTabsTypeEditorState();
+}
+
+class _ResidentTabsTypeEditorState extends State<_ResidentTabsTypeEditor> {
+  bool _configExpanded = false;
+
+  DocumentReference get _ref =>
+      FirebaseFirestore.instance.collection('eventTypeConfig').doc(widget.eventType.id);
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: _ref.snapshots(),
+      builder: (context, snap) {
+        final d = snap.data?.data() as Map<String, dynamic>? ?? {};
+        final raw = d['residentTabs'];
+        final enabledTabs = raw != null
+            ? List<String>.from(raw as List)
+            : defaultResidentTabs();
+
+        Future<void> toggle(String key, bool on) async {
+          final updated = List<String>.from(enabledTabs);
+          if (on) {
+            if (!updated.contains(key)) updated.add(key);
+          } else {
+            if (updated.length <= 1) {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('At least one tab must stay visible to residents')));
+              return;
+            }
+            updated.remove(key);
+          }
+          await _ref.set({'residentTabs': updated}, SetOptions(merge: true));
+        }
+
+        final selectedCount = enabledTabs.length;
+
+        return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(32, 6, 12, 6),
+            child: Row(children: [
+              Text(widget.eventType.emoji, style: const TextStyle(fontSize: 14)),
+              const SizedBox(width: 8),
+              Expanded(child: Text(widget.eventType.name,
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500))),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppTheme.accent.shade50,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text('$selectedCount/${kResidentTabDefs.length}',
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600,
+                        color: AppTheme.accent.shade600)),
+              ),
+              const SizedBox(width: 6),
+              GestureDetector(
+                onTap: () => setState(() => _configExpanded = !_configExpanded),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Text('Configure',
+                        style: TextStyle(fontSize: 10, color: AppTheme.accent.shade400,
+                            fontWeight: FontWeight.w600)),
+                    Icon(_configExpanded ? Icons.expand_less : Icons.expand_more,
+                        size: 14, color: AppTheme.accent.shade400),
+                  ]),
+                ),
+              ),
+            ]),
+          ),
+          if (_configExpanded)
+            Container(
+              margin: const EdgeInsets.fromLTRB(32, 0, 16, 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppTheme.accent.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppTheme.accent.shade100),
+              ),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: kResidentTabDefs.map((tab) {
+                  final key = tab.$1;
+                  final label = tab.$2;
+                  final on = enabledTabs.contains(key);
+                  return GestureDetector(
+                    onTap: () => toggle(key, !on),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: on ? AppTheme.accent.shade600 : Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                            color: on ? AppTheme.accent.shade600 : Colors.grey.shade300),
+                      ),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        if (on) ...[
+                          const Icon(Icons.check, size: 12, color: Colors.white),
+                          const SizedBox(width: 4),
+                        ],
+                        Text(label,
+                            style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: on ? Colors.white : Colors.grey.shade700)),
+                      ]),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+        ]);
+      },
+    );
+  }
+}
+
+// ── Resident Overview Sections collapsable ──────────────────────────────────
+// Lets admins choose which Overview sections residents see, per event type.
+// Stored on eventTypeConfig/{typeId}.residentOverviewSections — unset means
+// "nothing shown" (opt-in). Block Stats and Sponsors are also gated by their
+// own existing App Settings toggles (appSettings/collectionStatusByBlock,
+// appSettings/sponsorPackages) — a section only shows if BOTH are enabled.
+
+class _ResidentOverviewSectionsSection extends StatefulWidget {
+  final Set<EventCategory> allowedCategories;
+  final Set<String> allowedEventTypeIds;
+  const _ResidentOverviewSectionsSection({required this.allowedCategories, required this.allowedEventTypeIds});
+  @override
+  State<_ResidentOverviewSectionsSection> createState() => _ResidentOverviewSectionsSectionState();
+}
+
+class _ResidentOverviewSectionsSectionState extends State<_ResidentOverviewSectionsSection> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final categories = EventCategory.values
+        .where((cat) =>
+            widget.allowedCategories.contains(cat) &&
+            kAllEventTypes.any((t) => t.category == cat))
+        .toList();
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.accent.shade100, width: 1),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        InkWell(
+          borderRadius: BorderRadius.vertical(
+            top: const Radius.circular(14),
+            bottom: _expanded ? Radius.zero : const Radius.circular(14),
+          ),
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+            child: Row(children: [
+              const Text('🧩', style: TextStyle(fontSize: 20)),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Overview Tab Sections',
+                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                  Text('Choose which Overview cards residents see, per event type',
+                      style: TextStyle(fontSize: 11, color: Colors.grey)),
+                ]),
+              ),
+              Icon(_expanded ? Icons.expand_less : Icons.expand_more,
+                  color: Colors.grey.shade500),
+            ]),
+          ),
+        ),
+        if (_expanded) ...[
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+            child: Text(
+              'Controls the Budget vs Actual, Stat Chips, Block Stats and Sponsors '
+              'cards in the resident Overview tab. None show to residents until '
+              'enabled here. Block Stats and Sponsors are also gated by the '
+              'existing App Settings toggles — a section only shows if BOTH are '
+              'enabled. Admins always see every section.',
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade400, height: 1.4),
+            ),
+          ),
+          const SizedBox(height: 4),
+          ...categories.map((cat) => _ResidentOverviewSectionsCategoryGroup(
+              category: cat, allowedEventTypeIds: widget.allowedEventTypeIds)),
+          const SizedBox(height: 8),
+        ],
+      ]),
+    );
+  }
+}
+
+class _ResidentOverviewSectionsCategoryGroup extends StatefulWidget {
+  final EventCategory category;
+  final Set<String> allowedEventTypeIds;
+  const _ResidentOverviewSectionsCategoryGroup({required this.category, required this.allowedEventTypeIds});
+  @override
+  State<_ResidentOverviewSectionsCategoryGroup> createState() => _ResidentOverviewSectionsCategoryGroupState();
+}
+
+class _ResidentOverviewSectionsCategoryGroupState extends State<_ResidentOverviewSectionsCategoryGroup> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final types = kAllEventTypes
+        .where((t) => t.category == widget.category && widget.allowedEventTypeIds.contains(t.id))
+        .toList();
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      InkWell(
+        onTap: () => setState(() => _expanded = !_expanded),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
+          child: Row(children: [
+            Text(widget.category.emoji, style: const TextStyle(fontSize: 16)),
+            const SizedBox(width: 10),
+            Expanded(child: Text(widget.category.label,
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13))),
+            Icon(_expanded ? Icons.expand_less : Icons.expand_more,
+                size: 18, color: Colors.grey.shade400),
+          ]),
+        ),
+      ),
+      if (_expanded)
+        ...types.map((type) => _ResidentOverviewSectionsTypeEditor(eventType: type)),
+      const Divider(height: 1, indent: 16, endIndent: 16),
+    ]);
+  }
+}
+
+class _ResidentOverviewSectionsTypeEditor extends StatefulWidget {
+  final EventTypeData eventType;
+  const _ResidentOverviewSectionsTypeEditor({required this.eventType});
+  @override
+  State<_ResidentOverviewSectionsTypeEditor> createState() => _ResidentOverviewSectionsTypeEditorState();
+}
+
+class _ResidentOverviewSectionsTypeEditorState extends State<_ResidentOverviewSectionsTypeEditor> {
+  bool _configExpanded = false;
+
+  DocumentReference get _ref =>
+      FirebaseFirestore.instance.collection('eventTypeConfig').doc(widget.eventType.id);
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: _ref.snapshots(),
+      builder: (context, snap) {
+        final d = snap.data?.data() as Map<String, dynamic>? ?? {};
+        final raw = d['residentOverviewSections'];
+        final enabledSections = raw != null
+            ? List<String>.from(raw as List)
+            : defaultResidentOverviewSections();
+
+        Future<void> toggle(String key, bool on) async {
+          final updated = List<String>.from(enabledSections);
+          if (on) {
+            if (!updated.contains(key)) updated.add(key);
+          } else {
+            updated.remove(key);
+          }
+          await _ref.set({'residentOverviewSections': updated}, SetOptions(merge: true));
+        }
+
+        final selectedCount = enabledSections.length;
+
+        return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(32, 6, 12, 6),
+            child: Row(children: [
+              Text(widget.eventType.emoji, style: const TextStyle(fontSize: 14)),
+              const SizedBox(width: 8),
+              Expanded(child: Text(widget.eventType.name,
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500))),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppTheme.accent.shade50,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text('$selectedCount/${kResidentOverviewSectionDefs.length}',
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600,
+                        color: AppTheme.accent.shade600)),
+              ),
+              const SizedBox(width: 6),
+              GestureDetector(
+                onTap: () => setState(() => _configExpanded = !_configExpanded),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Text('Configure',
+                        style: TextStyle(fontSize: 10, color: AppTheme.accent.shade400,
+                            fontWeight: FontWeight.w600)),
+                    Icon(_configExpanded ? Icons.expand_less : Icons.expand_more,
+                        size: 14, color: AppTheme.accent.shade400),
+                  ]),
+                ),
+              ),
+            ]),
+          ),
+          if (_configExpanded)
+            Container(
+              margin: const EdgeInsets.fromLTRB(32, 0, 16, 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppTheme.accent.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppTheme.accent.shade100),
+              ),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: kResidentOverviewSectionDefs.map((section) {
+                  final key = section.$1;
+                  final label = section.$2;
+                  final on = enabledSections.contains(key);
+                  return GestureDetector(
+                    onTap: () => toggle(key, !on),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: on ? AppTheme.accent.shade600 : Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                            color: on ? AppTheme.accent.shade600 : Colors.grey.shade300),
+                      ),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        if (on) ...[
+                          const Icon(Icons.check, size: 12, color: Colors.white),
+                          const SizedBox(width: 4),
+                        ],
+                        Text(label,
+                            style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: on ? Colors.white : Colors.grey.shade700)),
+                      ]),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+        ]);
+      },
+    );
+  }
+}
+
+// ── Generalized per-tab section visibility (fast-follow) ────────────────────
+// One parameterized trio replaces what would otherwise be a near-identical
+// class per tab. Reads/writes eventTypeConfig/{typeId}.residentTabSections.
+// {tabId} — unset means "nothing shown" (opt-in), same as residentTabs.
+
+class _ResidentTabSectionsSection extends StatefulWidget {
+  final String tabId;
+  final String emoji;
+  final String title;
+  final String helpText;
+  final List<(String, String)> sectionDefs;
+  final Set<EventCategory> allowedCategories;
+  final Set<String> allowedEventTypeIds;
+  const _ResidentTabSectionsSection({
+    required this.tabId,
+    required this.emoji,
+    required this.title,
+    required this.helpText,
+    required this.sectionDefs,
+    required this.allowedCategories,
+    required this.allowedEventTypeIds,
+  });
+  @override
+  State<_ResidentTabSectionsSection> createState() => _ResidentTabSectionsSectionState();
+}
+
+class _ResidentTabSectionsSectionState extends State<_ResidentTabSectionsSection> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final categories = EventCategory.values
+        .where((cat) =>
+            widget.allowedCategories.contains(cat) &&
+            kAllEventTypes.any((t) => t.category == cat))
+        .toList();
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.accent.shade100, width: 1),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        InkWell(
+          borderRadius: BorderRadius.vertical(
+            top: const Radius.circular(14),
+            bottom: _expanded ? Radius.zero : const Radius.circular(14),
+          ),
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+            child: Row(children: [
+              Text(widget.emoji, style: const TextStyle(fontSize: 20)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(widget.title,
+                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                  const Text('Choose which sections residents see, per event type',
+                      style: TextStyle(fontSize: 11, color: Colors.grey)),
+                ]),
+              ),
+              Icon(_expanded ? Icons.expand_less : Icons.expand_more,
+                  color: Colors.grey.shade500),
+            ]),
+          ),
+        ),
+        if (_expanded) ...[
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+            child: Text(
+              widget.helpText,
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade400, height: 1.4),
+            ),
+          ),
+          const SizedBox(height: 4),
+          ...categories.map((cat) => _ResidentTabSectionsCategoryGroup(
+              tabId: widget.tabId,
+              sectionDefs: widget.sectionDefs,
+              category: cat,
+              allowedEventTypeIds: widget.allowedEventTypeIds)),
+          const SizedBox(height: 8),
+        ],
+      ]),
+    );
+  }
+}
+
+class _ResidentTabSectionsCategoryGroup extends StatefulWidget {
+  final String tabId;
+  final List<(String, String)> sectionDefs;
+  final EventCategory category;
+  final Set<String> allowedEventTypeIds;
+  const _ResidentTabSectionsCategoryGroup({
+    required this.tabId,
+    required this.sectionDefs,
+    required this.category,
+    required this.allowedEventTypeIds,
+  });
+  @override
+  State<_ResidentTabSectionsCategoryGroup> createState() => _ResidentTabSectionsCategoryGroupState();
+}
+
+class _ResidentTabSectionsCategoryGroupState extends State<_ResidentTabSectionsCategoryGroup> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final types = kAllEventTypes
+        .where((t) => t.category == widget.category && widget.allowedEventTypeIds.contains(t.id))
+        .toList();
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      InkWell(
+        onTap: () => setState(() => _expanded = !_expanded),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
+          child: Row(children: [
+            Text(widget.category.emoji, style: const TextStyle(fontSize: 16)),
+            const SizedBox(width: 10),
+            Expanded(child: Text(widget.category.label,
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13))),
+            Icon(_expanded ? Icons.expand_less : Icons.expand_more,
+                size: 18, color: Colors.grey.shade400),
+          ]),
+        ),
+      ),
+      if (_expanded)
+        ...types.map((type) => _ResidentTabSectionsTypeEditor(
+            tabId: widget.tabId, sectionDefs: widget.sectionDefs, eventType: type)),
+      const Divider(height: 1, indent: 16, endIndent: 16),
+    ]);
+  }
+}
+
+class _ResidentTabSectionsTypeEditor extends StatefulWidget {
+  final String tabId;
+  final List<(String, String)> sectionDefs;
+  final EventTypeData eventType;
+  const _ResidentTabSectionsTypeEditor({
+    required this.tabId,
+    required this.sectionDefs,
+    required this.eventType,
+  });
+  @override
+  State<_ResidentTabSectionsTypeEditor> createState() => _ResidentTabSectionsTypeEditorState();
+}
+
+class _ResidentTabSectionsTypeEditorState extends State<_ResidentTabSectionsTypeEditor> {
+  bool _configExpanded = false;
+
+  DocumentReference get _ref =>
+      FirebaseFirestore.instance.collection('eventTypeConfig').doc(widget.eventType.id);
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: _ref.snapshots(),
+      builder: (context, snap) {
+        final d = snap.data?.data() as Map<String, dynamic>? ?? {};
+        final enabledSections = residentTabSectionsFor(d, widget.tabId);
+
+        Future<void> toggle(String key, bool on) async {
+          final updated = List<String>.from(enabledSections);
+          if (on) {
+            if (!updated.contains(key)) updated.add(key);
+          } else {
+            updated.remove(key);
+          }
+          await _ref.set(
+              {'residentTabSections': {widget.tabId: updated}}, SetOptions(merge: true));
+        }
+
+        final selectedCount = enabledSections.length;
+
+        return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(32, 6, 12, 6),
+            child: Row(children: [
+              Text(widget.eventType.emoji, style: const TextStyle(fontSize: 14)),
+              const SizedBox(width: 8),
+              Expanded(child: Text(widget.eventType.name,
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500))),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppTheme.accent.shade50,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text('$selectedCount/${widget.sectionDefs.length}',
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600,
+                        color: AppTheme.accent.shade600)),
+              ),
+              const SizedBox(width: 6),
+              GestureDetector(
+                onTap: () => setState(() => _configExpanded = !_configExpanded),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Text('Configure',
+                        style: TextStyle(fontSize: 10, color: AppTheme.accent.shade400,
+                            fontWeight: FontWeight.w600)),
+                    Icon(_configExpanded ? Icons.expand_less : Icons.expand_more,
+                        size: 14, color: AppTheme.accent.shade400),
+                  ]),
+                ),
+              ),
+            ]),
+          ),
+          if (_configExpanded)
+            Container(
+              margin: const EdgeInsets.fromLTRB(32, 0, 16, 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppTheme.accent.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppTheme.accent.shade100),
+              ),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: widget.sectionDefs.map((section) {
+                  final key = section.$1;
+                  final label = section.$2;
+                  final on = enabledSections.contains(key);
+                  return GestureDetector(
+                    onTap: () => toggle(key, !on),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: on ? AppTheme.accent.shade600 : Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                            color: on ? AppTheme.accent.shade600 : Colors.grey.shade300),
+                      ),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        if (on) ...[
+                          const Icon(Icons.check, size: 12, color: Colors.white),
+                          const SizedBox(width: 4),
+                        ],
+                        Text(label,
+                            style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: on ? Colors.white : Colors.grey.shade700)),
+                      ]),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+        ]);
+      },
+    );
+  }
+}
+
 // ── Top-level Leaderboard collapsable ─────────────────────────────────────────
 
 class _LeaderboardSection extends StatefulWidget {
@@ -1100,6 +2288,7 @@ class _LeaderboardSectionState extends State<_LeaderboardSection> {
           decoration: BoxDecoration(
             color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppTheme.accent.shade100, width: 1),
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
           ),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1214,6 +2403,7 @@ class _SponsorPackagesSectionState extends State<_SponsorPackagesSection> {
           decoration: BoxDecoration(
             color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppTheme.accent.shade100, width: 1),
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
           ),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1329,6 +2519,7 @@ class _DeleteEventsSectionState extends State<_DeleteEventsSection> {
           decoration: BoxDecoration(
             color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppTheme.accent.shade100, width: 1),
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
           ),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1568,6 +2759,7 @@ class _SpecialContributionSectionState extends State<_SpecialContributionSection
           decoration: BoxDecoration(
             color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppTheme.accent.shade100, width: 1),
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
           ),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -2043,6 +3235,7 @@ class _ExpenseCategoriesSectionState extends State<_ExpenseCategoriesSection> {
           decoration: BoxDecoration(
             color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppTheme.accent.shade100, width: 1),
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
           ),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

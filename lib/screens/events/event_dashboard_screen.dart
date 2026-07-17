@@ -46,8 +46,11 @@ class EventDashboardScreen extends StatefulWidget {
 }
 
 class _EventDashboardScreenState extends State<EventDashboardScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+    with TickerProviderStateMixin {
+  // Created lazily once eventTypeConfig/{typeId}.applicableTabs (and, for
+  // residents, .residentTabs) is known, so the tab count reflects per-event-
+  // type config for BOTH roles — see _ensureTabController.
+  TabController? _tabController;
   String _residentFlat = '';
   String _residentName = '';
   String _residentWing = '';
@@ -56,9 +59,176 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(
-        length: widget.isAdmin ? 11 : 7, vsync: this);
     if (!widget.isAdmin) _loadSession();
+  }
+
+  void _ensureTabController(int length) {
+    if (_tabController != null && _tabController!.length == length) return;
+    final oldIndex = _tabController?.index ?? 0;
+    _tabController?.dispose();
+    _tabController = TabController(
+        length: length, vsync: this, initialIndex: oldIndex < length ? oldIndex : 0);
+  }
+
+  Tab _residentTabWidgetFor(String id) => Tab(
+      text: kResidentTabDefs
+          .firstWhere((t) => t.$1 == id, orElse: () => ('', id))
+          .$2);
+
+  _TabItem _adminTabItemFor(String id) {
+    const icons = {
+      'overview': Icons.dashboard_outlined,
+      'event': Icons.event_note_outlined,
+      'contributions': Icons.volunteer_activism_outlined,
+      'expenses': Icons.receipt_long_outlined,
+      'followup': Icons.pending_actions_outlined,
+      'volunteers': Icons.groups_outlined,
+      'tasks': Icons.checklist_outlined,
+      'activity': Icons.history_outlined,
+      'competitions': Icons.emoji_events_outlined,
+      'prasad': Icons.restaurant_outlined,
+      'leaderboard': Icons.leaderboard_outlined,
+    };
+    final label = kAdminTabDefs.firstWhere((t) => t.$1 == id, orElse: () => ('', id)).$2;
+    return _TabItem(icon: icons[id] ?? Icons.circle_outlined, label: label);
+  }
+
+  Widget _adminTabViewFor(
+    String id, {
+    required Map<String, dynamic> data,
+    required double collected,
+    required double spent,
+    required double balance,
+    required String status,
+  }) {
+    switch (id) {
+      case 'overview':
+        return _OverviewTab(
+            eventId: widget.eventId,
+            collected: collected,
+            spent: spent,
+            balance: balance,
+            data: data,
+            isAdmin: true);
+      case 'event':
+        return _EventTab(
+            eventId: widget.eventId,
+            data: data,
+            isAdmin: true,
+            residentFlat: _residentFlat,
+            residentName: _residentName,
+            residentWing: _residentWing,
+            residentBlock: _residentBlock);
+      case 'contributions':
+        return _ContributionsTab(
+            eventId: widget.eventId,
+            eventName: widget.eventName,
+            eventTypeId: data['eventTypeId'] as String? ?? '',
+            isAdmin: true,
+            status: status,
+            residentFlat: _residentFlat);
+      case 'expenses':
+        return _ExpensesTab(
+            eventId: widget.eventId,
+            eventTypeId: data['eventTypeId'] as String? ?? '',
+            isAdmin: true,
+            status: status);
+      case 'followup':
+        return _FollowUpTab(
+            eventId: widget.eventId,
+            eventName: data['name'] ?? widget.eventName);
+      case 'volunteers':
+        return _VolunteersTab(
+            eventId: widget.eventId,
+            eventTypeId: data['eventTypeId'] as String? ?? '',
+            isAdmin: true);
+      case 'tasks':
+        return _TasksTab(eventId: widget.eventId);
+      case 'activity':
+        return _ActivityTab(eventId: widget.eventId);
+      case 'competitions':
+        return CompetitionsTab(
+            eventId: widget.eventId,
+            isAdmin: true,
+            eventTypeId: data['eventTypeId'] as String? ?? '');
+      case 'prasad':
+        return PrasadTab(
+            eventId: widget.eventId,
+            isAdmin: true,
+            eventTypeId: data['eventTypeId'] as String? ?? '');
+      case 'leaderboard':
+        return _LeaderboardTab(
+            eventId: widget.eventId,
+            isAdmin: true,
+            eventTypeId: data['eventTypeId'] as String? ?? '');
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+
+  Widget _residentTabViewFor(
+    String id, {
+    required Map<String, dynamic> data,
+    required double collected,
+    required double spent,
+    required double balance,
+    required String status,
+  }) {
+    switch (id) {
+      case 'event':
+        return _EventTab(
+            eventId: widget.eventId,
+            data: data,
+            isAdmin: false,
+            residentFlat: _residentFlat,
+            residentName: _residentName,
+            residentWing: _residentWing,
+            residentBlock: _residentBlock);
+      case 'overview':
+        return _OverviewTab(
+            eventId: widget.eventId,
+            collected: collected,
+            spent: spent,
+            balance: balance,
+            data: data,
+            isAdmin: false,
+            residentFlat: _residentFlat,
+            residentName: _residentName,
+            eventName: data['name'] ?? widget.eventName,
+            status: status);
+      case 'expenses':
+        return _ExpensesTab(
+            eventId: widget.eventId,
+            eventTypeId: data['eventTypeId'] as String? ?? '',
+            isAdmin: false,
+            status: status);
+      case 'volunteers':
+        return _VolunteersTab(
+            eventId: widget.eventId,
+            eventTypeId: data['eventTypeId'] as String? ?? '',
+            isAdmin: false,
+            residentFlat: _residentFlat,
+            residentName: _residentName,
+            residentWing: _residentWing,
+            residentBlock: _residentBlock);
+      case 'competitions':
+        return CompetitionsTab(
+            eventId: widget.eventId,
+            isAdmin: false,
+            eventTypeId: data['eventTypeId'] as String? ?? '');
+      case 'prasad':
+        return PrasadTab(
+            eventId: widget.eventId,
+            isAdmin: false,
+            eventTypeId: data['eventTypeId'] as String? ?? '');
+      case 'leaderboard':
+        return _LeaderboardTab(
+            eventId: widget.eventId,
+            isAdmin: false,
+            eventTypeId: data['eventTypeId'] as String? ?? '');
+      default:
+        return const SizedBox.shrink();
+    }
   }
 
   Future<void> _loadSession() async {
@@ -75,7 +245,7 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
 
   @override
   void dispose() {
-    _tabController.dispose();
+    _tabController?.dispose();
     super.dispose();
   }
 
@@ -697,133 +867,101 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                 ]),
               ),
 
-              // ── Tab bar: grocery-style for admin, classic for resident ──
-              if (widget.isAdmin)
-                _CustomTabBar(
-                  controller: _tabController,
-                  tabs: const [
-                    _TabItem(icon: Icons.dashboard_outlined, label: 'Overview'),
-                    _TabItem(icon: Icons.event_note_outlined, label: 'Event'),
-                    _TabItem(icon: Icons.volunteer_activism_outlined, label: 'Contributions'),
-                    _TabItem(icon: Icons.receipt_long_outlined, label: 'Expenses'),
-                    _TabItem(icon: Icons.pending_actions_outlined, label: 'Follow-up'),
-                    _TabItem(icon: Icons.groups_outlined, label: 'Volunteers'),
-                    _TabItem(icon: Icons.checklist_outlined, label: 'Tasks'),
-                    _TabItem(icon: Icons.history_outlined, label: 'Activity'),
-                    _TabItem(icon: Icons.emoji_events_outlined, label: 'Competitions'),
-                    _TabItem(icon: Icons.restaurant_outlined, label: 'Prasad'),
-                    _TabItem(icon: Icons.leaderboard_outlined, label: 'Leaderboard'),
-                  ],
-                )
-              else
-                Container(
-                  color: AppTheme.accent,
-                  child: TabBar(
-                    controller: _tabController,
-                    isScrollable: true,
-                    tabAlignment: TabAlignment.start,
-                    indicatorColor: Colors.white,
-                    indicatorWeight: 3,
-                    labelColor: Colors.white,
-                    unselectedLabelColor: Colors.white60,
-                    labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                    tabs: const [
-                      Tab(text: 'Event'),
-                      Tab(text: 'Overview'),
-                      Tab(text: 'Expenses'),
-                      Tab(text: 'Volunteers'),
-                      Tab(text: 'Competitions'),
-                      Tab(text: 'Prasad'),
-                      Tab(text: 'Leaderboard'),
-                    ],
-                  ),
-                ),
-
-              // Tab content
+              // ── Tab bar + content: id-driven for both roles, filtered by
+              // eventTypeConfig/{typeId}.applicableTabs (both roles) and,
+              // for residents, further filtered by .residentTabs ──
               Expanded(
-                child: TabBarView(
-                  controller: _tabController,
-                  children: widget.isAdmin
-                      ? [
-                          // Admin: Overview | Event | Contributions | Expenses | Follow-up | Volunteers | Activity
-                          _OverviewTab(
-                              eventId: widget.eventId,
-                              collected: collected,
-                              spent: spent,
-                              balance: balance,
-                              data: data,
-                              isAdmin: true),
-                          _EventTab(
-                              eventId: widget.eventId,
-                              data: data,
-                              isAdmin: true,
-                              residentFlat: _residentFlat,
-                              residentName: _residentName,
-                              residentWing: _residentWing,
-                              residentBlock: _residentBlock),
-                          _ContributionsTab(
-                              eventId: widget.eventId,
-                              eventName: widget.eventName,
-                              eventTypeId: data['eventTypeId'] as String? ?? '',
-                              isAdmin: true,
-                              status: status,
-                              residentFlat: _residentFlat),
-                          _ExpensesTab(
-                              eventId: widget.eventId,
-                              eventTypeId: data['eventTypeId'] as String? ?? '',
-                              isAdmin: true,
-                              status: status),
-                          _FollowUpTab(
-                              eventId: widget.eventId,
-                              eventName: data['name'] ?? widget.eventName),
-                          _VolunteersTab(
-                              eventId: widget.eventId,
-                              eventTypeId: data['eventTypeId'] as String? ?? '',
-                              isAdmin: true),
-                          _TasksTab(eventId: widget.eventId),
-                          _ActivityTab(eventId: widget.eventId),
-                          CompetitionsTab(eventId: widget.eventId, isAdmin: true),
-                          PrasadTab(eventId: widget.eventId, isAdmin: true),
-                          _LeaderboardTab(eventId: widget.eventId),
-                        ]
-                      : [
-                          // Resident: Event (default) | Overview | Expenses | Volunteers
-                          _EventTab(
-                              eventId: widget.eventId,
-                              data: data,
-                              isAdmin: false,
-                              residentFlat: _residentFlat,
-                              residentName: _residentName,
-                              residentWing: _residentWing,
-                              residentBlock: _residentBlock),
-                          _OverviewTab(
-                              eventId: widget.eventId,
-                              collected: collected,
-                              spent: spent,
-                              balance: balance,
-                              data: data,
-                              isAdmin: false,
-                              residentFlat: _residentFlat,
-                              residentName: _residentName,
-                              eventName: data['name'] ?? widget.eventName,
-                              status: status),
-                          _ExpensesTab(
-                              eventId: widget.eventId,
-                              eventTypeId: data['eventTypeId'] as String? ?? '',
-                              isAdmin: false,
-                              status: status),
-                          _VolunteersTab(
-                              eventId: widget.eventId,
-                              eventTypeId: data['eventTypeId'] as String? ?? '',
-                              isAdmin: false,
-                              residentFlat: _residentFlat,
-                              residentName: _residentName,
-                              residentWing: _residentWing,
-                              residentBlock: _residentBlock),
-                          CompetitionsTab(eventId: widget.eventId, isAdmin: false),
-                          PrasadTab(eventId: widget.eventId, isAdmin: false),
-                          _LeaderboardTab(eventId: widget.eventId),
-                        ],
+                child: StreamBuilder<DocumentSnapshot>(
+                  stream: eventType != null
+                      ? FirebaseFirestore.instance
+                          .collection('eventTypeConfig')
+                          .doc(eventType.id)
+                          .snapshots()
+                      : const Stream<DocumentSnapshot>.empty(),
+                  builder: (context, configSnap) {
+                    final configData =
+                        configSnap.data?.data() as Map<String, dynamic>? ?? {};
+                    final rawApplicable = configData['applicableTabs'];
+                    final applicableTabIds = rawApplicable != null
+                        ? List<String>.from(rawApplicable as List)
+                        : defaultApplicableTabs();
+
+                    List<String> effectiveTabIds;
+                    if (widget.isAdmin) {
+                      effectiveTabIds = kAdminTabDefs
+                          .map((t) => t.$1)
+                          .where((id) => applicableTabIds.contains(id))
+                          .toList();
+                      if (effectiveTabIds.isEmpty) effectiveTabIds = ['overview'];
+                    } else {
+                      final rawResident = configData['residentTabs'];
+                      final residentTabIds = rawResident != null
+                          ? List<String>.from(rawResident as List)
+                          : defaultResidentTabs();
+                      effectiveTabIds = residentTabIds
+                          .where((id) => applicableTabIds.contains(id))
+                          .toList();
+                      if (effectiveTabIds.isEmpty) {
+                        effectiveTabIds = applicableTabIds.contains('event')
+                            ? ['event']
+                            : (applicableTabIds.isNotEmpty ? [applicableTabIds.first] : ['event']);
+                      }
+                    }
+                    _ensureTabController(effectiveTabIds.length);
+                    final tabController = _tabController;
+                    if (tabController == null) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    return Column(children: [
+                      // ── Tab bar: grocery-style for admin, classic for resident ──
+                      if (widget.isAdmin)
+                        _CustomTabBar(
+                          controller: tabController,
+                          tabs: effectiveTabIds.map(_adminTabItemFor).toList(),
+                        )
+                      else
+                        Container(
+                          color: AppTheme.accent,
+                          child: TabBar(
+                            controller: tabController,
+                            isScrollable: true,
+                            tabAlignment: TabAlignment.start,
+                            indicatorColor: Colors.white,
+                            indicatorWeight: 3,
+                            labelColor: Colors.white,
+                            unselectedLabelColor: Colors.white60,
+                            labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                            tabs: effectiveTabIds.map(_residentTabWidgetFor).toList(),
+                          ),
+                        ),
+
+                      // Tab content
+                      Expanded(
+                        child: TabBarView(
+                          controller: tabController,
+                          children: effectiveTabIds
+                              .map((id) => widget.isAdmin
+                                  ? _adminTabViewFor(
+                                      id,
+                                      data: data,
+                                      collected: collected,
+                                      spent: spent,
+                                      balance: balance,
+                                      status: status,
+                                    )
+                                  : _residentTabViewFor(
+                                      id,
+                                      data: data,
+                                      collected: collected,
+                                      spent: spent,
+                                      balance: balance,
+                                      status: status,
+                                    ))
+                              .toList(),
+                        ),
+                      ),
+                    ]);
+                  },
                 ),
               ),
             ],
@@ -832,54 +970,78 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
           // Admin FABs — tab-aware. Resident payment entry lives in the header banner instead.
           floatingActionButton: widget.isAdmin && status == 'active'
               ? StreamBuilder<DocumentSnapshot>(
-                  stream: FirebaseFirestore.instance
-                      .collection('appSettings')
-                      .doc('payments')
-                      .snapshots(),
-                  builder: (context, paySnap) {
-                    final payData = paySnap.data?.data() as Map<String, dynamic>? ?? {};
-                    final enabledTypeIds = List<String>.from(payData['enabledTypeIds'] as List? ?? []);
-                    final paymentsEnabled = enabledTypeIds.contains(eventType?.id ?? '');
-                    return AnimatedBuilder(
-                      animation: _tabController,
-                      builder: (context, _) {
-                        final tab = _tabController.index;
-                        // Admin tab order: 0=Overview, 1=Event, 2=Contributions, 3=Expenses, 4=Follow-up, 5=Volunteers, 6=Tasks, 7=Activity
-                        if (tab == 2 && paymentsEnabled) {
-                          return FloatingActionButton.extended(
-                            heroTag: 'contribution',
-                            onPressed: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => AddContributionScreen(
-                                    eventId: widget.eventId,
-                                    eventTypeId: data['eventTypeId'] as String? ?? ''),
-                              ),
-                            ),
-                            backgroundColor: Colors.green,
-                            icon: const Icon(Icons.add, color: Colors.white),
-                            label: const Text('Add Contribution',
-                                style: TextStyle(color: Colors.white)),
-                          );
-                        }
-                        if (tab == 3) {
-                          return FloatingActionButton.extended(
-                            heroTag: 'expense',
-                            onPressed: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => AddExpenseScreen(
-                                    eventId: widget.eventId,
-                                    eventTypeId: data['eventTypeId'] as String? ?? ''),
-                              ),
-                            ),
-                            backgroundColor: Colors.red.shade400,
-                            icon: const Icon(Icons.remove, color: Colors.white),
-                            label: const Text('Add Expense',
-                                style: TextStyle(color: Colors.white)),
-                          );
-                        }
-                        return const SizedBox.shrink();
+                  stream: eventType != null
+                      ? FirebaseFirestore.instance
+                          .collection('eventTypeConfig')
+                          .doc(eventType.id)
+                          .snapshots()
+                      : const Stream<DocumentSnapshot>.empty(),
+                  builder: (context, cfgSnap) {
+                    final cfgData = cfgSnap.data?.data() as Map<String, dynamic>?;
+                    final rawApplicable = cfgData?['applicableTabs'];
+                    final applicableTabIds = rawApplicable != null
+                        ? List<String>.from(rawApplicable as List)
+                        : defaultApplicableTabs();
+                    var effectiveAdminTabIds = kAdminTabDefs
+                        .map((t) => t.$1)
+                        .where((id) => applicableTabIds.contains(id))
+                        .toList();
+                    if (effectiveAdminTabIds.isEmpty) effectiveAdminTabIds = ['overview'];
+
+                    return StreamBuilder<DocumentSnapshot>(
+                      stream: FirebaseFirestore.instance
+                          .collection('appSettings')
+                          .doc('payments')
+                          .snapshots(),
+                      builder: (context, paySnap) {
+                        final payData = paySnap.data?.data() as Map<String, dynamic>? ?? {};
+                        final enabledTypeIds = List<String>.from(payData['enabledTypeIds'] as List? ?? []);
+                        final paymentsEnabled = enabledTypeIds.contains(eventType?.id ?? '');
+                        final tabController = _tabController;
+                        if (tabController == null) return const SizedBox.shrink();
+                        return AnimatedBuilder(
+                          animation: tabController,
+                          builder: (context, _) {
+                            final tab = tabController.index;
+                            if (tab >= effectiveAdminTabIds.length) return const SizedBox.shrink();
+                            final currentTabId = effectiveAdminTabIds[tab];
+                            if (currentTabId == 'contributions' && paymentsEnabled) {
+                              return FloatingActionButton.extended(
+                                heroTag: 'contribution',
+                                onPressed: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => AddContributionScreen(
+                                        eventId: widget.eventId,
+                                        eventTypeId: data['eventTypeId'] as String? ?? ''),
+                                  ),
+                                ),
+                                backgroundColor: Colors.green,
+                                icon: const Icon(Icons.add, color: Colors.white),
+                                label: const Text('Add Contribution',
+                                    style: TextStyle(color: Colors.white)),
+                              );
+                            }
+                            if (currentTabId == 'expenses') {
+                              return FloatingActionButton.extended(
+                                heroTag: 'expense',
+                                onPressed: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => AddExpenseScreen(
+                                        eventId: widget.eventId,
+                                        eventTypeId: data['eventTypeId'] as String? ?? ''),
+                                  ),
+                                ),
+                                backgroundColor: Colors.red.shade400,
+                                icon: const Icon(Icons.remove, color: Colors.white),
+                                label: const Text('Add Expense',
+                                    style: TextStyle(color: Colors.white)),
+                              );
+                            }
+                            return const SizedBox.shrink();
+                          },
+                        );
                       },
                     );
                   },
@@ -1073,12 +1235,33 @@ class _OverviewTab extends StatelessWidget {
     final double collectedPct = target > 0 ? ((collected / target).clamp(0.0, 1.0) as num).toDouble() : 0.0;
     final double spentPct     = target > 0 ? ((spent / target).clamp(0.0, 1.0) as num).toDouble() : 0.0;
     final isOverspent  = balance < 0;
+    final resolvedType = eventTypeById(data['eventTypeId'] as String?) ??
+        eventTypeByName(data['name'] as String?);
 
-    return ListView(
+    return StreamBuilder<DocumentSnapshot>(
+      stream: resolvedType != null
+          ? FirebaseFirestore.instance
+              .collection('eventTypeConfig')
+              .doc(resolvedType.id)
+              .snapshots()
+          : const Stream<DocumentSnapshot>.empty(),
+      builder: (context, configSnap) {
+        final configData = configSnap.data?.data() as Map<String, dynamic>? ?? {};
+        final rawChips = configData['overviewChips'];
+        final enabledChips = rawChips != null
+            ? List<String>.from(rawChips as List)
+            : defaultOverviewChips();
+        final rawSections = configData['residentOverviewSections'];
+        final enabledSections = rawSections != null
+            ? List<String>.from(rawSections as List)
+            : defaultResidentOverviewSections();
+        bool sectionVisible(String id) => isAdmin || enabledSections.contains(id);
+
+        return ListView(
       padding: const EdgeInsets.all(16),
       children: [
 
-        // ── My Contribution (resident only) ─────────────────────────
+        // ── My Contribution (resident only, always shown) ────────────
         if (!isAdmin && residentFlat.isNotEmpty) ...[
           _MyContributionWidget(
             eventId: eventId,
@@ -1091,6 +1274,7 @@ class _OverviewTab extends StatelessWidget {
         ],
 
         // ── Budget vs Actual Card ──────────────────────────────────
+        if (sectionVisible('budget_vs_actual')) ...[
         Container(
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
@@ -1219,29 +1403,12 @@ class _OverviewTab extends StatelessWidget {
             ],
           ),
         ),
-
         const SizedBox(height: 16),
+        ],
 
         // ── Stat chips — visibility configurable per event type ─────
-        StreamBuilder<DocumentSnapshot>(
-          stream: () {
-            final resolvedType = eventTypeById(data['eventTypeId'] as String?) ??
-                eventTypeByName(data['name'] as String?);
-            return resolvedType != null
-                ? FirebaseFirestore.instance
-                    .collection('eventTypeConfig')
-                    .doc(resolvedType.id)
-                    .snapshots()
-                : const Stream<DocumentSnapshot>.empty();
-          }(),
-          builder: (context, configSnap) {
-            final configData = configSnap.data?.data() as Map<String, dynamic>? ?? {};
-            final rawChips = configData['overviewChips'];
-            final enabledChips = rawChips != null
-                ? List<String>.from(rawChips as List)
-                : defaultOverviewChips();
-
-            return StreamBuilder<QuerySnapshot>(
+        if (sectionVisible('stat_chips')) ...[
+        StreamBuilder<QuerySnapshot>(
           stream: FirebaseFirestore.instance
               .collection('events').doc(eventId)
               .collection('contributions').snapshots(),
@@ -1343,11 +1510,9 @@ class _OverviewTab extends StatelessWidget {
               ],
             );
           },
-            );
-          },
         ),
-
         const SizedBox(height: 16),
+        ],
 
         // ── Special vs Regular contribution breakdown (admin only) ──────────
         if (isAdmin) ...[
@@ -1356,6 +1521,7 @@ class _OverviewTab extends StatelessWidget {
         ],
 
         // ── Block stats (grouped by wing) — live stream, gated by settings ──
+        if (sectionVisible('block_stats'))
         StreamBuilder<DocumentSnapshot>(
           stream: FirebaseFirestore.instance
               .collection('appSettings')
@@ -1364,8 +1530,6 @@ class _OverviewTab extends StatelessWidget {
           builder: (context, snap) {
             final d = snap.data?.data() as Map<String, dynamic>? ?? {};
             final enabledTypeIds = List<String>.from(d['enabledTypeIds'] as List? ?? []);
-            final resolvedType = eventTypeById(data['eventTypeId'] as String?) ??
-                eventTypeByName(data['name'] as String?);
             if (!enabledTypeIds.contains(resolvedType?.id ?? '')) return const SizedBox.shrink();
             return Column(children: [
               const SizedBox(height: 16),
@@ -1375,6 +1539,7 @@ class _OverviewTab extends StatelessWidget {
         ),
 
         // ── Our Sponsors — live stream, gated by settings ──────────────────
+        if (sectionVisible('sponsors'))
         StreamBuilder<DocumentSnapshot>(
           stream: FirebaseFirestore.instance
               .collection('appSettings')
@@ -1383,8 +1548,6 @@ class _OverviewTab extends StatelessWidget {
           builder: (context, snap) {
             final d = snap.data?.data() as Map<String, dynamic>? ?? {};
             final enabledTypeIds = List<String>.from(d['enabledTypeIds'] as List? ?? []);
-            final resolvedType = eventTypeById(data['eventTypeId'] as String?) ??
-                eventTypeByName(data['name'] as String?);
             if (!enabledTypeIds.contains(resolvedType?.id ?? '')) return const SizedBox.shrink();
             return Column(children: [
               const SizedBox(height: 16),
@@ -1395,6 +1558,8 @@ class _OverviewTab extends StatelessWidget {
 
         const SizedBox(height: 24),
       ],
+        );
+      },
     );
   }
 
@@ -2679,7 +2844,13 @@ class _LeaderboardWidget extends StatelessWidget {
 
 class _LeaderboardTab extends StatefulWidget {
   final String eventId;
-  const _LeaderboardTab({required this.eventId});
+  final bool isAdmin;
+  final String eventTypeId;
+  const _LeaderboardTab({
+    required this.eventId,
+    this.isAdmin = true,
+    this.eventTypeId = '',
+  });
 
   @override
   State<_LeaderboardTab> createState() => _LeaderboardTabState();
@@ -2745,16 +2916,32 @@ class _LeaderboardTabState extends State<_LeaderboardTab> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: ListView(
+      body: StreamBuilder<DocumentSnapshot>(
+        stream: !widget.isAdmin && widget.eventTypeId.isNotEmpty
+            ? FirebaseFirestore.instance
+                .collection('eventTypeConfig')
+                .doc(widget.eventTypeId)
+                .snapshots()
+            : const Stream<DocumentSnapshot>.empty(),
+        builder: (context, configSnap) {
+          final configData = configSnap.data?.data() as Map<String, dynamic>?;
+          final enabledSections = residentTabSectionsFor(configData, 'leaderboard');
+          bool sectionVisible(String id) => widget.isAdmin || enabledSections.contains(id);
+
+          return ListView(
         padding: const EdgeInsets.fromLTRB(14, 14, 14, 90),
         children: [
+          if (sectionVisible('main_leaderboard')) ...[
           _LeaderboardWidget(eventId: widget.eventId),
           const SizedBox(height: 14),
+          ],
+          if (sectionVisible('most_active_volunteers'))
           _sectionCard(
             emoji: '🙋',
             title: 'Most Active Volunteers',
             child: _MostActiveVolunteers(eventId: widget.eventId),
           ),
+          if (widget.isAdmin)
           _sectionCard(
             emoji: '🧠',
             title: 'Quiz Winners',
@@ -2762,11 +2949,13 @@ class _LeaderboardTabState extends State<_LeaderboardTab> {
                 style: TextStyle(
                     color: Colors.grey.shade500, fontSize: 13, fontStyle: FontStyle.italic)),
           ),
+          if (sectionVisible('competition_winners'))
           _sectionCard(
             emoji: '🏆',
             title: 'Competition Winners',
             child: _CompetitionWinnersList(eventId: widget.eventId),
           ),
+          if (sectionVisible('apartment_participation'))
           _sectionCard(
             emoji: '🏘️',
             title: 'Apartment Participation',
@@ -2774,6 +2963,8 @@ class _LeaderboardTabState extends State<_LeaderboardTab> {
                 eventId: widget.eventId, wingBlocks: _wingBlocks, wings: _wings),
           ),
         ],
+          );
+        },
       ),
     );
   }
@@ -3294,7 +3485,19 @@ class _EventTabState extends State<_EventTab> {
               label: const Text('Add to Schedule', style: TextStyle(color: Colors.white)),
             )
           : null,
-      body: StreamBuilder<QuerySnapshot>(
+      body: StreamBuilder<DocumentSnapshot>(
+        stream: !widget.isAdmin && resolvedType != null
+            ? FirebaseFirestore.instance
+                .collection('eventTypeConfig')
+                .doc(resolvedType.id)
+                .snapshots()
+            : const Stream<DocumentSnapshot>.empty(),
+        builder: (context, configSnap) {
+          final configData = configSnap.data?.data() as Map<String, dynamic>?;
+          final enabledSections = residentTabSectionsFor(configData, 'event');
+          bool sectionVisible(String id) => widget.isAdmin || enabledSections.contains(id);
+
+          return StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('events').doc(widget.eventId)
             .collection('schedule')
@@ -3330,6 +3533,7 @@ class _EventTabState extends State<_EventTab> {
               const SizedBox(height: 12),
 
               // ── Event details card ──────────────────────────────
+              if (sectionVisible('event_details')) ...[
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -3382,8 +3586,10 @@ class _EventTabState extends State<_EventTab> {
                   ],
                 ),
               ),
+              ],
 
               // ── Day-by-day schedule ────────────────────────────
+              if (sectionVisible('event_schedule')) ...[
               const SizedBox(height: 20),
               Row(children: [
                 Icon(Icons.schedule_outlined, size: 16, color: AppTheme.accent),
@@ -3543,8 +3749,10 @@ class _EventTabState extends State<_EventTab> {
                     ),
                   );
                 }),
+              ],
 
               // ── Pooja Schedule section ──────────────────────────
+              if (sectionVisible('pooja_schedule'))
               StreamBuilder<DocumentSnapshot>(
                 stream: FirebaseFirestore.instance
                     .collection('appSettings')
@@ -3578,6 +3786,8 @@ class _EventTabState extends State<_EventTab> {
               ),
             ],
           );
+        },
+      );
         },
       ),
     );
@@ -4928,7 +5138,19 @@ class _VolunteersTabState extends State<_VolunteersTab> {
               label: const Text('Add Volunteer', style: TextStyle(color: Colors.white)),
             )
           : null,
-      body: StreamBuilder<QuerySnapshot>(
+      body: StreamBuilder<DocumentSnapshot>(
+        stream: !widget.isAdmin && widget.eventTypeId.isNotEmpty
+            ? FirebaseFirestore.instance
+                .collection('eventTypeConfig')
+                .doc(widget.eventTypeId)
+                .snapshots()
+            : const Stream<DocumentSnapshot>.empty(),
+        builder: (context, configSnap) {
+          final configData = configSnap.data?.data() as Map<String, dynamic>?;
+          final enabledSections = residentTabSectionsFor(configData, 'volunteers');
+          bool sectionVisible(String id) => widget.isAdmin || enabledSections.contains(id);
+
+          return StreamBuilder<QuerySnapshot>(
         stream: _col.snapshots(),
         builder: (context, snap) {
           if (snap.hasError) {
@@ -5016,6 +5238,7 @@ class _VolunteersTabState extends State<_VolunteersTab> {
                 // ── RESIDENT: volunteer invitation / appreciation ────
                 if (!widget.isAdmin) ...[
                   if (!hasRegistered) ...[
+                    if (sectionVisible('volunteer_invitation')) ...[
                     // ── Invitation banner ──────────────────────────────
                     Container(
                       margin: const EdgeInsets.only(bottom: 16),
@@ -5147,7 +5370,9 @@ class _VolunteersTabState extends State<_VolunteersTab> {
                         ],
                       ),
                     ),
+                    ],
                   ] else ...[
+                    if (sectionVisible('volunteer_appreciation')) ...[
                     // ── Appreciation banner ────────────────────────────
                     Container(
                       margin: const EdgeInsets.only(bottom: 12),
@@ -5235,6 +5460,8 @@ class _VolunteersTabState extends State<_VolunteersTab> {
                         ),
                       ]),
                     ),
+                    ],
+                    if (sectionVisible('my_registrations')) ...[
                     // Register for another role (right after banner)
                     if (myRegisteredRoles.length < _roles.length)
                       Padding(
@@ -5297,6 +5524,7 @@ class _VolunteersTabState extends State<_VolunteersTab> {
                           ),
                       ];
                     }(),
+                    ],
                   ],
                   const SizedBox(height: 16),
                 ],
@@ -5427,6 +5655,8 @@ class _VolunteersTabState extends State<_VolunteersTab> {
                   ),
               ],
             );
+        },
+      );
         },
       ),
     );
@@ -7638,7 +7868,19 @@ class _ExpensesTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot>(
+    return StreamBuilder<DocumentSnapshot>(
+      stream: !isAdmin && eventTypeId.isNotEmpty
+          ? FirebaseFirestore.instance
+              .collection('eventTypeConfig')
+              .doc(eventTypeId)
+              .snapshots()
+          : const Stream<DocumentSnapshot>.empty(),
+      builder: (context, configSnap) {
+        final configData = configSnap.data?.data() as Map<String, dynamic>?;
+        final enabledSections = residentTabSectionsFor(configData, 'expenses');
+        bool sectionVisible(String id) => isAdmin || enabledSections.contains(id);
+
+        return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('events')
           .doc(eventId)
@@ -7682,6 +7924,7 @@ class _ExpensesTab extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           children: [
             // Total banner
+            if (sectionVisible('expenses_summary')) ...[
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
@@ -7707,8 +7950,10 @@ class _ExpensesTab extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
+            ],
 
             // Category breakdown
+            if (sectionVisible('expenses_by_category')) ...[
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -7745,7 +7990,9 @@ class _ExpensesTab extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
+            ],
 
+            if (sectionVisible('expenses_list'))
             ...docs.map((doc) {
               final d = doc.data() as Map<String, dynamic>;
               final receiptUrl = d['receiptUrl'] as String?;
@@ -7850,6 +8097,8 @@ class _ExpensesTab extends StatelessWidget {
             }),
           ],
         );
+      },
+    );
       },
     );
   }

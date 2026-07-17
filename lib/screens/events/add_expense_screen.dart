@@ -30,6 +30,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   final _vendorController = TextEditingController();
   final _noteController = TextEditingController();
   String _mainCategory = '';
+  DateTime _expenseDate = DateTime.now();
 
   DocumentReference get _catRef => widget.eventTypeId.isNotEmpty
       ? eventTypeCategoriesRef(widget.eventTypeId)
@@ -56,6 +57,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
       _mainCategory = d['category'] ?? '';
       _subCategory = d['subCategory'] ?? '';
       _existingReceiptUrl = d['receiptUrl'] as String?;
+      _expenseDate = DateTime.tryParse(d['addedAt'] as String? ?? '') ?? DateTime.now();
     }
   }
 
@@ -66,6 +68,29 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     _vendorController.dispose();
     _noteController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _expenseDate,
+      firstDate: DateTime(2024),
+      lastDate: DateTime.now(),
+      builder: (ctx, child) => Theme(
+        data: Theme.of(ctx).copyWith(
+            colorScheme: ColorScheme.light(primary: Colors.red.shade400)),
+        child: child!,
+      ),
+    );
+    if (picked != null) setState(() => _expenseDate = picked);
+  }
+
+  String _formatDate(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+
+  bool _isToday(DateTime d) {
+    final now = DateTime.now();
+    return d.year == now.year && d.month == now.month && d.day == now.day;
   }
 
   Future<void> _pickReceipt(ImageSource source) async {
@@ -361,6 +386,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
         'subCategory': _subCategory,
         'vendor': _vendorController.text.trim(),
         'note': _noteController.text.trim(),
+        'addedAt': _expenseDate.toIso8601String(),
         if (receiptUrl != null) 'receiptUrl': receiptUrl,
         if (_isEdit && _removeExistingReceipt && receiptUrl == null)
           'receiptUrl': FieldValue.delete(),
@@ -379,10 +405,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
           );
         }
       } else {
-        batch.set(expenseRef, {
-          ...payload,
-          'addedAt': DateTime.now().toIso8601String(),
-        });
+        batch.set(expenseRef, payload);
         batch.update(
           firestore.collection('events').doc(widget.eventId),
           {'totalSpent': FieldValue.increment(amount)},
@@ -593,6 +616,41 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                     ],
                   ),
                 ],
+                const SizedBox(height: 20),
+
+                // ── Date ─────────────────────────────────────────
+                const Text('Date *',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                GestureDetector(
+                  onTap: _pickDate,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade400),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.calendar_today,
+                            size: 20, color: Colors.red.shade600),
+                        const SizedBox(width: 12),
+                        Text(_formatDate(_expenseDate),
+                            style: const TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.w500)),
+                        const Spacer(),
+                        Text(
+                          _isToday(_expenseDate) ? 'Today' : 'Tap to change',
+                          style: TextStyle(
+                              color: Colors.red.shade600,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 20),
 
                 // ── Vendor ────────────────────────────────────────

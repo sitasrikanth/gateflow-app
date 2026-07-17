@@ -24,6 +24,7 @@ class _Row {
   final String referenceId;
   final String note;
   final String? error;
+  final bool isDuplicate;
 
   const _Row({
     required this.lineNo,
@@ -36,6 +37,7 @@ class _Row {
     required this.referenceId,
     required this.note,
     this.error,
+    this.isDuplicate = false,
   });
 }
 
@@ -65,6 +67,7 @@ class _ImportContributionsScreenState
   List<_Row> _rows = [];
   bool _hasParsed = false;
   bool _importing = false;
+  bool _checkingDuplicates = false;
   String? _fileName;
 
   @override
@@ -99,6 +102,35 @@ class _ImportContributionsScreenState
       _flatLookup = lookup;
       _loadingSettings = false;
     });
+  }
+
+  // ── Duplicate detection ─────────────────────────────────────────────────
+  // Builds a "flat|amount|date" signature for every existing (non-deleted)
+  // contribution on this event, so re-importing the same file (or a file
+  // with overlapping rows) can be caught and skipped instead of silently
+  // creating duplicate records and double-counting totalCollected.
+
+  String _signature(String flat, double amount, DateTime date) =>
+      '$flat|${amount.toStringAsFixed(2)}|${_fmtDate(date)}';
+
+  Future<Set<String>> _loadExistingSignatures() async {
+    final snap = await FirebaseFirestore.instance
+        .collection('events')
+        .doc(widget.eventId)
+        .collection('contributions')
+        .get();
+
+    final signatures = <String>{};
+    for (final doc in snap.docs) {
+      final d = doc.data();
+      if (d['status'] == 'deleted') continue;
+      final flat = (d['flatNumber'] as String? ?? '').toUpperCase();
+      final amount = (d['amount'] as num?)?.toDouble();
+      final date = DateTime.tryParse(d['paidAt'] as String? ?? '');
+      if (flat.isEmpty || amount == null || date == null) continue;
+      signatures.add(_signature(flat, amount, date));
+    }
+    return signatures;
   }
 
   // ── Template CSV ─────────────────────────────────────────────────────────
@@ -174,14 +206,19 @@ DA103,Priya Nair,1500,Bank Transfer,17/10/2025,Regular,TXN123456,Festival contri
           .toList();
     }
 
+    setState(() => _checkingDuplicates = true);
+    final existingSignatures = await _loadExistingSignatures();
+
     setState(() {
       _fileName = file.name;
-      _rows = _parseRows(rawRows);
+      _rows = _parseRows(rawRows, existingSignatures);
       _hasParsed = true;
+      _checkingDuplicates = false;
     });
   }
 
-  List<_Row> _parseRows(List<List<dynamic>> rawRows) {
+  List<_Row> _parseRows(
+      List<List<dynamic>> rawRows, Set<String> existingSignatures) {
     if (rawRows.isEmpty) return [];
 
     // Skip header row (detect by checking if first cell looks like a header)
@@ -244,6 +281,7 @@ DA103,Priya Nair,1500,Bank Transfer,17/10/2025,Regular,TXN123456,Festival contri
         error: _flatLookup.containsKey(flat)
             ? null
             : null, // allow unknown flats with a warning
+        isDuplicate: existingSignatures.contains(_signature(flat, amount, date)),
       ));
     }
     return rows;
@@ -291,7 +329,8 @@ DA103,Priya Nair,1500,Bank Transfer,17/10/2025,Regular,TXN123456,Festival contri
   // ── Import ────────────────────────────────────────────────────────────────
 
   Future<void> _import() async {
-    final valid = _rows.where((r) => r.error == null).toList();
+    final valid =
+        _rows.where((r) => r.error == null && !r.isDuplicate).toList();
     if (valid.isEmpty) return;
 
     setState(() => _importing = true);
@@ -382,7 +421,9 @@ DA103,Priya Nair,1500,Bank Transfer,17/10/2025,Regular,TXN123456,Festival contri
 
   @override
   Widget build(BuildContext context) {
-    final validRows = _rows.where((r) => r.error == null).toList();
+    final okRows = _rows.where((r) => r.error == null).toList();
+    final duplicateRows = okRows.where((r) => r.isDuplicate).toList();
+    final validRows = okRows.where((r) => !r.isDuplicate).toList();
     final errorRows = _rows.where((r) => r.error != null).toList();
     final totalAmount = validRows.fold(0.0, (s, r) => s + r.amount);
 
@@ -458,11 +499,18 @@ DA103,Priya Nair,1500,Bank Transfer,17/10/2025,Regular,TXN123456,Festival contri
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed: _pickAndParse,
-                        icon: const Icon(Icons.upload_file_rounded),
-                        label: Text(_fileName == null
-                            ? 'Pick CSV or Excel File'
-                            : 'Change File'),
+                        onPressed: _checkingDuplicates ? null : _pickAndParse,
+                        icon: _checkingDuplicates
+                            ? const SizedBox(
+                                width: 18, height: 18,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: Colors.white))
+                            : const Icon(Icons.upload_file_rounded),
+                        label: Text(_checkingDuplicates
+                            ? 'Checking for duplicates…'
+                            : _fileName == null
+                                ? 'Pick CSV or Excel File'
+                                : 'Change File'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppTheme.accent,
                           foregroundColor: Colors.white,
@@ -505,6 +553,10 @@ DA103,Priya Nair,1500,Bank Transfer,17/10/2025,Regular,TXN123456,Festival contri
                             _Chip('${validRows.length} valid',
                                 Colors.green.shade700,
                                 Colors.green.shade50),
+                            if (duplicateRows.isNotEmpty)
+                              _Chip('${duplicateRows.length} duplicates (skipped)',
+                                  Colors.blueGrey.shade700,
+                                  Colors.blueGrey.shade50),
                             if (errorRows.isNotEmpty)
                               _Chip('${errorRows.length} errors',
                                   Colors.red.shade700, Colors.red.shade50),
@@ -622,7 +674,9 @@ class _RowCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isError = row.error != null;
-    final isUnknownFlat = !isError && !knownFlat && row.flatNumber.isNotEmpty;
+    final isDuplicate = !isError && row.isDuplicate;
+    final isUnknownFlat =
+        !isError && !isDuplicate && !knownFlat && row.flatNumber.isNotEmpty;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
@@ -630,16 +684,20 @@ class _RowCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: isError
             ? Colors.red.shade50
-            : isUnknownFlat
-                ? Colors.orange.shade50
-                : Colors.green.shade50,
+            : isDuplicate
+                ? Colors.blueGrey.shade50
+                : isUnknownFlat
+                    ? Colors.orange.shade50
+                    : Colors.green.shade50,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: isError
               ? Colors.red.shade200
-              : isUnknownFlat
-                  ? Colors.orange.shade200
-                  : Colors.green.shade200,
+              : isDuplicate
+                  ? Colors.blueGrey.shade200
+                  : isUnknownFlat
+                      ? Colors.orange.shade200
+                      : Colors.green.shade200,
         ),
       ),
       child: isError
@@ -655,12 +713,16 @@ class _RowCard extends StatelessWidget {
             ])
           : Row(children: [
               Icon(
-                isUnknownFlat
-                    ? Icons.warning_amber_rounded
-                    : Icons.check_circle_rounded,
-                color: isUnknownFlat
-                    ? Colors.orange.shade700
-                    : Colors.green.shade700,
+                isDuplicate
+                    ? Icons.content_copy_rounded
+                    : isUnknownFlat
+                        ? Icons.warning_amber_rounded
+                        : Icons.check_circle_rounded,
+                color: isDuplicate
+                    ? Colors.blueGrey.shade600
+                    : isUnknownFlat
+                        ? Colors.orange.shade700
+                        : Colors.green.shade700,
                 size: 18,
               ),
               const SizedBox(width: 8),
@@ -689,6 +751,11 @@ class _RowCard extends StatelessWidget {
                       style: TextStyle(
                           fontSize: 11, color: Colors.grey.shade600),
                     ),
+                    if (isDuplicate)
+                      Text('Same flat/amount/date already exists — skipping',
+                          style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.blueGrey.shade600)),
                     if (isUnknownFlat)
                       Text('Flat ${row.flatNumber} not in community settings — will still import',
                           style: TextStyle(
