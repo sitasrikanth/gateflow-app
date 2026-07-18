@@ -308,14 +308,17 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
       if (_isEditing) {
         final oldAmount = (widget.existingData!['amount'] ?? 0).toDouble();
         final oldReceived = widget.existingData!['amountReceived'] ?? true;
+        final oldType = widget.existingData!['contributionType'] as String? ?? kTypeRegular;
         final batch = firestore.batch();
         batch.update(
           eventRef.collection('contributions').doc(widget.existingDocId),
           payload,
         );
-        // Only adjust totalCollected if the received status or amount changed
-        final wasCountedBefore = !_isSpecialType || oldReceived;
-        final isCountedNow = !_isSpecialType || _amountReceived;
+        // Only adjust totalCollected if the received status or amount
+        // changed. Sponsorship never counts toward totalCollected — its
+        // amount is often a nominal item value, not cash actually collected.
+        final wasCountedBefore = oldType != kTypeSponsor && (!_isSpecialType || oldReceived);
+        final isCountedNow = _contributionType != kTypeSponsor && (!_isSpecialType || _amountReceived);
         double diff = 0;
         if (wasCountedBefore && isCountedNow) diff = amount - oldAmount;
         else if (wasCountedBefore && !isCountedNow) diff = -oldAmount;
@@ -337,8 +340,9 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
         // picks) — lets Activity show an accurate time instead of 00:00.
         payload['createdAt'] = DateTime.now().toIso8601String();
         batch.set(eventRef.collection('contributions').doc(), payload);
-        // Only add to totalCollected if received (or regular contribution)
-        if (!_isSpecialType || _amountReceived) {
+        // Only add to totalCollected if received (or regular contribution),
+        // and never for Sponsorship (see edit-path comment above)
+        if (_contributionType != kTypeSponsor && (!_isSpecialType || _amountReceived)) {
           batch.update(eventRef, {'totalCollected': FieldValue.increment(amount)});
         }
         await batch.commit();

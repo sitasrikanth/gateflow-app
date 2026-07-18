@@ -303,7 +303,11 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
         final d = doc.data();
         if (d['status'] == 'deleted') continue;
         if (d['selfReported'] == true && d['amountReceived'] != true) continue;
-        if (d['amountReceived'] == true) {
+        // Sponsorship amounts are often a nominal item value rather than
+        // cash actually collected — kept out of totalCollected everywhere
+        // (Overview "Collected" chip, Budget vs Actual, Balance), matching
+        // the Contributions tab's own total.
+        if (d['amountReceived'] == true && d['contributionType'] != kTypeSponsor) {
           total += (d['amount'] as num? ?? 0).toDouble();
           final flat = (d['flatNumber'] as String? ?? '').trim();
           if (flat.isNotEmpty) paidFlats.add(flat);
@@ -1648,8 +1652,13 @@ class _OverviewTab extends StatelessWidget {
                 carryForward += amt;
                 continue; // shown as its own chip, not in cash/online split
               }
-              final mode = (d['paymentMode'] as String? ?? '').toLowerCase();
-              if (mode == 'cash') cash += amt; else online += amt;
+              // Sponsorship is excluded from Cash/Online (and Collected) the
+              // same way it's excluded from totalCollected — its amount is
+              // often a nominal item value, not cash actually received.
+              if (d['contributionType'] != kTypeSponsor) {
+                final mode = (d['paymentMode'] as String? ?? '').toLowerCase();
+                if (mode == 'cash') cash += amt; else online += amt;
+              }
               // Anonymous takes priority — an anonymous external donation
               // counts only toward the Anonymous chip, not both.
               if (d['isAnonymous'] == true) {
@@ -8546,7 +8555,7 @@ class _ContributionsTabState extends State<_ContributionsTab>
       'preDeleteStatus': d['status'] ?? '',
       'preDeleteAmountReceived': d['amountReceived'],
     });
-    if (d['amountReceived'] != false) {
+    if (d['amountReceived'] != false && d['contributionType'] != kTypeSponsor) {
       final eventRef = FirebaseFirestore.instance
           .collection('events')
           .doc(doc.reference.parent.parent!.id);
@@ -11010,7 +11019,7 @@ class _ActivityTabState extends State<_ActivityTab> {
         final cd = doc.data();
         if (cd['status'] == 'deleted') continue;
         if (cd['selfReported'] == true && cd['amountReceived'] != true) continue;
-        if (cd['amountReceived'] == true) {
+        if (cd['amountReceived'] == true && cd['contributionType'] != kTypeSponsor) {
           total += (cd['amount'] as num? ?? 0).toDouble();
         }
       }
