@@ -9,8 +9,10 @@ const String kTypeRegular = 'Regular Contribution';
 const String kTypeSpecial = 'Special Contribution';
 const String kTypeSponsor = 'Sponsorship';
 const String kTypeExternal = 'External Donation';
-// Legacy types (kept for backward-compat read; no longer shown in UI)
+// kTypeCarryForward is used by the Carry Forward Balance screen
+// (carry_forward_screen.dart) to tag amounts brought in from another event.
 const String kTypeCarryForward = 'Carry Forward (Previous Year)';
+// Legacy type (kept for backward-compat read; no longer shown in UI)
 const String kTypeGaneshLaddu = 'Ganesh Laddu (Previous Year)';
 
 class AddContributionScreen extends StatefulWidget {
@@ -45,6 +47,7 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
   final _referenceController = TextEditingController();
   final _noteController = TextEditingController();
   final _specialDescController = TextEditingController();
+  final _sponsorItemController = TextEditingController();
 
   String _wing = '';
   String _block = '';
@@ -55,6 +58,7 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
   bool _isAnonymous = false;
   bool _saving = false;
   String _error = '';
+  String _externalDonationHint = 'e.g. ACT Broadband';
   StreamSubscription<DocumentSnapshot>? _settingsSub;
   List<String> _paymentModes = ['Cash', 'UPI', 'Bank Transfer', 'Cheque'];
 
@@ -111,6 +115,7 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
       _paymentMode = d['paymentMode'] ?? 'Cash';
       _isAnonymous = d['isAnonymous'] == true;
       _sponsorPackageName = d['sponsorPackageName'] ?? '';
+      _sponsorItemController.text = d['sponsorItem'] ?? '';
       _referenceController.text = d['referenceId'] ?? '';
       _noteController.text = d['note'] ?? '';
       _specialDescController.text = d['specialDescription'] ?? '';
@@ -131,6 +136,8 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
       setState(() {
         _paymentModes = modes;
         if (!modes.contains(_paymentMode)) _paymentMode = modes.first;
+        _externalDonationHint =
+            d['externalDonationHint'] as String? ?? 'e.g. ACT Broadband';
       });
     });
     // Load per-event-type config (default note + special descriptions)
@@ -197,6 +204,7 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
     _referenceController.dispose();
     _noteController.dispose();
     _specialDescController.dispose();
+    _sponsorItemController.dispose();
     super.dispose();
   }
 
@@ -231,6 +239,10 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
         setState(() => _error = 'Please enter donor / organization name');
         return;
       }
+    } else if (_contributionType == kTypeSponsor) {
+      // Wing/Block/Flat are fully optional for sponsors — a sponsor may be
+      // an outside business with no address at all, or a resident who
+      // wants only some of it recorded (e.g. just their flat, no wing).
     } else {
       if (_wing.isEmpty) {
         setState(() => _error = 'Please select a Wing');
@@ -281,6 +293,9 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
         'isAnonymous': _isAnonymous,
         'sponsorPackageName':
             _contributionType == kTypeSponsor ? _sponsorPackageName : '',
+        'sponsorItem': _contributionType == kTypeSponsor
+            ? _sponsorItemController.text.trim()
+            : '',
         'referenceId': _referenceController.text.trim(),
         'note': _noteController.text.trim(),
         'specialDescription': _isSpecialType ? _specialDescController.text.trim() : '',
@@ -318,6 +333,9 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
         }
       } else {
         final batch = firestore.batch();
+        // Real add-time, distinct from paidAt (a date-only field the admin
+        // picks) — lets Activity show an accurate time instead of 00:00.
+        payload['createdAt'] = DateTime.now().toIso8601String();
         batch.set(eventRef.collection('contributions').doc(), payload);
         // Only add to totalCollected if received (or regular contribution)
         if (!_isSpecialType || _amountReceived) {
@@ -463,7 +481,7 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
 
                 // ── Sponsor tier picker ────────────────────────────
                 if (_contributionType == kTypeSponsor && sponsorAvailable) ...[
-                  _label('Sponsor Tier *'),
+                  _label('Sponsor Item *'),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
@@ -475,7 +493,12 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
                       return GestureDetector(
                         onTap: () => setState(() {
                           _sponsorPackageName = name;
-                          _amountController.text = pAmount.toStringAsFixed(0);
+                          // Only auto-fill if the item has a preset amount —
+                          // items without one (e.g. a donated idol) leave the
+                          // actual amount for the admin to enter themselves.
+                          if (pAmount > 0) {
+                            _amountController.text = pAmount.toStringAsFixed(0);
+                          }
                         }),
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -485,7 +508,8 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
                             border: Border.all(
                                 color: sel ? Colors.amber.shade600 : Colors.amber.shade200),
                           ),
-                          child: Text('$name · ₹${pAmount.toStringAsFixed(0)}',
+                          child: Text(
+                              pAmount > 0 ? '$name · ₹${pAmount.toStringAsFixed(0)}' : name,
                               style: TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w600,
@@ -506,6 +530,15 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
                             style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
                       );
                     }),
+                  const SizedBox(height: 16),
+                  _label('What are they sponsoring? (Optional)'),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _sponsorItemController,
+                    textCapitalization: TextCapitalization.words,
+                    decoration:
+                        _dec('e.g. Idol, Flowers, Decorations', Icons.redeem_outlined),
+                  ),
                   const SizedBox(height: 16),
                 ],
 
@@ -564,7 +597,7 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
 
                 if (!_isExternalType) ...[
                 // ── Wing ─────────────────────────────────────────
-                _label('Wing *'),
+                _label(_contributionType == kTypeSponsor ? 'Wing (Optional)' : 'Wing *'),
                 const SizedBox(height: 8),
                 wings.isEmpty
                     ? _hint('No wings configured — go to Admin → Settings')
@@ -581,7 +614,7 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
                 const SizedBox(height: 20),
 
                 // ── Block (only for selected wing) ───────────────
-                _label('Block *'),
+                _label(_contributionType == kTypeSponsor ? 'Block (Optional)' : 'Block *'),
                 const SizedBox(height: 8),
                 _wing.isEmpty
                     ? _hint('Select a wing first to see its blocks')
@@ -599,7 +632,9 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
                 const SizedBox(height: 20),
 
                 // ── Flat number ───────────────────────────────────
-                _label('Flat Number *'),
+                _label(_contributionType == kTypeSponsor
+                    ? 'Flat Number (Optional)'
+                    : 'Flat Number *'),
                 const SizedBox(height: 8),
                 if (_isEditing)
                   // Read-only when editing — flat cannot be changed
@@ -728,7 +763,7 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
                       _contributionType == kTypeSponsor
                           ? 'e.g. Sharma Electronics'
                           : _isExternalType
-                              ? 'e.g. ACT Broadband'
+                              ? _externalDonationHint
                               : 'Optional',
                       Icons.person_outlined),
                 ),
@@ -968,60 +1003,74 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
        'desc': 'Standard contribution for this event'},
       if (specialAvailable)
         {'type': kTypeSpecial, 'icon': Icons.star_outline, 'color': Colors.purple,
-         'desc': 'Carry forward, Ganesh Laddu, or other special amount'},
+         'desc': 'Ganesh Laddu or other special amount'},
       if (sponsorAvailable)
         {'type': kTypeSponsor, 'icon': Icons.workspace_premium_outlined, 'color': Colors.amber.shade800,
          'desc': 'Business or individual sponsor at a defined tier'},
       {'type': kTypeExternal, 'icon': Icons.corporate_fare_outlined, 'color': Colors.teal.shade700,
        'desc': 'Broadband company, builder, store, or other external donor'},
     ];
+    // The previously-selected type may not be in this list (e.g. sponsor
+    // stopped being available), so fall back to the first entry.
+    final selected = types.firstWhere(
+        (t) => t['type'] == _contributionType,
+        orElse: () => types.first);
+    final selColor = selected['color'] as Color;
     return Column(
-      children: types.map((t) {
-        final type = t['type'] as String;
-        final icon = t['icon'] as IconData;
-        final color = t['color'] as Color;
-        final desc = t['desc'] as String;
-        final sel = _contributionType == type;
-        return GestureDetector(
-          onTap: () => setState(() {
-            _contributionType = type;
-            _amountReceived = true;
-          }),
-          child: Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: BoxDecoration(
-              color: sel ? color.withOpacity(0.08) : Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                  color: sel ? color : Colors.grey.shade200,
-                  width: sel ? 2 : 1),
-            ),
-            child: Row(
-              children: [
-                Icon(icon, color: sel ? color : Colors.grey, size: 22),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(type,
-                          style: TextStyle(
-                              fontWeight: sel ? FontWeight.bold : FontWeight.normal,
-                              color: sel ? color : Colors.grey.shade700)),
-                      Text(desc,
-                          style: TextStyle(
-                              fontSize: 11, color: Colors.grey.shade500)),
-                    ],
-                  ),
-                ),
-                if (sel)
-                  Icon(Icons.check_circle, color: color, size: 20),
-              ],
-            ),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        DropdownButtonFormField<String>(
+          initialValue: selected['type'] as String,
+          isExpanded: true,
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: Colors.grey.shade50,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey.shade300)),
+            enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey.shade300)),
+            focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: selColor, width: 2)),
           ),
-        );
-      }).toList(),
+          items: types.map((t) {
+            final type = t['type'] as String;
+            final icon = t['icon'] as IconData;
+            final color = t['color'] as Color;
+            return DropdownMenuItem<String>(
+              value: type,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, color: color, size: 20),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Text(type,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+          onChanged: (type) {
+            if (type == null) return;
+            setState(() {
+              _contributionType = type;
+              // Special contributions (carry forward, Ganesh Laddu, etc.)
+              // default to Pending since they're usually recorded before
+              // the amount is actually confirmed received.
+              _amountReceived = type != kTypeSpecial;
+            });
+          },
+        ),
+        const SizedBox(height: 6),
+        Text(selected['desc'] as String,
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+      ],
     );
   }
 
@@ -1239,14 +1288,14 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: isSel ? color : Colors.grey.shade100,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(6),
             border: Border.all(color: isSel ? color : Colors.grey.shade300),
           ),
           child: Text(
             flat,
             style: TextStyle(
               fontWeight: FontWeight.w700,
-              fontSize: 15,
+              fontSize: 12,
               color: isSel ? Colors.white : Colors.grey.shade800,
             ),
           ),
@@ -1258,7 +1307,6 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: floors.map((floor) {
         final floorFlats = byFloor[floor]!;
-        final cols = (floorFlats.length / rowsPerFloor).ceil().clamp(1, floorFlats.length);
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1288,11 +1336,13 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
             GridView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: cols,
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 8,
-                childAspectRatio: 1.6,
+              // Fixed small tile size — stays constant no matter how many
+              // flats are on a floor or how the block rows are configured.
+              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: 52,
+                mainAxisExtent: 34,
+                mainAxisSpacing: 6,
+                crossAxisSpacing: 6,
               ),
               itemCount: floorFlats.length,
               itemBuilder: (_, i) => flatTile(floorFlats[i]),

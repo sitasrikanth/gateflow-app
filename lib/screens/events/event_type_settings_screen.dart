@@ -21,6 +21,60 @@ const List<String> _kDefaultVolRoles = [
   'Music & Sound', 'Collection', 'Photography', 'Transport', 'Other',
 ];
 
+// ── Settings search index ────────────────────────────────────────────────────
+// Static registry of every leaf setting section, used to power the search box
+// at the top of the screen. `group` is the top-level collapsible group it
+// lives in (null for Allowed Categories, which has no group of its own).
+class _SettingsSearchEntry {
+  final String? group;
+  final String label;
+  final List<String> keywords;
+  const _SettingsSearchEntry({required this.group, required this.label, required this.keywords});
+}
+
+const List<_SettingsSearchEntry> _kSettingsSearchIndex = [
+  _SettingsSearchEntry(group: null, label: 'Allowed Categories',
+      keywords: ['category', 'categories', 'event type', 'allowed']),
+  _SettingsSearchEntry(group: 'Money & Contributions', label: 'Payments',
+      keywords: ['payment', 'razorpay', 'upi', 'gateway']),
+  _SettingsSearchEntry(group: 'Money & Contributions', label: 'Special Contribution',
+      keywords: ['special', 'ganesh laddu', 'laddu']),
+  _SettingsSearchEntry(group: 'Money & Contributions', label: 'Collection Status by Block',
+      keywords: ['collection status', 'block', 'wing']),
+  _SettingsSearchEntry(group: 'Money & Contributions', label: 'Expense Categories',
+      keywords: ['expense', 'category', 'categories']),
+  _SettingsSearchEntry(group: 'Visibility & Recognition', label: 'Overview Stats',
+      keywords: ['overview', 'stat', 'chip', 'anonymous', 'external', 'carried forward', 'cash', 'online']),
+  _SettingsSearchEntry(group: 'Visibility & Recognition', label: 'Leaderboard',
+      keywords: ['leaderboard', 'top contributor', 'ranking']),
+  _SettingsSearchEntry(group: 'Visibility & Recognition', label: 'Sponsor Packages',
+      keywords: ['sponsor', 'idol', 'tier', 'gold', 'silver', 'bronze', 'sponsorship']),
+  _SettingsSearchEntry(group: 'Scheduling & Volunteers', label: 'Pooja Schedule',
+      keywords: ['pooja', 'schedule', 'slot', 'shift']),
+  _SettingsSearchEntry(group: 'Scheduling & Volunteers', label: 'Volunteer Roles',
+      keywords: ['volunteer', 'role']),
+  _SettingsSearchEntry(group: 'Admin Controls', label: 'Delete Events',
+      keywords: ['delete', 'remove event']),
+  _SettingsSearchEntry(group: 'Applicable Tabs', label: 'Applicable Tabs',
+      keywords: ['tab', 'applicable', 'admin tab']),
+  _SettingsSearchEntry(group: 'Resident Visibility', label: 'Resident Tabs',
+      keywords: ['resident tab', 'tab visibility']),
+  _SettingsSearchEntry(group: 'Resident Visibility', label: 'Resident Overview Sections',
+      keywords: ['resident overview', 'budget', 'block stats']),
+  _SettingsSearchEntry(group: 'Resident Visibility', label: 'Event Tab Sections',
+      keywords: ['event tab', 'event details', 'event schedule', 'sponsor highlights']),
+  _SettingsSearchEntry(group: 'Resident Visibility', label: 'Expenses Tab Sections',
+      keywords: ['expenses tab', 'expense list']),
+  _SettingsSearchEntry(group: 'Resident Visibility', label: 'Volunteers Tab Sections',
+      keywords: ['volunteers tab', 'volunteer invitation']),
+  _SettingsSearchEntry(group: 'Resident Visibility', label: 'Competitions Tab Sections',
+      keywords: ['competitions tab', 'winners']),
+  _SettingsSearchEntry(group: 'Resident Visibility', label: 'Prasad Tab Sections',
+      keywords: ['prasad tab', 'menu']),
+  _SettingsSearchEntry(group: 'Resident Visibility', label: 'Leaderboard Tab Sections',
+      keywords: ['leaderboard tab', 'most active volunteers', 'apartment participation']),
+];
+
 class EventTypeSettingsScreen extends StatefulWidget {
   const EventTypeSettingsScreen({super.key});
 
@@ -43,12 +97,127 @@ class _EventTypeSettingsScreenState extends State<EventTypeSettingsScreen> {
     'Resident Visibility',
   };
 
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _searchQuery = '';
+  final GlobalKey _allowedCategoriesKey = GlobalKey();
+  final Map<String, GlobalKey> _groupKeys = {
+    'Money & Contributions': GlobalKey(),
+    'Visibility & Recognition': GlobalKey(),
+    'Scheduling & Volunteers': GlobalKey(),
+    'Admin Controls': GlobalKey(),
+    'Applicable Tabs': GlobalKey(),
+    'Resident Visibility': GlobalKey(),
+  };
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  // Jump to a search result: expands its group (if any — Allowed Categories
+  // has none, it's always visible) and scrolls it into view. The matching
+  // sub-section itself stays collapsed — with the group open there are only
+  // a handful of headers left to scan, so a further auto-expand isn't worth
+  // the per-widget plumbing it'd take across ~15 section classes.
+  void _jumpToResult(_SettingsSearchEntry entry) {
+    FocusScope.of(context).unfocus();
+    setState(() {
+      if (entry.group != null) _collapsedGroups.remove(entry.group);
+      _searchCtrl.clear();
+      _searchQuery = '';
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final key = entry.group != null ? _groupKeys[entry.group] : _allowedCategoriesKey;
+      final ctx = key?.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(ctx,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+            alignment: 0.05);
+      }
+    });
+  }
+
+  Widget _buildSearchBar() {
+    return TextField(
+      controller: _searchCtrl,
+      onChanged: (v) => setState(() => _searchQuery = v.trim()),
+      decoration: InputDecoration(
+        hintText: 'Search settings… e.g. "sponsor", "pooja", "leaderboard"',
+        prefixIcon: const Icon(Icons.search, size: 20),
+        suffixIcon: _searchQuery.isNotEmpty
+            ? IconButton(
+                icon: const Icon(Icons.close, size: 18),
+                onPressed: () => setState(() {
+                  _searchCtrl.clear();
+                  _searchQuery = '';
+                }),
+              )
+            : null,
+        filled: true,
+        fillColor: Theme.of(context).cardColor,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade300)),
+        enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade300)),
+        focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: AppTheme.accent, width: 1.5)),
+      ),
+    );
+  }
+
+  Widget _buildSearchResults() {
+    final q = _searchQuery.toLowerCase();
+    final matches = _kSettingsSearchIndex.where((e) {
+      if (e.label.toLowerCase().contains(q)) return true;
+      if ((e.group ?? '').toLowerCase().contains(q)) return true;
+      return e.keywords.any((k) => k.contains(q));
+    }).toList();
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: matches.isEmpty
+          ? Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text('No settings match "$_searchQuery"',
+                  style: TextStyle(color: Colors.grey.shade400, fontSize: 13)),
+            )
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              children: matches
+                  .map((e) => ListTile(
+                        dense: true,
+                        leading: Icon(Icons.tune, size: 18, color: AppTheme.accent),
+                        title: Text(e.label,
+                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                        subtitle: e.group != null
+                            ? Text('in ${e.group}',
+                                style: TextStyle(fontSize: 11, color: Colors.grey.shade500))
+                            : null,
+                        onTap: () => _jumpToResult(e),
+                      ))
+                  .toList(),
+            ),
+    );
+  }
+
   Widget _group(String label, List<Widget> children) {
     final collapsed = _collapsedGroups.contains(label);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
+          key: _groupKeys[label],
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             border: Border.all(color: AppTheme.accent.shade200, width: 1.5),
@@ -120,9 +289,15 @@ class _EventTypeSettingsScreenState extends State<EventTypeSettingsScreen> {
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16),
             child: Column(children: [
-              _AllowedCategoriesSection(
-                allowedCategories: allowedCategories,
-                allowedEventTypeIds: allowedEventTypeIds,
+              _buildSearchBar(),
+              if (_searchQuery.isNotEmpty) _buildSearchResults(),
+              const SizedBox(height: 16),
+              KeyedSubtree(
+                key: _allowedCategoriesKey,
+                child: _AllowedCategoriesSection(
+                  allowedCategories: allowedCategories,
+                  allowedEventTypeIds: allowedEventTypeIds,
+                ),
               ),
               const SizedBox(height: 20),
 
@@ -958,6 +1133,28 @@ const List<(String, String)> kAdminTabDefs = [
 
 List<String> defaultApplicableTabs() => kAdminTabDefs.map((t) => t.$1).toList();
 
+// Per-event-type custom tab display order — stored on
+// eventTypeConfig/{typeId}.tabOrder as the full 11-id ordering (including
+// currently-disabled tabs, so a custom order survives re-enabling a tab
+// later). Unset means the canonical kAdminTabDefs order (today's behavior).
+// Applies to both admin and resident tab bars — each role then filters this
+// master order down to whichever ids are actually applicable/visible to it.
+List<String> defaultTabOrder() => kAdminTabDefs.map((t) => t.$1).toList();
+
+/// Merges a possibly-partial/stale stored order with the canonical id list:
+/// known ids keep the stored relative order, any id missing from the stored
+/// list (new tab types, or a first-time-Y customization) is appended at the
+/// end in canonical order.
+List<String> normalizeTabOrder(List<String>? stored) {
+  final canonical = kAdminTabDefs.map((t) => t.$1).toList();
+  if (stored == null || stored.isEmpty) return canonical;
+  final ordered = stored.where(canonical.contains).toList();
+  for (final id in canonical) {
+    if (!ordered.contains(id)) ordered.add(id);
+  }
+  return ordered;
+}
+
 // ── Resident visibility ─────────────────────────────────────────────────────
 // Lets admins choose which tabs residents see, and which Overview sections
 // residents see, per event type. Stored on eventTypeConfig/{typeId} as
@@ -995,6 +1192,7 @@ List<String> defaultResidentOverviewSections() => [];
 
 const List<(String, String)> kEventTabSectionDefs = [
   ('event_details', 'Event Details'),
+  ('sponsor_highlights', 'Sponsor Highlights'),
   ('event_schedule', 'Event Schedule'),
   ('pooja_schedule', 'Pooja Schedule'),
 ];
@@ -1405,6 +1603,10 @@ class _ApplicableTabsTypeEditorState extends State<_ApplicableTabsTypeEditor> {
         final enabledTabs = raw != null
             ? List<String>.from(raw as List)
             : defaultApplicableTabs();
+        final rawOrder = d['tabOrder'];
+        final order = normalizeTabOrder(
+            rawOrder != null ? List<String>.from(rawOrder as List) : null);
+        final orderedEnabledTabs = order.where(enabledTabs.contains).toList();
 
         Future<void> toggle(String key, bool on) async {
           final updated = List<String>.from(enabledTabs);
@@ -1419,6 +1621,22 @@ class _ApplicableTabsTypeEditorState extends State<_ApplicableTabsTypeEditor> {
             updated.remove(key);
           }
           await _ref.set({'applicableTabs': updated}, SetOptions(merge: true));
+        }
+
+        Future<void> reorder(int oldIndex, int newIndex) async {
+          final enabledOrder = List<String>.from(orderedEnabledTabs);
+          if (newIndex > oldIndex) newIndex -= 1;
+          final moved = enabledOrder.removeAt(oldIndex);
+          enabledOrder.insert(newIndex, moved);
+          // Rebuild the full order: walk the existing full order, substituting
+          // enabled ids in their new relative sequence, leaving disabled ids
+          // (not shown in this list) in their existing position.
+          final queue = List<String>.from(enabledOrder);
+          final newFullOrder = <String>[];
+          for (final id in order) {
+            newFullOrder.add(enabledTabs.contains(id) ? queue.removeAt(0) : id);
+          }
+          await _ref.set({'tabOrder': newFullOrder}, SetOptions(merge: true));
         }
 
         final selectedCount = enabledTabs.length;
@@ -1498,6 +1716,56 @@ class _ApplicableTabsTypeEditorState extends State<_ApplicableTabsTypeEditor> {
                   );
                 }).toList(),
               ),
+            ),
+          if (_configExpanded && orderedEnabledTabs.length > 1)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(32, 0, 16, 8),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Icon(Icons.drag_indicator, size: 14, color: Colors.grey.shade500),
+                  const SizedBox(width: 6),
+                  Text('Organize Tabs — drag to reorder',
+                      style: TextStyle(
+                          fontSize: 11, fontWeight: FontWeight.w600, color: Colors.grey.shade600)),
+                ]),
+                const SizedBox(height: 6),
+                ReorderableListView(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  buildDefaultDragHandles: false,
+                  onReorder: reorder,
+                  children: [
+                    for (int i = 0; i < orderedEnabledTabs.length; i++)
+                      Container(
+                        key: ValueKey(orderedEnabledTabs[i]),
+                        margin: const EdgeInsets.only(bottom: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).cardColor,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: Row(children: [
+                          Text('${i + 1}.',
+                              style: TextStyle(
+                                  fontSize: 11, color: Colors.grey.shade400, fontWeight: FontWeight.w600)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                                kAdminTabDefs
+                                    .firstWhere((t) => t.$1 == orderedEnabledTabs[i])
+                                    .$2,
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                          ),
+                          ReorderableDragStartListener(
+                            index: i,
+                            child: Icon(Icons.drag_handle, size: 18, color: Colors.grey.shade400),
+                          ),
+                        ]),
+                      ),
+                  ],
+                ),
+              ]),
             ),
         ]);
       },

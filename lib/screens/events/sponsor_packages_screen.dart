@@ -32,54 +32,90 @@ class _SponsorPackagesScreenState extends State<SponsorPackagesScreen> {
   Future<void> _addOrEditPackage(
       List<Map<String, dynamic>> current, {Map<String, dynamic>? existing, int? index}) async {
     final nameCtrl = TextEditingController(text: existing?['name'] as String? ?? '');
+    final existingAmount = (existing?['amount'] as num?) ?? 0;
     final amountCtrl = TextEditingController(
-        text: existing != null ? (existing['amount'] as num).toStringAsFixed(0) : '');
+        text: existingAmount > 0 ? existingAmount.toStringAsFixed(0) : '');
     final perksCtrl = TextEditingController(text: existing?['perks'] as String? ?? '');
 
+    // Validate inline (instead of silently no-op'ing after the dialog closes)
+    // so a blank name shows the user why nothing was added, rather than the
+    // item just never appearing with no explanation. Amount is optional —
+    // not every sponsor item (e.g. a donated idol or flowers) has a fixed
+    // price attached.
     final result = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(existing == null ? 'Add Sponsor Tier' : 'Edit Sponsor Tier'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextField(
-                controller: nameCtrl,
-                textCapitalization: TextCapitalization.words,
-                decoration: const InputDecoration(
-                    labelText: 'Tier Name', hintText: 'e.g. Gold, Silver, Bronze'),
+      builder: (ctx) {
+        // Declared here (not inside StatefulBuilder's builder) so it survives
+        // across setDialogState-triggered rebuilds instead of resetting to
+        // null each time.
+        String? error;
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Text(existing == null ? 'Add Sponsor Item' : 'Edit Sponsor Item'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      controller: nameCtrl,
+                      textCapitalization: TextCapitalization.words,
+                      decoration: const InputDecoration(
+                          labelText: 'Item Name', hintText: 'e.g. Gold, Idol, Flowers'),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: amountCtrl,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                          labelText: 'Amount (₹) (Optional)', hintText: 'e.g. 10000'),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: perksCtrl,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                          labelText: 'Perks (optional)',
+                          hintText: 'e.g. Logo on banner + mention in program'),
+                    ),
+                    if (error != null) ...[
+                      const SizedBox(height: 10),
+                      Text(error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+                    ],
+                  ],
+                ),
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: amountCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                    labelText: 'Amount (₹)', hintText: 'e.g. 10000'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: perksCtrl,
-                maxLines: 2,
-                decoration: const InputDecoration(
-                    labelText: 'Perks (optional)',
-                    hintText: 'e.g. Logo on banner + mention in program'),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.amber.shade800),
-            child: Text(existing == null ? 'Add' : 'Save',
-                style: const TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                ElevatedButton(
+                  onPressed: () {
+                    final name = nameCtrl.text.trim();
+                    final amountText =
+                        amountCtrl.text.trim().replaceAll(',', '').replaceAll('₹', '');
+                    if (name.isEmpty) {
+                      setDialogState(() => error = 'Enter an item name');
+                      return;
+                    }
+                    if (amountText.isNotEmpty) {
+                      final amount = double.tryParse(amountText);
+                      if (amount == null || amount < 0) {
+                        setDialogState(() => error = 'Enter a valid amount, or leave it blank');
+                        return;
+                      }
+                    }
+                    Navigator.pop(ctx, true);
+                  },
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.amber.shade800),
+                  child: Text(existing == null ? 'Add' : 'Save',
+                      style: const TextStyle(color: Colors.white)),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       nameCtrl.dispose();
@@ -89,8 +125,8 @@ class _SponsorPackagesScreenState extends State<SponsorPackagesScreen> {
 
     if (result != true) return;
     final name = nameCtrl.text.trim();
-    final amount = double.tryParse(amountCtrl.text.trim()) ?? 0;
-    if (name.isEmpty || amount <= 0) return;
+    final amount =
+        double.tryParse(amountCtrl.text.trim().replaceAll(',', '').replaceAll('₹', '')) ?? 0;
     final entry = {'name': name, 'amount': amount, 'perks': perksCtrl.text.trim()};
 
     final updated = List<Map<String, dynamic>>.from(current);
@@ -99,16 +135,24 @@ class _SponsorPackagesScreenState extends State<SponsorPackagesScreen> {
     } else {
       updated.add(entry);
     }
-    await _write(updated);
+    try {
+      await _write(updated);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   Future<void> _deletePackage(List<Map<String, dynamic>> current, int index) async {
-    final name = current[index]['name'] as String? ?? 'this tier';
+    final name = current[index]['name'] as String? ?? 'this item';
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('Delete "$name"?'),
-        content: const Text('Existing sponsorships already recorded at this tier are kept.'),
+        content: const Text('Existing sponsorships already recorded for this item are kept.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           ElevatedButton(
@@ -153,8 +197,9 @@ class _SponsorPackagesScreenState extends State<SponsorPackagesScreen> {
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      'Define sponsorship tiers for this event. Sponsors are then recorded '
-                      'as a "Sponsorship" contribution and shown on the "Our Sponsors" wall.',
+                      'Define sponsor items for this event (e.g. Idol, Flowers, or a named '
+                      'tier). Sponsors are then recorded as a "Sponsorship" contribution and '
+                      'shown on the "Our Sponsors" wall.',
                       style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
                     ),
                   ),
@@ -169,7 +214,7 @@ class _SponsorPackagesScreenState extends State<SponsorPackagesScreen> {
                             Icon(Icons.workspace_premium_outlined,
                                 size: 56, color: Colors.grey.shade300),
                             const SizedBox(height: 12),
-                            Text('No sponsor tiers yet',
+                            Text('No sponsor items yet',
                                 style: TextStyle(color: Colors.grey.shade400, fontSize: 15)),
                           ],
                         ),
@@ -206,11 +251,12 @@ class _SponsorPackagesScreenState extends State<SponsorPackagesScreen> {
                                       Text(p['name'] as String? ?? '',
                                           style: const TextStyle(
                                               fontWeight: FontWeight.bold, fontSize: 14)),
-                                      Text('₹${(p['amount'] as num).toStringAsFixed(0)}',
-                                          style: TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w600,
-                                              color: Colors.green.shade700)),
+                                      if (((p['amount'] as num?) ?? 0) > 0)
+                                        Text('₹${(p['amount'] as num).toStringAsFixed(0)}',
+                                            style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w600,
+                                                color: Colors.green.shade700)),
                                       if ((p['perks'] as String? ?? '').isNotEmpty)
                                         Padding(
                                           padding: const EdgeInsets.only(top: 2),
@@ -245,7 +291,7 @@ class _SponsorPackagesScreenState extends State<SponsorPackagesScreen> {
                   child: ElevatedButton.icon(
                     onPressed: () => _addOrEditPackage(packages),
                     icon: const Icon(Icons.add),
-                    label: const Text('Add Sponsor Tier'),
+                    label: const Text('Add Sponsor Item'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.amber.shade800,
                       foregroundColor: Colors.white,

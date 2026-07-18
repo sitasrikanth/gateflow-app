@@ -11,6 +11,7 @@ import '../resident/resident_events_screen.dart';
 import '../resident/resident_home_screen.dart';
 import 'event_type_settings_screen.dart';
 import 'add_contribution_screen.dart';
+import 'carry_forward_screen.dart';
 import 'add_expense_screen.dart';
 import 'send_notification_screen.dart';
 import 'create_event_screen.dart';
@@ -89,8 +90,28 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
       'prasad': Icons.restaurant_outlined,
       'leaderboard': Icons.leaderboard_outlined,
     };
+    // Each tab gets its own distinct color (matching that feature's color
+    // elsewhere in the app, e.g. green for Contributions/red for Expenses)
+    // so the tab bar reads as a row of distinct destinations at a glance,
+    // not a repeated single-color icon.
+    final colors = {
+      'overview': AppTheme.accent,
+      'event': Colors.blue,
+      'contributions': Colors.green.shade600,
+      'expenses': Colors.red.shade400,
+      'followup': Colors.orange.shade700,
+      'volunteers': Colors.teal,
+      'tasks': Colors.indigo,
+      'activity': Colors.blueGrey,
+      'competitions': Colors.amber.shade800,
+      'prasad': Colors.brown.shade400,
+      'leaderboard': Colors.pink.shade400,
+    };
     final label = kAdminTabDefs.firstWhere((t) => t.$1 == id, orElse: () => ('', id)).$2;
-    return _TabItem(icon: icons[id] ?? Icons.circle_outlined, label: label);
+    return _TabItem(
+        icon: icons[id] ?? Icons.circle_outlined,
+        label: label,
+        color: colors[id] ?? AppTheme.accent);
   }
 
   Widget _adminTabViewFor(
@@ -257,6 +278,25 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
           .collection('contributions')
           .get();
 
+      // Self-heal: Carry Forward contributions have no legitimate "pending"
+      // state — they're always fully received the moment they're created.
+      // A stale restore (from before amountReceived/status handling was
+      // fixed for admin-added types) can leave one stuck as not-received,
+      // which silently drops it out of totals and the Overview chip. Force
+      // it back to received before computing the total below.
+      final healBatch = FirebaseFirestore.instance.batch();
+      var healedCount = 0;
+      for (final doc in contribs.docs) {
+        final d = doc.data();
+        if (d['status'] == 'deleted') continue;
+        if (d['contributionType'] == kTypeCarryForward && d['amountReceived'] != true) {
+          healBatch.update(doc.reference, {'amountReceived': true});
+          d['amountReceived'] = true; // reflect in-memory for the sum below
+          healedCount++;
+        }
+      }
+      if (healedCount > 0) await healBatch.commit();
+
       double total = 0;
       final paidFlats = <String>{};
       for (final doc in contribs.docs) {
@@ -279,6 +319,77 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(
               'Total recalculated: ₹${total.toStringAsFixed(0)} from ${paidFlats.length} flats'),
+          backgroundColor: Colors.teal,
+        ));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+      }
+    }
+  }
+
+  // Re-derives this event's carriedForwardOut (and each transfer's reversed
+  // flag) from the live status of the destination contribution each
+  // transfer points to, instead of trusting the incrementally-tracked
+  // field. Fixes drift from transfers created before source<->destination
+  // linking existed, or from any other edge case that left them out of
+  // sync (e.g. a transfer never getting reversed when its destination-side
+  // contribution was deleted).
+  Future<void> _recalculateCarryForwardBalance(BuildContext context) async {
+    try {
+      final transfers = await FirebaseFirestore.instance
+          .collection('events')
+          .doc(widget.eventId)
+          .collection('carryForwardTransfers')
+          .get();
+
+      double total = 0;
+      final batch = FirebaseFirestore.instance.batch();
+      for (final t in transfers.docs) {
+        final td = t.data();
+        final destEventId = td['destEventId'] as String? ?? '';
+        final amount = (td['amount'] as num? ?? 0).toDouble();
+        final destContributionId = td['destContributionId'] as String?;
+        bool stillActive = false;
+
+        if (destEventId.isNotEmpty) {
+          if (destContributionId != null && destContributionId.isNotEmpty) {
+            final destDoc = await FirebaseFirestore.instance
+                .collection('events')
+                .doc(destEventId)
+                .collection('contributions')
+                .doc(destContributionId)
+                .get();
+            stillActive =
+                destDoc.exists && (destDoc.data()?['status'] != 'deleted');
+          } else {
+            // Legacy transfer with no direct link — best-effort match by
+            // source event + amount among the destination's contributions.
+            final legacyQuery = await FirebaseFirestore.instance
+                .collection('events')
+                .doc(destEventId)
+                .collection('contributions')
+                .where('carryForwardSourceEventId', isEqualTo: widget.eventId)
+                .where('amount', isEqualTo: amount)
+                .get();
+            stillActive =
+                legacyQuery.docs.any((d) => d.data()['status'] != 'deleted');
+          }
+        }
+
+        batch.update(t.reference, {'reversed': !stillActive});
+        if (stillActive) total += amount;
+      }
+      batch.update(FirebaseFirestore.instance.collection('events').doc(widget.eventId),
+          {'carriedForwardOut': total});
+      await batch.commit();
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              'Carry-forward balance recalculated: ₹${total.toStringAsFixed(0)} still locked from ${transfers.docs.length} transfer${transfers.docs.length == 1 ? '' : 's'}'),
           backgroundColor: Colors.teal,
         ));
       }
@@ -661,6 +772,19 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                                 );
                               }
                               if (val == 'recalculate') _recalculateTotals(context);
+                              if (val == 'recalculate_carry_forward') {
+                                _recalculateCarryForwardBalance(context);
+                              }
+                              if (val == 'carry_forward') {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => CarryForwardScreen(
+                                        eventId: widget.eventId,
+                                        eventName: data['name'] ?? widget.eventName),
+                                  ),
+                                );
+                              }
                               if (val == 'close') _closeEvent();
                               if (val == 'reopen') _reopenEvent();
                               if (val == 'start') _startEvent();
@@ -712,6 +836,20 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                                     Icon(Icons.sync, color: Colors.teal),
                                     SizedBox(width: 8),
                                     Text('Recalculate Totals'),
+                                  ])),
+                              const PopupMenuItem(
+                                  value: 'carry_forward',
+                                  child: Row(children: [
+                                    Icon(Icons.move_up, color: Colors.blue),
+                                    SizedBox(width: 8),
+                                    Text('Carry Forward Balance'),
+                                  ])),
+                              const PopupMenuItem(
+                                  value: 'recalculate_carry_forward',
+                                  child: Row(children: [
+                                    Icon(Icons.sync_alt, color: Colors.teal),
+                                    SizedBox(width: 8),
+                                    Text('Recalculate Carry-Forward Balance'),
                                   ])),
                               PopupMenuItem(
                                   value: 'toggle_featured',
@@ -885,11 +1023,13 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                     final applicableTabIds = rawApplicable != null
                         ? List<String>.from(rawApplicable as List)
                         : defaultApplicableTabs();
+                    final rawOrder = configData['tabOrder'];
+                    final tabOrder = normalizeTabOrder(
+                        rawOrder != null ? List<String>.from(rawOrder as List) : null);
 
                     List<String> effectiveTabIds;
                     if (widget.isAdmin) {
-                      effectiveTabIds = kAdminTabDefs
-                          .map((t) => t.$1)
+                      effectiveTabIds = tabOrder
                           .where((id) => applicableTabIds.contains(id))
                           .toList();
                       if (effectiveTabIds.isEmpty) effectiveTabIds = ['overview'];
@@ -898,8 +1038,9 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                       final residentTabIds = rawResident != null
                           ? List<String>.from(rawResident as List)
                           : defaultResidentTabs();
-                      effectiveTabIds = residentTabIds
-                          .where((id) => applicableTabIds.contains(id))
+                      effectiveTabIds = tabOrder
+                          .where((id) =>
+                              applicableTabIds.contains(id) && residentTabIds.contains(id))
                           .toList();
                       if (effectiveTabIds.isEmpty) {
                         effectiveTabIds = applicableTabIds.contains('event')
@@ -982,8 +1123,10 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
                     final applicableTabIds = rawApplicable != null
                         ? List<String>.from(rawApplicable as List)
                         : defaultApplicableTabs();
-                    var effectiveAdminTabIds = kAdminTabDefs
-                        .map((t) => t.$1)
+                    final rawOrder = cfgData?['tabOrder'];
+                    final tabOrder = normalizeTabOrder(
+                        rawOrder != null ? List<String>.from(rawOrder as List) : null);
+                    var effectiveAdminTabIds = tabOrder
                         .where((id) => applicableTabIds.contains(id))
                         .toList();
                     if (effectiveAdminTabIds.isEmpty) effectiveAdminTabIds = ['overview'];
@@ -1069,7 +1212,8 @@ class _EventDashboardScreenState extends State<EventDashboardScreen>
 class _TabItem {
   final IconData icon;
   final String label;
-  const _TabItem({required this.icon, required this.label});
+  final Color color;
+  const _TabItem({required this.icon, required this.label, required this.color});
 }
 
 class _CustomTabBar extends StatefulWidget {
@@ -1082,13 +1226,30 @@ class _CustomTabBar extends StatefulWidget {
 }
 
 class _CustomTabBarState extends State<_CustomTabBar> {
-  late final List<GlobalKey> _tabKeys =
+  late List<GlobalKey> _tabKeys =
       List.generate(widget.tabs.length, (_) => GlobalKey());
 
   @override
   void initState() {
     super.initState();
     widget.controller.addListener(_onTabChange);
+  }
+
+  @override
+  void didUpdateWidget(_CustomTabBar old) {
+    super.didUpdateWidget(old);
+    // The TabController instance can be swapped out (e.g. when the tab
+    // count changes for an event type without full config yet) — without
+    // re-subscribing, this bar keeps listening to the disposed controller
+    // and its selected-tab highlight stops updating even though
+    // TabBarView (on the new controller) still navigates correctly.
+    if (!identical(old.controller, widget.controller)) {
+      old.controller.removeListener(_onTabChange);
+      widget.controller.addListener(_onTabChange);
+    }
+    if (old.tabs.length != widget.tabs.length) {
+      _tabKeys = List.generate(widget.tabs.length, (_) => GlobalKey());
+    }
   }
 
   void _onTabChange() {
@@ -1146,16 +1307,17 @@ class _CustomTabBarState extends State<_CustomTabBar> {
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
                             color: isSel
-                                ? AppTheme.accent.shade50
-                                : Colors.grey.shade100,
+                                ? tab.color.withValues(alpha: 0.14)
+                                : tab.color.withValues(alpha: 0.06),
                             borderRadius: BorderRadius.circular(12),
+                            border: isSel
+                                ? Border.all(color: tab.color.withValues(alpha: 0.4), width: 1.5)
+                                : null,
                           ),
                           child: Icon(
                             tab.icon,
                             size: 22,
-                            color: isSel
-                                ? AppTheme.accent
-                                : Colors.grey.shade500,
+                            color: isSel ? tab.color : tab.color.withValues(alpha: 0.55),
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -1164,9 +1326,7 @@ class _CustomTabBarState extends State<_CustomTabBar> {
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: isSel ? FontWeight.w700 : FontWeight.w500,
-                            color: isSel
-                                ? AppTheme.accent
-                                : Colors.grey.shade600,
+                            color: isSel ? tab.color : Colors.grey.shade600,
                           ),
                         ),
                       ],
@@ -1177,7 +1337,7 @@ class _CustomTabBarState extends State<_CustomTabBar> {
                     height: 3,
                     width: isSel ? 48 : 0,
                     decoration: BoxDecoration(
-                      color: AppTheme.accent,
+                      color: tab.color,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -1400,6 +1560,70 @@ class _OverviewTab extends StatelessWidget {
                   ],
                 ),
               ),
+
+              // ── Carried forward out (to another event) ────────────
+              StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('events')
+                    .doc(eventId)
+                    .collection('carryForwardTransfers')
+                    .snapshots(),
+                builder: (context, cfSnap) {
+                  // Reversed transfers (destination-side contribution was
+                  // deleted) no longer count — that balance is available
+                  // again, so it shouldn't still show as "moved out".
+                  final transfers = (cfSnap.data?.docs ?? []).where((doc) {
+                    final d = doc.data() as Map<String, dynamic>;
+                    return d['reversed'] != true;
+                  }).toList();
+                  if (transfers.isEmpty) return const SizedBox.shrink();
+                  double total = 0;
+                  final destNames = <String>{};
+                  for (final doc in transfers) {
+                    final d = doc.data() as Map<String, dynamic>;
+                    total += (d['amount'] as num? ?? 0).toDouble();
+                    final name = (d['destEventName'] as String?)?.trim() ?? '';
+                    if (name.isNotEmpty) destNames.add(name);
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.blue.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.move_up, color: Colors.blue.shade600, size: 22),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Carried Forward Out',
+                                    style: TextStyle(fontSize: 12, color: Colors.blue.shade600)),
+                                Text('₹${_fmt(total)}',
+                                    style: TextStyle(
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.blue.shade700)),
+                                if (destNames.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 2),
+                                    child: Text('Moved to: ${destNames.join(', ')}',
+                                        style: TextStyle(fontSize: 12, color: Colors.blue.shade600)),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
             ],
           ),
         ),
@@ -1413,17 +1637,26 @@ class _OverviewTab extends StatelessWidget {
               .collection('events').doc(eventId)
               .collection('contributions').snapshots(),
           builder: (context, snap) {
-            double cash = 0, online = 0, anonymous = 0, external = 0;
+            double cash = 0, online = 0, anonymous = 0, external = 0, carryForward = 0;
             for (final doc in snap.data?.docs ?? []) {
               final d = doc.data() as Map<String, dynamic>;
               if (d['status'] == 'deleted') continue;
               if (d['selfReported'] == true && d['amountReceived'] != true) continue;
               if (d['amountReceived'] != true) continue;
               final amt = (d['amount'] as num? ?? 0).toDouble();
+              if (d['contributionType'] == kTypeCarryForward) {
+                carryForward += amt;
+                continue; // shown as its own chip, not in cash/online split
+              }
               final mode = (d['paymentMode'] as String? ?? '').toLowerCase();
               if (mode == 'cash') cash += amt; else online += amt;
-              if (d['isAnonymous'] == true) anonymous += amt;
-              if (d['contributionType'] == kTypeExternal) external += amt;
+              // Anonymous takes priority — an anonymous external donation
+              // counts only toward the Anonymous chip, not both.
+              if (d['isAnonymous'] == true) {
+                anonymous += amt;
+              } else if (d['contributionType'] == kTypeExternal) {
+                external += amt;
+              }
             }
             final hasBoth = cash > 0 && online > 0 &&
                 enabledChips.contains('cash') && enabledChips.contains('online');
@@ -1498,13 +1731,15 @@ class _OverviewTab extends StatelessWidget {
                   spaced(rowsBottom),
                 ],
                 if ((anonymous > 0 && enabledChips.contains('anonymous')) ||
-                    (external > 0 && enabledChips.contains('external'))) ...[
+                    (external > 0 && enabledChips.contains('external')) ||
+                    carryForward > 0) ...[
                   const SizedBox(height: 16),
                   _AnonymousExternalCard(
                     anonymous: anonymous,
                     external: external,
                     showAnonymous: enabledChips.contains('anonymous'),
                     showExternal: enabledChips.contains('external'),
+                    carryForward: carryForward,
                   ),
                 ],
               ],
@@ -1987,11 +2222,13 @@ class _AnonymousExternalCard extends StatelessWidget {
   final double external;
   final bool showAnonymous;
   final bool showExternal;
+  final double carryForward;
   const _AnonymousExternalCard({
     required this.anonymous,
     required this.external,
     required this.showAnonymous,
     required this.showExternal,
+    this.carryForward = 0,
   });
 
   static String _fmt(double v) {
@@ -2009,13 +2246,18 @@ class _AnonymousExternalCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final hasAnonymous = showAnonymous && anonymous > 0;
     final hasExternal = showExternal && external > 0;
-    if (!hasAnonymous && !hasExternal) return const SizedBox();
+    final hasCarryForward = carryForward > 0;
+    if (!hasAnonymous && !hasExternal && !hasCarryForward) return const SizedBox();
 
-    final title = hasAnonymous && hasExternal
-        ? 'Anonymous & External Contributions'
+    final presentCount =
+        [hasAnonymous, hasExternal, hasCarryForward].where((v) => v).length;
+    final title = presentCount > 1
+        ? 'Other Contributions'
         : hasAnonymous
             ? 'Anonymous Contributions'
-            : 'External Contributions';
+            : hasExternal
+                ? 'External Contributions'
+                : 'Carried Forward';
 
     final chips = <Widget>[
       if (hasAnonymous)
@@ -2024,6 +2266,9 @@ class _AnonymousExternalCard extends StatelessWidget {
       if (hasExternal)
         _StatChip(label: 'External', value: '₹${_fmt(external)}',
             icon: Icons.corporate_fare_outlined, color: Colors.teal.shade700),
+      if (hasCarryForward)
+        _StatChip(label: 'Carried Forward', value: '₹${_fmt(carryForward)}',
+            icon: Icons.move_up, color: Colors.blue),
     ];
 
     return Container(
@@ -2056,6 +2301,142 @@ class _AnonymousExternalCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ── Sponsor Highlight — visible to everyone (admin + residents), publicly
+// celebrates sponsors so the community can see and appreciate them.
+class _SponsorHighlightCard extends StatelessWidget {
+  final String eventId;
+  const _SponsorHighlightCard({required this.eventId});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('events')
+          .doc(eventId)
+          .collection('contributions')
+          .snapshots(),
+      builder: (context, snap) {
+        final sponsors = (snap.data?.docs ?? []).where((doc) {
+          final d = doc.data() as Map<String, dynamic>;
+          return d['contributionType'] == kTypeSponsor &&
+              d['status'] != 'deleted' &&
+              d['amountReceived'] == true;
+        }).toList();
+        if (sponsors.isEmpty) return const SizedBox.shrink();
+
+        sponsors.sort((a, b) {
+          final da = (a.data() as Map<String, dynamic>)['amount'] as num? ?? 0;
+          final db = (b.data() as Map<String, dynamic>)['amount'] as num? ?? 0;
+          return db.compareTo(da);
+        });
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Colors.amber.shade50, Colors.orange.shade50],
+              ),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.amber.shade200, width: 1.2),
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.amber.withValues(alpha: 0.15),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3)),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.emoji_events, color: Colors.amber.shade800, size: 22),
+                    const SizedBox(width: 8),
+                    Text('Thank You to Our Sponsors!',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 15,
+                            color: Colors.amber.shade900)),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                ...sponsors.map((doc) {
+                  final d = doc.data() as Map<String, dynamic>;
+                  final tier = (d['sponsorPackageName'] as String? ?? '').trim();
+                  final item = (d['sponsorItem'] as String? ?? '').trim();
+                  final isAnon = d['isAnonymous'] == true;
+                  final name = (d['residentName'] as String? ?? '').trim();
+                  final who = isAnon
+                      ? 'A generous resident'
+                      : (name.isNotEmpty ? name : 'A sponsor');
+                  final descParts = [
+                    if (item.isNotEmpty) item,
+                    if (tier.isNotEmpty) tier,
+                  ];
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.shade100,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(Icons.star_rounded,
+                              color: Colors.amber.shade800, size: 16),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text.rich(
+                                TextSpan(
+                                  children: [
+                                    TextSpan(
+                                        text: who,
+                                        style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13,
+                                            color: Colors.amber.shade900)),
+                                    if (descParts.isNotEmpty)
+                                      TextSpan(
+                                          text: ' sponsored ${descParts.join(' · ')}',
+                                          style: TextStyle(
+                                              fontSize: 13,
+                                              color: Colors.grey.shade800))
+                                    else
+                                      TextSpan(
+                                          text: ' sponsored this event',
+                                          style: TextStyle(
+                                              fontSize: 13,
+                                              color: Colors.grey.shade800)),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -2097,7 +2478,10 @@ class _SpecialContributionsWidget extends StatelessWidget {
               d['status'] == 'deleted') continue;
           final amt = (d['amount'] as num?)?.toDouble() ?? 0;
           final type = (d['contributionType'] as String?) ?? 'Regular Contribution';
-          if (type == kTypeExternal) continue;
+          // External and Carry Forward are shown as their own dedicated
+          // chips elsewhere in Overview, not as part of this Regular vs
+          // Special breakdown.
+          if (type == kTypeExternal || type == kTypeCarryForward) continue;
           final isSpecial = type != 'Regular Contribution' && type != 'Regular' && type != kTypeSponsor;
           if (isSpecial) {
             specialTotal += amt;
@@ -2197,7 +2581,8 @@ class _SpecialContributionsWidget extends StatelessWidget {
 
 class _ExternalDonationsWidget extends StatelessWidget {
   final String eventId;
-  const _ExternalDonationsWidget({required this.eventId});
+  final List<QueryDocumentSnapshot> docs;
+  const _ExternalDonationsWidget({required this.eventId, required this.docs});
 
   static String _fmt(double v) {
     final s = v.toStringAsFixed(0);
@@ -2212,26 +2597,26 @@ class _ExternalDonationsWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('events')
-          .doc(eventId)
-          .collection('contributions')
-          .snapshots(),
-      builder: (context, snap) {
-        if (!snap.hasData) return const SizedBox();
-
-        double total = 0;
+        double total = 0, cashTotal = 0, onlineTotal = 0;
         final entries = <Map<String, dynamic>>[];
 
-        for (final doc in snap.data!.docs) {
+        for (final doc in docs) {
           final d = doc.data() as Map<String, dynamic>;
           if (d['amountReceived'] != true ||
               d['status'] == 'rejected' ||
               d['status'] == 'deleted') continue;
           if (d['contributionType'] != kTypeExternal) continue;
+          // Anonymous takes precedence — shown only in the Anonymous
+          // section, not double-listed here too.
+          if (d['isAnonymous'] == true) continue;
           final amt = (d['amount'] as num?)?.toDouble() ?? 0;
           total += amt;
+          final mode = (d['paymentMode'] as String? ?? '').toLowerCase();
+          if (mode == 'cash') {
+            cashTotal += amt;
+          } else {
+            onlineTotal += amt;
+          }
           entries.add({
             'doc': doc,
             'data': d,
@@ -2241,41 +2626,63 @@ class _ExternalDonationsWidget extends StatelessWidget {
           });
         }
 
-        if (entries.isEmpty) return const SizedBox();
+        if (entries.isEmpty) return const SizedBox.shrink();
 
         entries.sort((a, b) => (b['amt'] as double).compareTo(a['amt'] as double));
 
         return Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
+          margin: const EdgeInsets.only(bottom: 10),
           decoration: BoxDecoration(
             color: Theme.of(context).cardColor,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 3)),
-            ],
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.teal.shade100),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: ExpansionTile(
+            initiallyExpanded: false,
+            leading: CircleAvatar(
+              radius: 18,
+              backgroundColor: Colors.teal.shade50,
+              child: Icon(Icons.corporate_fare_outlined,
+                  color: Colors.teal.shade600, size: 18),
+            ),
+            title: const Text('External Donations',
+                style: TextStyle(fontWeight: FontWeight.w600)),
+            subtitle: Text(
+                '${entries.length} donor${entries.length == 1 ? '' : 's'}',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text('₹${_fmt(total)}',
+                        style: TextStyle(
+                            color: Colors.teal.shade700,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13)),
+                    if (cashTotal > 0 && onlineTotal > 0)
+                      Text('C:${_fmt(cashTotal)} · O:${_fmt(onlineTotal)}',
+                          style: TextStyle(fontSize: 9, color: Colors.blue.shade600))
+                    else if (cashTotal > 0)
+                      Text('Cash',
+                          style: TextStyle(fontSize: 9, color: Colors.amber.shade800))
+                    else if (onlineTotal > 0)
+                      Text('Online',
+                          style: TextStyle(fontSize: 9, color: Colors.blue.shade600)),
+                  ],
+                ),
+                const SizedBox(width: 4),
+                const Icon(Icons.expand_more),
+              ],
+            ),
             children: [
-              const Text('External Donations',
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
-              const SizedBox(height: 12),
-              Row(children: [
-                _StatChip(label: 'Total', value: '₹${_fmt(total)}',
-                    icon: Icons.corporate_fare_outlined, color: Colors.teal.shade700),
-              ]),
-              const SizedBox(height: 14),
-              const Divider(height: 1),
-              const SizedBox(height: 10),
-              Text('Donors',
-                  style: TextStyle(
-                      fontSize: 11, fontWeight: FontWeight.w600, color: Colors.grey.shade500)),
-              const SizedBox(height: 8),
-              ...entries.map((e) {
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: entries.map((e) {
                 final name = (e['name'] as String).trim();
                 final note = (e['note'] as String).trim();
                 final doc = e['doc'] as QueryDocumentSnapshot;
@@ -2329,12 +2736,12 @@ class _ExternalDonationsWidget extends StatelessWidget {
                     ],
                   ),
                 );
-              }),
+                  }).toList(),
+                ),
+              ),
             ],
           ),
         );
-      },
-    );
   }
 }
 
@@ -2581,6 +2988,15 @@ class _BlockStatsWidgetState extends State<_BlockStatsWidget> {
 
         if (byWing.isEmpty) return const SizedBox();
 
+        int totalPaid = 0;
+        int totalFlats = 0;
+        for (final entry in byWing.values) {
+          for (final block in entry.blocks) {
+            totalPaid += block.paid;
+            totalFlats += block.total;
+          }
+        }
+
         final sortedWings = byWing.keys.toList()..sort();
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2597,6 +3013,12 @@ class _BlockStatsWidgetState extends State<_BlockStatsWidget> {
                 'or unlisted-flat contributions are already counted in the totals '
                 'above but won\'t appear here.',
                 style: TextStyle(fontSize: 10, color: Colors.grey.shade400, height: 1.3)),
+            const SizedBox(height: 6),
+            Text('$totalPaid of $totalFlats residents contributed',
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.grey.shade700)),
             const SizedBox(height: 8),
             ...sortedWings.map((wing) {
               final entry = byWing[wing]!;
@@ -3586,6 +4008,12 @@ class _EventTabState extends State<_EventTab> {
                   ],
                 ),
               ),
+              ],
+
+              // ── Sponsor Highlights — celebrates sponsors, configurable ──
+              if (sectionVisible('sponsor_highlights')) ...[
+              const SizedBox(height: 20),
+              _SponsorHighlightCard(eventId: widget.eventId),
               ],
 
               // ── Day-by-day schedule ────────────────────────────
@@ -5989,7 +6417,42 @@ class _ContributionsTab extends StatefulWidget {
   State<_ContributionsTab> createState() => _ContributionsTabState();
 }
 
-class _ContributionsTabState extends State<_ContributionsTab> {
+class _ContributionsTabState extends State<_ContributionsTab>
+    with AutomaticKeepAliveClientMixin {
+  // Keeps this tab's Firestore listeners + built widget tree alive when the
+  // admin switches to another tab and back, instead of tearing down and
+  // rebuilding the whole wing/block/flat hierarchy from scratch every time.
+  @override
+  bool get wantKeepAlive => true;
+
+  // community_settings/address (wings/blocks/flats layout) is fetched once
+  // here, independently of the contributions stream, so the wing/block/flat
+  // hierarchy no longer waits on a nested StreamBuilder to resolve before it
+  // can render.
+  Map<String, dynamic> _settings = {};
+  StreamSubscription<DocumentSnapshot>? _settingsSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _settingsSub = FirebaseFirestore.instance
+        .collection('community_settings')
+        .doc('address')
+        .snapshots()
+        .listen((snap) {
+      if (mounted) {
+        setState(() {
+          _settings = snap.data() ?? {};
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _settingsSub?.cancel();
+    super.dispose();
+  }
 
   void _showFlatContribution(
     BuildContext context,
@@ -6301,7 +6764,19 @@ class _ContributionsTabState extends State<_ContributionsTab> {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot>(
+    super.build(context); // required by AutomaticKeepAliveClientMixin
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('appSettings')
+          .doc('payments')
+          .snapshots(),
+      builder: (context, paySnap) {
+        final payData = paySnap.data?.data() as Map<String, dynamic>? ?? {};
+        final paymentsEnabled = List<String>.from(
+                payData['enabledTypeIds'] as List? ?? [])
+            .contains(widget.eventTypeId);
+
+        return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('events')
           .doc(widget.eventId)
@@ -6311,6 +6786,45 @@ class _ContributionsTabState extends State<_ContributionsTab> {
         final docs = snapshot.data?.docs ?? [];
 
         if (docs.isEmpty) {
+          if (widget.isAdmin && !paymentsEnabled) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.payments_outlined,
+                        size: 64, color: Colors.grey.shade300),
+                    const SizedBox(height: 12),
+                    Text('Payments aren\'t enabled for this event type yet',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 6),
+                    Text(
+                        'Enable Payments for this event type in Event Settings to start recording contributions.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.grey.shade500, fontSize: 13)),
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const EventTypeSettingsScreen()),
+                      ),
+                      icon: const Icon(Icons.settings_outlined, size: 18),
+                      label: const Text('Go to Event Settings'),
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.accent,
+                          foregroundColor: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
           return Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -6578,41 +7092,44 @@ class _ContributionsTabState extends State<_ContributionsTab> {
           // Skip deleted and unconfirmed self-reports
           if (d['status'] == 'deleted') continue;
           if (d['selfReported'] == true && d['amountReceived'] != true) continue;
+          // Anonymous contributions are shown exclusively in the Anonymous
+          // section below, not also under their wing/block/flat (or
+          // Unassigned, which is also derived from flatDocs) — otherwise
+          // the same amount visibly appears twice even though it's only
+          // counted once in the grand total below.
           final flat = (d['flatNumber'] ?? '').toString().trim();
-          if (flat.isNotEmpty) {
+          if (flat.isNotEmpty && d['isAnonymous'] != true) {
             flatDocs.putIfAbsent(flat, () => []);
             flatDocs[flat]!.add(doc);
           }
-          if (d['amountReceived'] == true) {
+          // Sponsorship amounts are often a nominal item value (e.g. a
+          // donated idol) rather than cash the event actually collected, so
+          // they're kept out of this Contributions tab total — they're
+          // still shown individually in the Sponsored Contributions section
+          // below.
+          if (d['amountReceived'] == true && d['contributionType'] != kTypeSponsor) {
             grandTotal += (d['amount'] ?? 0).toDouble();
           }
           totalCount++;
         }
 
-        return StreamBuilder<DocumentSnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('community_settings')
-              .doc('address')
-              .snapshots(),
-          builder: (context, settingsSnap) {
-            final settings =
-                settingsSnap.data?.data() as Map<String, dynamic>? ?? {};
-            final wings =
-                List<String>.from(settings['wings'] ?? [])..sort();
-            final wingBlocks =
-                Map<String, dynamic>.from(settings['wingBlocks'] ?? {});
-            final flatsPerFloor = Map<String, int>.from(
-              (settings['flatsPerFloor'] as Map<String, dynamic>? ?? {})
-                  .map((k, v) => MapEntry(k, (v as num).toInt())),
-            );
-            final flatGridRows = Map<String, int>.from(
-              (settings['flatGridRows'] is Map
-                      ? settings['flatGridRows'] as Map<String, dynamic>
-                      : <String, dynamic>{})
-                  .map((k, v) => MapEntry(k, (v as num).toInt())),
-            );
+        {
+          final settings = _settings;
+          final wings = List<String>.from(settings['wings'] ?? [])..sort();
+          final wingBlocks =
+              Map<String, dynamic>.from(settings['wingBlocks'] ?? {});
+          final flatsPerFloor = Map<String, int>.from(
+            (settings['flatsPerFloor'] as Map<String, dynamic>? ?? {})
+                .map((k, v) => MapEntry(k, (v as num).toInt())),
+          );
+          final flatGridRows = Map<String, int>.from(
+            (settings['flatGridRows'] is Map
+                    ? settings['flatGridRows'] as Map<String, dynamic>
+                    : <String, dynamic>{})
+                .map((k, v) => MapEntry(k, (v as num).toInt())),
+          );
 
-            return ListView(
+          return ListView(
               padding: const EdgeInsets.all(12),
               children: [
                 // ── Pending Verification section ──────────────────
@@ -6756,12 +7273,6 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                   ),
                 ],
 
-                // ── External Donations (admin only) ────────────────
-                if (widget.isAdmin) ...[
-                  _ExternalDonationsWidget(eventId: widget.eventId),
-                  const SizedBox(height: 12),
-                ],
-
                 // ── Grand total banner ────────────────────────────
                 Container(
                   margin: const EdgeInsets.only(bottom: 12),
@@ -6789,32 +7300,368 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                   ),
                 ),
 
-                // ── Flat chip colour legend ────────────────────────
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 6,
-                    children: [
-                      _ChipLegend(color: Colors.green.shade50, border: Colors.green.shade400,
-                          text: 'Cash', textColor: Colors.green.shade700),
-                      _ChipLegend(color: Colors.blue.shade50, border: Colors.blue.shade300,
-                          text: 'Online', textColor: Colors.blue.shade700),
-                      _ChipLegend(color: Colors.purple.shade50, border: Colors.purple.shade300,
-                          text: 'Cash + Online', textColor: Colors.purple.shade800),
-                      _ChipLegend(color: Colors.orange.shade50, border: Colors.orange.shade300,
-                          text: 'Pending', textColor: Colors.orange.shade700),
-                      _ChipLegend(color: Colors.grey.shade100, border: Colors.grey.shade300,
-                          text: 'Not paid', textColor: Colors.grey.shade500),
-                    ],
-                  ),
-                ),
+                // ── Residents (Wing → Block → Flat hierarchy) ──────
+                if (wings.isNotEmpty)
+                  Builder(builder: (_) {
+                    double residentsTotal = 0, residentsCash = 0, residentsOnline = 0;
+                    for (final wing in wings) {
+                      final raw = wingBlocks[wing];
+                      if (raw is! Map) continue;
+                      for (final block in raw.keys) {
+                        final flatsList = raw[block];
+                        if (flatsList is! List) continue;
+                        for (final flat in flatsList) {
+                          final docsForFlat = flatDocs[flat.toString()];
+                          if (docsForFlat == null) continue;
+                          for (final doc in docsForFlat) {
+                            final d = doc.data() as Map<String, dynamic>;
+                            if (d['amountReceived'] != true) continue;
+                            final amt = (d['amount'] as num? ?? 0).toDouble();
+                            residentsTotal += amt;
+                            final mode = (d['paymentMode'] as String? ?? '').toLowerCase();
+                            if (mode == 'cash') {
+                              residentsCash += amt;
+                            } else {
+                              residentsOnline += amt;
+                            }
+                          }
+                        }
+                      }
+                    }
+                    return Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).cardColor,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.green.shade100),
+                    ),
+                    child: ExpansionTile(
+                      initiallyExpanded: false,
+                      leading: CircleAvatar(
+                        radius: 18,
+                        backgroundColor: Colors.green.shade50,
+                        child: Icon(Icons.home_work_outlined,
+                            color: Colors.green.shade600, size: 18),
+                      ),
+                      title: const Text('Residents',
+                          style: TextStyle(fontWeight: FontWeight.w600)),
+                      subtitle: Text(
+                          '${wings.length} wing${wings.length == 1 ? '' : 's'}',
+                          style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text('₹${_fmt(residentsTotal)}',
+                                  style: TextStyle(
+                                      color: Colors.green.shade700,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13)),
+                              if (residentsCash > 0 && residentsOnline > 0)
+                                Text(
+                                    'C:${_fmt(residentsCash)} · O:${_fmt(residentsOnline)}',
+                                    style: TextStyle(
+                                        fontSize: 9, color: Colors.blue.shade600))
+                              else if (residentsCash > 0)
+                                Text('Cash',
+                                    style: TextStyle(
+                                        fontSize: 9, color: Colors.amber.shade800))
+                              else if (residentsOnline > 0)
+                                Text('Online',
+                                    style: TextStyle(
+                                        fontSize: 9, color: Colors.blue.shade600)),
+                            ],
+                          ),
+                          const SizedBox(width: 4),
+                          const Icon(Icons.expand_more),
+                        ],
+                      ),
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // ── Flat chip colour legend ─────────────
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
+                                child: Wrap(
+                                  spacing: 8,
+                                  runSpacing: 6,
+                                  children: [
+                                    _ChipLegend(color: Colors.green.shade50, border: Colors.green.shade400,
+                                        text: 'Cash', textColor: Colors.green.shade700),
+                                    _ChipLegend(color: Colors.blue.shade50, border: Colors.blue.shade300,
+                                        text: 'Online', textColor: Colors.blue.shade700),
+                                    _ChipLegend(color: Colors.purple.shade50, border: Colors.purple.shade300,
+                                        text: 'Cash + Online', textColor: Colors.purple.shade800),
+                                    _ChipLegend(color: Colors.orange.shade50, border: Colors.orange.shade300,
+                                        text: 'Pending', textColor: Colors.orange.shade700),
+                                    _ChipLegend(color: Colors.grey.shade100, border: Colors.grey.shade300,
+                                        text: 'Not paid', textColor: Colors.grey.shade500),
+                                  ],
+                                ),
+                              ),
+                              // ── Wing → Block → Flat chip hierarchy ──
+                              for (final wing in wings) ...[
+                                _buildWingTile(context, wing, wingBlocks,
+                                    flatDocs, flatsPerFloor, flatGridRows),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                  }),
 
-                // ── Wing → Block → Flat chip hierarchy ────────────
-                for (final wing in wings) ...[
-                  _buildWingTile(
-                      context, wing, wingBlocks, flatDocs, flatsPerFloor, flatGridRows),
-                ],
+                // ── Sponsored Contributions ─────────────────────────
+                Builder(builder: (_) {
+                  final sponsorEntries = docs.where((d) {
+                    final data = d.data() as Map<String, dynamic>;
+                    return data['contributionType'] == kTypeSponsor &&
+                        data['status'] != 'deleted' &&
+                        data['isAnonymous'] != true;
+                  }).toList();
+                  if (sponsorEntries.isEmpty) return const SizedBox.shrink();
+
+                  final sponsorTotal = sponsorEntries.fold<double>(0, (s, d) {
+                    final data = d.data() as Map<String, dynamic>;
+                    if (data['amountReceived'] != true) return s;
+                    return s + (data['amount'] as num? ?? 0).toDouble();
+                  });
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).cardColor,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.amber.shade100),
+                    ),
+                    child: ExpansionTile(
+                      initiallyExpanded: false,
+                      leading: CircleAvatar(
+                        radius: 18,
+                        backgroundColor: Colors.amber.shade50,
+                        child: Icon(Icons.workspace_premium_outlined,
+                            color: Colors.amber.shade800, size: 18),
+                      ),
+                      title: const Text('Sponsored Contributions',
+                          style: TextStyle(fontWeight: FontWeight.w600)),
+                      subtitle: Text(
+                          '${sponsorEntries.length} entr${sponsorEntries.length == 1 ? 'y' : 'ies'}',
+                          style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('₹${_fmt(sponsorTotal)}',
+                              style: TextStyle(
+                                  color: Colors.amber.shade800,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13)),
+                          const SizedBox(width: 4),
+                          const Icon(Icons.expand_more),
+                        ],
+                      ),
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: sponsorEntries.map((doc) {
+                              final d = doc.data() as Map<String, dynamic>;
+                              final amt = (d['amount'] as num? ?? 0).toDouble();
+                              final tier = (d['sponsorPackageName'] as String? ?? '').trim();
+                              final item = (d['sponsorItem'] as String? ?? '').trim();
+                              final isAnon = d['isAnonymous'] == true;
+                              final name = (d['residentName'] as String? ?? '').trim();
+                              final who = isAnon
+                                  ? 'Anonymous'
+                                  : (name.isNotEmpty ? name : 'Sponsor');
+                              final subtitleParts = [
+                                if (tier.isNotEmpty) tier,
+                                if (item.isNotEmpty) 'for $item',
+                              ];
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Icon(Icons.workspace_premium_outlined,
+                                        size: 14, color: Colors.amber.shade600),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(who,
+                                              style: const TextStyle(
+                                                  fontSize: 13, fontWeight: FontWeight.w600)),
+                                          if (subtitleParts.isNotEmpty)
+                                            Text(subtitleParts.join(' · '),
+                                                style: TextStyle(
+                                                    fontSize: 11, color: Colors.grey.shade500)),
+                                        ],
+                                      ),
+                                    ),
+                                    Text('₹${_fmt(amt)}',
+                                        style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.amber.shade800)),
+                                    if (widget.isAdmin) ...[
+                                      const SizedBox(width: 6),
+                                      IconButton(
+                                        icon: Icon(Icons.edit_outlined,
+                                            color: Colors.blue.shade300, size: 16),
+                                        onPressed: () => Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) => AddContributionScreen(
+                                              eventId: widget.eventId,
+                                              existingDocId: doc.id,
+                                              existingData: d,
+                                            ),
+                                          ),
+                                        ),
+                                        tooltip: 'Edit',
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      IconButton(
+                                        icon: Icon(Icons.delete_outline,
+                                            color: Colors.red.shade300, size: 16),
+                                        onPressed: () => _ContributionsTabState
+                                            ._deleteContribution(context, doc, d),
+                                        tooltip: 'Delete',
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+
+                // ── Carry Forward Contributions ────────────────────
+                // Balances brought forward from other (any type) past events.
+                Builder(builder: (_) {
+                  final cfEntries = docs.where((d) {
+                    final data = d.data() as Map<String, dynamic>;
+                    return data['contributionType'] == kTypeCarryForward &&
+                        data['status'] != 'deleted';
+                  }).toList();
+                  if (cfEntries.isEmpty) return const SizedBox.shrink();
+
+                  final cfTotal = cfEntries.fold<double>(0, (s, d) {
+                    final data = d.data() as Map<String, dynamic>;
+                    return s + (data['amount'] as num? ?? 0).toDouble();
+                  });
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).cardColor,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.blue.shade100),
+                    ),
+                    child: ExpansionTile(
+                      initiallyExpanded: false,
+                      leading: CircleAvatar(
+                        radius: 18,
+                        backgroundColor: Colors.blue.shade50,
+                        child: Icon(Icons.move_up, color: Colors.blue.shade600, size: 18),
+                      ),
+                      title: const Text('Carry Forward Contributions',
+                          style: TextStyle(fontWeight: FontWeight.w600)),
+                      subtitle: Text(
+                          '${cfEntries.length} entr${cfEntries.length == 1 ? 'y' : 'ies'}',
+                          style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('₹${_fmt(cfTotal)}',
+                              style: TextStyle(
+                                  color: Colors.blue.shade700,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13)),
+                          const SizedBox(width: 4),
+                          const Icon(Icons.expand_more),
+                        ],
+                      ),
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: cfEntries.map((doc) {
+                              final d = doc.data() as Map<String, dynamic>;
+                              final amt = (d['amount'] as num? ?? 0).toDouble();
+                              final source =
+                                  (d['carryForwardSourceEventName'] as String?)
+                                              ?.trim()
+                                              .isNotEmpty ==
+                                          true
+                                      ? d['carryForwardSourceEventName'] as String
+                                      : 'Previous event';
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Icon(Icons.move_up, size: 14, color: Colors.blue.shade300),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text('From: $source',
+                                              style: const TextStyle(
+                                                  fontSize: 13, fontWeight: FontWeight.w600)),
+                                        ],
+                                      ),
+                                    ),
+                                    Text('₹${_fmt(amt)}',
+                                        style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.blue.shade700)),
+                                    if (widget.isAdmin) ...[
+                                      const SizedBox(width: 6),
+                                      IconButton(
+                                        icon: Icon(Icons.delete_outline,
+                                            color: Colors.red.shade300, size: 16),
+                                        onPressed: () => _ContributionsTabState
+                                            ._deleteContribution(context, doc, d),
+                                        tooltip: 'Delete',
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+
+                // ── External Donations (admin only) ────────────────
+                if (widget.isAdmin)
+                  _ExternalDonationsWidget(eventId: widget.eventId, docs: docs),
 
                 // ── Unassigned contributions ───────────────────────
                 // Contributions whose flatNumber doesn't exist in community settings
@@ -6835,6 +7682,22 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                       .where((e) => !knownFlats.contains(e.key))
                       .toList();
                   if (unassigned.isEmpty) return const SizedBox.shrink();
+
+                  double unassignedTotal = 0, unassignedCash = 0, unassignedOnline = 0;
+                  for (final entry in unassigned) {
+                    for (final doc in entry.value) {
+                      final d = doc.data() as Map<String, dynamic>;
+                      if (d['amountReceived'] != true) continue;
+                      final amt = (d['amount'] as num? ?? 0).toDouble();
+                      final mode = (d['paymentMode'] as String? ?? '').toLowerCase();
+                      unassignedTotal += amt;
+                      if (mode == 'cash') {
+                        unassignedCash += amt;
+                      } else {
+                        unassignedOnline += amt;
+                      }
+                    }
+                  }
 
                   // Try to suffix-match each unassigned flat to a known flat
                   String? resolveFlat(String orphan) {
@@ -6886,7 +7749,7 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                       border: Border.all(color: Colors.red.shade100),
                     ),
                     child: ExpansionTile(
-                      initiallyExpanded: true,
+                      initiallyExpanded: false,
                       leading: CircleAvatar(
                         radius: 18,
                         backgroundColor: Colors.red.shade50,
@@ -6899,6 +7762,37 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                         '${unassigned.length} flat${unassigned.length == 1 ? '' : 's'} not in community structure',
                         style: TextStyle(
                             fontSize: 12, color: Colors.red.shade400),
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text('₹${_fmt(unassignedTotal)}',
+                                  style: TextStyle(
+                                      color: Colors.green.shade700,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13)),
+                              if (unassignedCash > 0 && unassignedOnline > 0)
+                                Text(
+                                    'C:${_fmt(unassignedCash)} · O:${_fmt(unassignedOnline)}',
+                                    style: TextStyle(
+                                        fontSize: 9, color: Colors.blue.shade600))
+                              else if (unassignedCash > 0)
+                                Text('Cash',
+                                    style: TextStyle(
+                                        fontSize: 9, color: Colors.amber.shade800))
+                              else if (unassignedOnline > 0)
+                                Text('Online',
+                                    style: TextStyle(
+                                        fontSize: 9, color: Colors.blue.shade600)),
+                            ],
+                          ),
+                          const SizedBox(width: 4),
+                          const Icon(Icons.expand_more),
+                        ],
                       ),
                       children: [
                         Padding(
@@ -6958,11 +7852,163 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                     ),
                   );
                 }),
+
+                // ── Anonymous Contributions ─────────────────────────
+                Builder(builder: (_) {
+                  final anonEntries = docs.where((d) {
+                    final data = d.data() as Map<String, dynamic>;
+                    return data['isAnonymous'] == true && data['status'] != 'deleted';
+                  }).toList();
+                  if (anonEntries.isEmpty) return const SizedBox.shrink();
+
+                  double anonTotal = 0, anonCash = 0, anonOnline = 0;
+                  for (final doc in anonEntries) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    if (data['amountReceived'] != true) continue;
+                    final amt = (data['amount'] as num? ?? 0).toDouble();
+                    anonTotal += amt;
+                    final mode = (data['paymentMode'] as String? ?? '').toLowerCase();
+                    if (mode == 'cash') {
+                      anonCash += amt;
+                    } else {
+                      anonOnline += amt;
+                    }
+                  }
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).cardColor,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.purple.shade100),
+                    ),
+                    child: ExpansionTile(
+                      initiallyExpanded: false,
+                      leading: CircleAvatar(
+                        radius: 18,
+                        backgroundColor: Colors.purple.shade50,
+                        child: Icon(Icons.visibility_off_outlined,
+                            color: Colors.purple.shade600, size: 18),
+                      ),
+                      title: const Text('Anonymous',
+                          style: TextStyle(fontWeight: FontWeight.w600)),
+                      subtitle: Text(
+                          '${anonEntries.length} entr${anonEntries.length == 1 ? 'y' : 'ies'}',
+                          style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text('₹${_fmt(anonTotal)}',
+                                  style: TextStyle(
+                                      color: Colors.purple.shade700,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13)),
+                              if (anonCash > 0 && anonOnline > 0)
+                                Text('C:${_fmt(anonCash)} · O:${_fmt(anonOnline)}',
+                                    style: TextStyle(fontSize: 9, color: Colors.blue.shade600))
+                              else if (anonCash > 0)
+                                Text('Cash',
+                                    style: TextStyle(fontSize: 9, color: Colors.amber.shade800))
+                              else if (anonOnline > 0)
+                                Text('Online',
+                                    style: TextStyle(fontSize: 9, color: Colors.blue.shade600)),
+                            ],
+                          ),
+                          const SizedBox(width: 4),
+                          const Icon(Icons.expand_more),
+                        ],
+                      ),
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: anonEntries.map((doc) {
+                              final d = doc.data() as Map<String, dynamic>;
+                              final amt = (d['amount'] as num? ?? 0).toDouble();
+                              final flat = (d['flatNumber'] as String? ?? '').trim();
+                              final pending = d['amountReceived'] != true;
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Icon(Icons.visibility_off_outlined,
+                                        size: 14, color: Colors.purple.shade300),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                              flat.isNotEmpty
+                                                  ? 'Flat $flat  (hidden from residents)'
+                                                  : 'Anonymous donor',
+                                              style: const TextStyle(
+                                                  fontSize: 13, fontWeight: FontWeight.w600)),
+                                          if (pending)
+                                            Text('Pending',
+                                                style: TextStyle(
+                                                    fontSize: 11, color: Colors.orange.shade700)),
+                                        ],
+                                      ),
+                                    ),
+                                    Text('₹${_fmt(amt)}',
+                                        style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.purple.shade700)),
+                                    if (widget.isAdmin) ...[
+                                      const SizedBox(width: 6),
+                                      IconButton(
+                                        icon: Icon(Icons.edit_outlined,
+                                            color: Colors.blue.shade300, size: 16),
+                                        onPressed: () => Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) => AddContributionScreen(
+                                              eventId: widget.eventId,
+                                              existingDocId: doc.id,
+                                              existingData: d,
+                                            ),
+                                          ),
+                                        ),
+                                        tooltip: 'Edit',
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      IconButton(
+                                        icon: Icon(Icons.delete_outline,
+                                            color: Colors.red.shade300, size: 16),
+                                        onPressed: () => _ContributionsTabState
+                                            ._deleteContribution(context, doc, d),
+                                        tooltip: 'Delete',
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+
                 const SizedBox(height: 80),
               ],
             );
-          },
-        );
+        }
+      },
+    );
       },
     );
   }
@@ -7046,7 +8092,7 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                         fontSize: 13)),
                 if (wingCash > 0 && wingOnline > 0)
                   Text('C:${_fmt(wingCash)} · O:${_fmt(wingOnline)}',
-                      style: TextStyle(fontSize: 9, color: Colors.grey.shade500))
+                      style: TextStyle(fontSize: 9, color: Colors.blue.shade600))
                 else if (wingCash > 0)
                   Text('Cash', style: TextStyle(fontSize: 9, color: Colors.amber.shade800))
                 else if (wingOnline > 0)
@@ -7177,7 +8223,7 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                           fontSize: 13)),
                   if (blockCash > 0 && blockOnline > 0)
                     Text('C:${_fmt(blockCash)} · O:${_fmt(blockOnline)}',
-                        style: TextStyle(fontSize: 9, color: Colors.grey.shade500))
+                        style: TextStyle(fontSize: 9, color: Colors.blue.shade600))
                   else if (blockCash > 0)
                     Text('Cash', style: TextStyle(fontSize: 9, color: Colors.amber.shade800))
                   else if (blockOnline > 0)
@@ -7506,7 +8552,56 @@ class _ContributionsTabState extends State<_ContributionsTab> {
           .doc(doc.reference.parent.parent!.id);
       batch.update(eventRef, {'totalCollected': FieldValue.increment(-amt)});
     }
+    // Carry-forward contributions are mirrored by a transfer-audit record on
+    // the SOURCE event — reverse it too, so that event's available-to-carry
+    // balance frees back up instead of staying permanently locked.
+    DocumentReference? sourceRefToRecalc;
+    if (d['contributionType'] == kTypeCarryForward &&
+        (d['carryForwardSourceEventId'] as String?)?.isNotEmpty == true) {
+      final sourceRef = FirebaseFirestore.instance
+          .collection('events')
+          .doc(d['carryForwardSourceEventId'] as String);
+      final transferId = d['carryForwardTransferId'] as String?;
+      if (transferId != null && transferId.isNotEmpty) {
+        batch.update(sourceRef.collection('carryForwardTransfers').doc(transferId),
+            {'reversed': true});
+        sourceRefToRecalc = sourceRef;
+      } else {
+        // Legacy transfer, created before the destination contribution and
+        // source transfer record were linked by ID — best-effort match on
+        // destination event + amount so older records can still be reversed.
+        final destEventId = doc.reference.parent.parent!.id;
+        final legacyMatch = await sourceRef
+            .collection('carryForwardTransfers')
+            .where('destEventId', isEqualTo: destEventId)
+            .where('amount', isEqualTo: amt)
+            .get();
+        // Firestore != queries exclude docs missing the field entirely, so
+        // filter "not already reversed" client-side instead — legacy docs
+        // never had a 'reversed' field, and missing means still active.
+        final stillActive =
+            legacyMatch.docs.where((t) => t.data()['reversed'] != true).toList();
+        if (stillActive.isNotEmpty) {
+          batch.update(stillActive.first.reference, {'reversed': true});
+          sourceRefToRecalc = sourceRef;
+        }
+      }
+    }
     await batch.commit();
+    // Recompute the source event's locked balance fresh from its transfer
+    // records (like Recalculate Carry-Forward Balance) instead of trusting
+    // FieldValue.increment — makes every delete self-healing, so the source
+    // event is reliably selectable again in Carry Forward Balance right
+    // after this, with no manual recalculation step needed.
+    if (sourceRefToRecalc != null) {
+      final transfers = await sourceRefToRecalc.collection('carryForwardTransfers').get();
+      double locked = 0;
+      for (final t in transfers.docs) {
+        final td = t.data();
+        if (td['reversed'] != true) locked += (td['amount'] as num? ?? 0).toDouble();
+      }
+      await sourceRefToRecalc.update({'carriedForwardOut': locked});
+    }
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Contribution deleted')));
@@ -7976,7 +9071,7 @@ class _ExpensesTab extends StatelessWidget {
                         padding: const EdgeInsets.only(bottom: 6),
                         child: Row(
                           children: [
-                            Text(_categoryIcon(e.key),
+                            Text(_expenseCategoryIcon(e.key),
                                 style: const TextStyle(fontSize: 16)),
                             const SizedBox(width: 8),
                             Expanded(child: Text(e.key)),
@@ -7993,108 +9088,12 @@ class _ExpensesTab extends StatelessWidget {
             ],
 
             if (sectionVisible('expenses_list'))
-            ...docs.map((doc) {
-              final d = doc.data() as Map<String, dynamic>;
-              final receiptUrl = d['receiptUrl'] as String?;
-              return Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.04),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2))
-                  ],
-                ),
-                child: Material(
-                  color: Theme.of(context).cardColor,
-                  borderRadius: BorderRadius.circular(12),
-                  child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: Colors.red.shade50,
-                        child: Text(
-                            (d['categoryIcon'] as String?)?.isNotEmpty == true
-                                ? d['categoryIcon']
-                                : _categoryIcon(d['category'] ?? 'Misc'),
-                            style: const TextStyle(fontSize: 18)),
-                      ),
-                      title: Text(d['item'] ?? '',
-                          style: const TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: Text([
-                        d['category'] ?? 'Misc',
-                        if ((d['subCategory'] ?? '').isNotEmpty) d['subCategory'],
-                        if ((d['vendor'] ?? '').isNotEmpty) d['vendor'],
-                        if ((d['note'] ?? '').isNotEmpty) d['note'],
-                      ].join(' • ')),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Text(
-                                '₹${(d['amount'] ?? 0).toStringAsFixed(0)}',
-                                style: TextStyle(
-                                    color: Colors.red.shade700,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16),
-                              ),
-                              Text(
-                                (d['addedAt'] ?? '').length >= 10
-                                    ? d['addedAt'].substring(0, 10)
-                                    : '',
-                                style: TextStyle(
-                                    color: Colors.grey.shade400, fontSize: 11),
-                              ),
-                            ],
-                          ),
-                          if (receiptUrl != null) ...[
-                            const SizedBox(width: 8),
-                            GestureDetector(
-                              onTap: () => _showReceiptFullScreen(context, receiptUrl),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(6),
-                                child: Image.network(receiptUrl,
-                                    width: 40,
-                                    height: 40,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => Icon(
-                                        Icons.receipt,
-                                        color: Colors.grey.shade400)),
-                              ),
-                            ),
-                          ],
-                          if (isAdmin) ...[
-                            const SizedBox(width: 8),
-                            GestureDetector(
-                              onTap: () => Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => AddExpenseScreen(
-                                    eventId: eventId,
-                                    eventTypeId: eventTypeId,
-                                    existingExpenseId: doc.id,
-                                    existingData: d,
-                                  ),
-                                ),
-                              ),
-                              child: Icon(Icons.edit,
-                                  size: 18, color: Colors.grey.shade400),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ],
-                  ),
-                ),
-              );
-            }),
+              _ExpensesByDateList(
+                docs: docs,
+                isAdmin: isAdmin,
+                eventId: eventId,
+                eventTypeId: eventTypeId,
+              ),
           ],
         );
       },
@@ -8102,39 +9101,259 @@ class _ExpensesTab extends StatelessWidget {
       },
     );
   }
+}
 
-  void _showReceiptFullScreen(BuildContext context, String url) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => Scaffold(
+String _expenseDateKey(DateTime d) =>
+    '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+String _expenseDateLabel(DateTime d) {
+  const months = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return '${d.day} ${months[d.month]} ${d.year}';
+}
+
+void _showExpenseReceiptFullScreen(BuildContext context, String url) {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => Scaffold(
+        backgroundColor: Colors.black,
+        appBar: AppBar(
           backgroundColor: Colors.black,
-          appBar: AppBar(
-            backgroundColor: Colors.black,
-            foregroundColor: Colors.white,
-            title: const Text('Receipt'),
-          ),
-          body: Center(
-            child: InteractiveViewer(
-              child: Image.network(url, fit: BoxFit.contain),
-            ),
+          foregroundColor: Colors.white,
+          title: const Text('Receipt'),
+        ),
+        body: Center(
+          child: InteractiveViewer(
+            child: Image.network(url, fit: BoxFit.contain),
           ),
         ),
+      ),
+    ),
+  );
+}
+
+String _expenseCategoryIcon(String cat) {
+  switch (cat) {
+    case 'Decoration': return '🎨';
+    case 'Food & Prasad': return '🍱';
+    case 'Priest / Pandit': return '🙏';
+    case 'Music & Sound': return '🎵';
+    case 'Transport': return '🚗';
+    case 'Flowers': return '🌸';
+    case 'Lighting': return '💡';
+    default: return '📦';
+  }
+}
+
+// ── Expenses grouped by date, collapsible per day ────────────────────────────
+// Only the current date's group starts expanded; every other date starts
+// collapsed. The expand/collapse choice is computed once per mount (not
+// recomputed on every live-stream update), so a user's manual toggles
+// survive new expenses arriving elsewhere.
+
+class _ExpensesByDateList extends StatefulWidget {
+  final List<QueryDocumentSnapshot> docs;
+  final bool isAdmin;
+  final String eventId;
+  final String eventTypeId;
+
+  const _ExpensesByDateList({
+    required this.docs,
+    required this.isAdmin,
+    required this.eventId,
+    required this.eventTypeId,
+  });
+
+  @override
+  State<_ExpensesByDateList> createState() => _ExpensesByDateListState();
+}
+
+class _ExpensesByDateListState extends State<_ExpensesByDateList> {
+  Set<String>? _expandedKeys;
+
+  @override
+  Widget build(BuildContext context) {
+    final Map<String, List<QueryDocumentSnapshot>> grouped = {};
+    final orderedKeys = <String>[];
+    for (final doc in widget.docs) {
+      final d = doc.data() as Map<String, dynamic>;
+      final dt = DateTime.tryParse(d['addedAt'] as String? ?? '') ?? DateTime.now();
+      final key = _expenseDateKey(dt);
+      if (!grouped.containsKey(key)) {
+        grouped[key] = [];
+        orderedKeys.add(key);
+      }
+      grouped[key]!.add(doc);
+    }
+
+    _expandedKeys ??= {
+      if (grouped.containsKey(_expenseDateKey(DateTime.now())))
+        _expenseDateKey(DateTime.now()),
+    };
+
+    return Column(
+      children: [
+        for (final key in orderedKeys) ...[
+          _buildDateSection(context, key, grouped[key]!),
+          const SizedBox(height: 8),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildDateSection(
+      BuildContext context, String key, List<QueryDocumentSnapshot> docs) {
+    final expanded = _expandedKeys!.contains(key);
+    final parts = key.split('-').map(int.parse).toList();
+    final dt = DateTime(parts[0], parts[1], parts[2]);
+    final isToday = key == _expenseDateKey(DateTime.now());
+    final subtotal = docs.fold<double>(0,
+        (s, doc) => s + ((doc.data() as Map<String, dynamic>)['amount'] ?? 0).toDouble());
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6)],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            borderRadius: BorderRadius.vertical(
+              top: const Radius.circular(12),
+              bottom: expanded ? Radius.zero : const Radius.circular(12),
+            ),
+            onTap: () => setState(() {
+              expanded ? _expandedKeys!.remove(key) : _expandedKeys!.add(key);
+            }),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.calendar_today_outlined, size: 15, color: Colors.red.shade400),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(isToday ? 'Today — ${_expenseDateLabel(dt)}' : _expenseDateLabel(dt),
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                            overflow: TextOverflow.ellipsis),
+                      ),
+                      const SizedBox(width: 8),
+                      Text('₹${subtotal.toStringAsFixed(0)}',
+                          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red.shade700)),
+                      const SizedBox(width: 6),
+                      Icon(expanded ? Icons.expand_less : Icons.expand_more, color: Colors.grey.shade500),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 23),
+                    child: Text('${docs.length} expense${docs.length == 1 ? '' : 's'}',
+                        style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (expanded) ...[
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+              child: Column(
+                children: docs.map((doc) => _expenseCard(context, doc)).toList(),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
 
-  String _categoryIcon(String cat) {
-    switch (cat) {
-      case 'Decoration': return '🎨';
-      case 'Food & Prasad': return '🍱';
-      case 'Priest / Pandit': return '🙏';
-      case 'Music & Sound': return '🎵';
-      case 'Transport': return '🚗';
-      case 'Flowers': return '🌸';
-      case 'Lighting': return '💡';
-      default: return '📦';
-    }
+  Widget _expenseCard(BuildContext context, QueryDocumentSnapshot doc) {
+    final d = doc.data() as Map<String, dynamic>;
+    final receiptUrl = d['receiptUrl'] as String?;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 6,
+              offset: const Offset(0, 2))
+        ],
+      ),
+      child: Material(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(12),
+        child: ListTile(
+          leading: CircleAvatar(
+            backgroundColor: Colors.red.shade50,
+            child: Text(
+                (d['categoryIcon'] as String?)?.isNotEmpty == true
+                    ? d['categoryIcon']
+                    : _expenseCategoryIcon(d['category'] ?? 'Misc'),
+                style: const TextStyle(fontSize: 18)),
+          ),
+          title: Text(d['item'] ?? '',
+              style: const TextStyle(fontWeight: FontWeight.bold)),
+          subtitle: Text([
+            d['category'] ?? 'Misc',
+            if ((d['subCategory'] ?? '').isNotEmpty) d['subCategory'],
+            if ((d['vendor'] ?? '').isNotEmpty) d['vendor'],
+            if ((d['note'] ?? '').isNotEmpty) d['note'],
+          ].join(' • ')),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '₹${(d['amount'] ?? 0).toStringAsFixed(0)}',
+                style: TextStyle(
+                    color: Colors.red.shade700,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16),
+              ),
+              if (receiptUrl != null) ...[
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () => _showExpenseReceiptFullScreen(context, receiptUrl),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: Image.network(receiptUrl,
+                        width: 40,
+                        height: 40,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) =>
+                            Icon(Icons.receipt, color: Colors.grey.shade400)),
+                  ),
+                ),
+              ],
+              if (widget.isAdmin) ...[
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => AddExpenseScreen(
+                        eventId: widget.eventId,
+                        eventTypeId: widget.eventTypeId,
+                        existingExpenseId: doc.id,
+                        existingData: d,
+                      ),
+                    ),
+                  ),
+                  child: Icon(Icons.edit, size: 18, color: Colors.grey.shade400),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -9559,6 +10778,8 @@ class _ActivityTabState extends State<_ActivityTab> {
     'rejected': 'Rejected',
     'deleted': 'Deleted',
     'submitted': 'Submitted (Pending)',
+    'external': 'External Donation',
+    'anonymous': 'Anonymous',
   };
 
   @override
@@ -9716,13 +10937,21 @@ class _ActivityTabState extends State<_ActivityTab> {
   }
 
   Future<void> _restore(DocumentReference ref, Map<String, dynamic> e) async {
+    final rawData = e['data'] as Map<String, dynamic>?;
+    // Self-reported contributions go through admin verification, so a
+    // restore intentionally drops them back to pending for re-review.
+    // Admin-added types (Regular/Special/Anonymous/External/Sponsor/Carry
+    // Forward/Imported) never had that workflow — restoring them should put
+    // them back exactly as they were, not force a fake 'pending' state that
+    // desyncs amountReceived from totalCollected.
+    final selfReported = rawData?['selfReported'] == true;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Restore Contribution'),
         content: Text(
             'Restore ₹${(e['amt'] as double).toStringAsFixed(0)} for ${e['flat']}?\n\n'
-            'The contribution will be marked as pending for admin review.'),
+            '${selfReported ? 'The contribution will be marked as pending for admin review.' : 'The contribution will be restored to its previous state.'}'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           ElevatedButton(
@@ -9735,29 +10964,63 @@ class _ActivityTabState extends State<_ActivityTab> {
     );
     if (confirmed != true) return;
     final now = DateTime.now().toIso8601String();
+    // Mirror the delete path's own condition ('!= false', i.e. counted
+    // unless explicitly marked not-received) instead of a strict '== true'
+    // check, so a missing/null preDeleteAmountReceived can't silently drop
+    // the amount out of totalCollected on restore.
+    final wasConfirmed = e['preDeleteAmountReceived'] != false;
+    final restoredStatus = selfReported
+        ? 'pending'
+        : ((e['preDeleteStatus'] as String?)?.isNotEmpty == true
+            ? e['preDeleteStatus'] as String
+            : 'confirmed');
     final update = <String, dynamic>{
-      'status': 'pending',
-      'amountReceived': false,
+      'status': restoredStatus,
+      'amountReceived': selfReported ? false : wasConfirmed,
       'deletedAt': FieldValue.delete(),
       'preDeleteStatus': FieldValue.delete(),
       'preDeleteAmountReceived': FieldValue.delete(),
       'restoredAt': now,
     };
-    // If it was previously confirmed, restore totalCollected
-    final wasConfirmed = e['preDeleteAmountReceived'] == true;
+    final batch = FirebaseFirestore.instance.batch();
+    batch.update(ref, update);
+    // Carry-forward: un-reverse the linked transfer-audit record on the
+    // source event so its available-to-carry balance goes back down again.
+    if (rawData?['contributionType'] == kTypeCarryForward &&
+        (rawData?['carryForwardSourceEventId'] as String?)?.isNotEmpty == true &&
+        (rawData?['carryForwardTransferId'] as String?)?.isNotEmpty == true) {
+      final sourceRef = FirebaseFirestore.instance
+          .collection('events')
+          .doc(rawData!['carryForwardSourceEventId'] as String);
+      batch.update(
+          sourceRef.collection('carryForwardTransfers').doc(rawData['carryForwardTransferId'] as String),
+          {'reversed': false});
+      batch.update(sourceRef, {'carriedForwardOut': FieldValue.increment(e['amt'] as double)});
+    }
+    await batch.commit();
+    // Recompute totalCollected from scratch (like Recalculate Totals) rather
+    // than trusting FieldValue.increment — guarantees the restored amount is
+    // reflected correctly regardless of any prior increment/decrement drift.
     if (wasConfirmed) {
       final eventId = ref.parent.parent!.id;
       final eventRef = FirebaseFirestore.instance.collection('events').doc(eventId);
-      final batch = FirebaseFirestore.instance.batch();
-      batch.update(ref, update);
-      batch.update(eventRef, {'totalCollected': FieldValue.increment(e['amt'] as double)});
-      await batch.commit();
-    } else {
-      await ref.update(update);
+      final contribs = await eventRef.collection('contributions').get();
+      double total = 0;
+      for (final doc in contribs.docs) {
+        final cd = doc.data();
+        if (cd['status'] == 'deleted') continue;
+        if (cd['selfReported'] == true && cd['amountReceived'] != true) continue;
+        if (cd['amountReceived'] == true) {
+          total += (cd['amount'] as num? ?? 0).toDouble();
+        }
+      }
+      await eventRef.update({'totalCollected': total});
     }
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Contribution restored to pending')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(selfReported
+              ? 'Contribution restored to pending'
+              : 'Contribution restored')));
     }
   }
 
@@ -9944,6 +11207,10 @@ class _ActivityTabState extends State<_ActivityTab> {
           .snapshots(),
       builder: (context, volSnap) => StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
+          .collection('events').doc(widget.eventId).collection('carryForwardTransfers')
+          .snapshots(),
+      builder: (context, cfOutSnap) => StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
           .collection('events')
           .doc(widget.eventId)
           .collection('contributions')
@@ -9956,6 +11223,19 @@ class _ActivityTabState extends State<_ActivityTab> {
         // Build a flat list of log entries from contribution docs + volunteer docs
         final entries = <Map<String, dynamic>>[];
         entries.addAll(_volEntries(volSnap.data?.docs ?? []));
+        for (final doc in cfOutSnap.data?.docs ?? []) {
+          final d = doc.data() as Map<String, dynamic>;
+          entries.add({
+            'type': 'carry_forward_out',
+            'flat': '', 'name': '',
+            'amt': (d['amount'] as num? ?? 0).toDouble(),
+            'wing': '', 'block': '',
+            'destEventName': d['destEventName'] ?? 'another event',
+            'ts': d['createdAt'] ?? '',
+            'ref': doc.reference,
+            'reversed': d['reversed'] == true,
+          });
+        }
         for (final doc in snap.data!.docs) {
           final d = doc.data() as Map<String, dynamic>;
           final flat = _fmtFlat((d['flatNumber'] ?? '') as String);
@@ -9966,6 +11246,19 @@ class _ActivityTabState extends State<_ActivityTab> {
           final mode = d['paymentMode'] ?? '';
           final selfReported = d['selfReported'] == true;
           final status = d['status'] ?? '';
+          final contributionType = d['contributionType'] as String? ?? '';
+          final isAnonymous = d['isAnonymous'] == true;
+          // Shared fields so every entry type can be searched/filtered by
+          // contribution type (External/Anonymous) and, for admin-added
+          // entries, edited or deleted directly from Activity.
+          final imported = d['importedAt'] != null;
+          final common = {
+            'contributionType': contributionType,
+            'isAnonymous': isAnonymous,
+            'doc': doc,
+            'data': d,
+            'imported': imported,
+          };
 
           if (status == 'deleted') {
             entries.add({
@@ -9975,6 +11268,7 @@ class _ActivityTabState extends State<_ActivityTab> {
               'preDeleteStatus': d['preDeleteStatus'] ?? '',
               'preDeleteAmountReceived': d['preDeleteAmountReceived'],
               'ts': d['deletedAt'] ?? d['paidAt'] ?? '',
+              ...common,
             });
           } else {
             // Restored from deleted
@@ -9983,6 +11277,7 @@ class _ActivityTabState extends State<_ActivityTab> {
                 'type': 'restored',
                 'flat': flat, 'name': name, 'amt': amt, 'wing': wing, 'block': block,
                 'ts': d['restoredAt'],
+                ...common,
               });
             }
             if (selfReported) {
@@ -9990,12 +11285,14 @@ class _ActivityTabState extends State<_ActivityTab> {
                 'type': 'submitted',
                 'flat': flat, 'name': name, 'amt': amt, 'mode': mode, 'wing': wing, 'block': block,
                 'ts': d['reportedAt'] ?? d['paidAt'] ?? '',
+                ...common,
               });
               if (status == 'confirmed' && (d['confirmedAt'] ?? '').isNotEmpty) {
                 entries.add({
                   'type': 'confirmed',
                   'flat': flat, 'name': name, 'amt': amt, 'mode': mode, 'wing': wing, 'block': block,
                   'ts': d['confirmedAt'],
+                  ...common,
                 });
               }
               if ((d['rejectedAt'] as String?)?.isNotEmpty == true) {
@@ -10005,6 +11302,7 @@ class _ActivityTabState extends State<_ActivityTab> {
                   'reason': d['rejectionReason'] ?? '',
                   'ref': status == 'rejected' ? doc.reference : null,
                   'ts': d['rejectedAt'],
+                  ...common,
                 });
               }
               if ((d['revertedAt'] as String?)?.isNotEmpty == true) {
@@ -10012,13 +11310,17 @@ class _ActivityTabState extends State<_ActivityTab> {
                   'type': 'reverted',
                   'flat': flat, 'name': name, 'amt': amt, 'wing': wing, 'block': block,
                   'ts': d['revertedAt'],
+                  ...common,
                 });
               }
             } else {
               entries.add({
                 'type': 'added',
                 'flat': flat, 'name': name, 'amt': amt, 'mode': mode, 'wing': wing, 'block': block,
-                'ts': d['paidAt'] ?? '',
+                // createdAt (real add-time) is preferred; paidAt is a
+                // date-only field the admin picks, so it always reads 00:00.
+                'ts': d['createdAt'] ?? d['paidAt'] ?? '',
+                ...common,
               });
             }
           }
@@ -10028,16 +11330,23 @@ class _ActivityTabState extends State<_ActivityTab> {
         for (final e in entries) {
           e['dt'] = _parse(e['ts'] as String?);
         }
+        // Match on just the trailing digit run so any flat-number formatting
+        // style (letters, hyphens, spaces before the number) still matches
+        // the bare number shown in the Flat filter picker.
+        String numericTail(String s) =>
+            RegExp(r'(\d+)\s*$').firstMatch(s)?.group(1) ?? s;
+
         bool _matchEntry(Map<String, dynamic> e) {
           final flat = (e['flat'] as String? ?? '').toUpperCase();
-          final wing = (e['wing'] as String? ?? '').toUpperCase();
-          final block = (e['block'] as String? ?? '').toUpperCase();
+          final wing = (e['wing'] as String? ?? '').trim().toUpperCase();
+          final block = (e['block'] as String? ?? '').trim().toUpperCase();
           if (_flatFilter.isNotEmpty) {
-            final flatNo = flat.split(' ').last;
-            if (flatNo != _flatFilter.toUpperCase()) return false;
+            if (numericTail(flat) != numericTail(_flatFilter.toUpperCase())) {
+              return false;
+            }
           }
-          if (_wingFilter.isNotEmpty && wing != _wingFilter.toUpperCase()) return false;
-          if (_blockFilter.isNotEmpty && block != _blockFilter.toUpperCase()) return false;
+          if (_wingFilter.isNotEmpty && wing != _wingFilter.trim().toUpperCase()) return false;
+          if (_blockFilter.isNotEmpty && block != _blockFilter.trim().toUpperCase()) return false;
           if (_dateFilter != null) {
             final dt = e['dt'] as DateTime?;
             if (dt == null) return false;
@@ -10054,6 +11363,10 @@ class _ActivityTabState extends State<_ActivityTab> {
                 if (type != 'deleted') return false;
               case 'submitted':
                 if (type != 'submitted') return false;
+              case 'external':
+                if (e['contributionType'] != kTypeExternal) return false;
+              case 'anonymous':
+                if (e['isAnonymous'] != true) return false;
             }
           }
           return true;
@@ -10071,19 +11384,8 @@ class _ActivityTabState extends State<_ActivityTab> {
           return dtB.compareTo(dtA);
         });
 
-        if (displayEntries.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.history, size: 48, color: Colors.grey.shade300),
-                const SizedBox(height: 12),
-                Text((_flatFilter.isEmpty && _wingFilter.isEmpty && _blockFilter.isEmpty && _dateFilter == null && _statusFilter.isEmpty) ? 'No activity yet' : 'No matching activity',
-                    style: TextStyle(color: Colors.grey.shade400, fontSize: 15)),
-              ],
-            ),
-          );
-        }
+        final noFiltersActive = _flatFilter.isEmpty && _wingFilter.isEmpty &&
+            _blockFilter.isEmpty && _dateFilter == null && _statusFilter.isEmpty;
 
         // Collect all unique month and date keys for expand/collapse all
         final allMonthKeys = <String>{};
@@ -10369,7 +11671,28 @@ class _ActivityTabState extends State<_ActivityTab> {
               ),
             ),
             Expanded(
-              child: ListView.builder(
+              child: displayEntries.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.history, size: 48, color: Colors.grey.shade300),
+                          const SizedBox(height: 12),
+                          Text(
+                              noFiltersActive
+                                  ? 'No activity yet'
+                                  : 'No activity found for the selected filters',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: Colors.grey.shade400, fontSize: 15)),
+                          if (!noFiltersActive) ...[
+                            const SizedBox(height: 6),
+                            Text('Try adjusting or clearing the filters above',
+                                style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
+                          ],
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
                 padding: EdgeInsets.fromLTRB(12, 4, 12, keyboardHeight + 80),
                 itemCount: listItems.length,
           itemBuilder: (_, i) {
@@ -10378,18 +11701,22 @@ class _ActivityTabState extends State<_ActivityTab> {
             // Month header — tappable to expand/collapse
             if (item.isMonthHeader) {
               final isExpanded = _expandedMonths.contains(item.monthKey);
-              return GestureDetector(
-                onTap: () => setState(() {
-                  if (isExpanded) {
-                    _expandedMonths.remove(item.monthKey);
-                  } else {
-                    _expandedMonths.add(item.monthKey!);
-                  }
-                }),
-                child: Padding(
-                  padding: EdgeInsets.only(top: i == 0 ? 0 : 16, bottom: 4),
-                  child: Row(children: [
-                    Container(
+              final datesInMonth =
+                  allDateKeys.where((k) => k.startsWith(item.monthKey!)).toList();
+              final allDatesInMonthExpanded =
+                  datesInMonth.isNotEmpty && _expandedDates.containsAll(datesInMonth);
+              return Padding(
+                padding: EdgeInsets.only(top: i == 0 ? 0 : 16, bottom: 4),
+                child: Row(children: [
+                  GestureDetector(
+                    onTap: () => setState(() {
+                      if (isExpanded) {
+                        _expandedMonths.remove(item.monthKey);
+                      } else {
+                        _expandedMonths.add(item.monthKey!);
+                      }
+                    }),
+                    child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
                         color: AppTheme.accent.shade600,
@@ -10415,10 +11742,36 @@ class _ActivityTabState extends State<_ActivityTab> {
                         ],
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(child: Divider(color: AppTheme.accent.shade100)),
-                  ]),
-                ),
+                  ),
+                  if (isExpanded && datesInMonth.length > 1) ...[
+                    const SizedBox(width: 6),
+                    GestureDetector(
+                      onTap: () => setState(() {
+                        if (allDatesInMonthExpanded) {
+                          _expandedDates.removeAll(datesInMonth);
+                        } else {
+                          _expandedDates.addAll(datesInMonth);
+                        }
+                      }),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppTheme.accent.shade50,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: AppTheme.accent.shade200),
+                        ),
+                        child: Text(
+                            allDatesInMonthExpanded ? 'Collapse dates' : 'Expand dates',
+                            style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.accent.shade700)),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(width: 8),
+                  Expanded(child: Divider(color: AppTheme.accent.shade100)),
+                ]),
               );
             }
 
@@ -10467,6 +11820,7 @@ class _ActivityTabState extends State<_ActivityTab> {
             DocumentReference? actionRef;
             VoidCallback? onRestore;
             VoidCallback? onDelete;
+            VoidCallback? onEdit;
 
             switch (type) {
               case 'confirmed':
@@ -10488,9 +11842,18 @@ class _ActivityTabState extends State<_ActivityTab> {
                 iconBg = Colors.grey.shade100; iconColor = Colors.grey.shade600;
                 icon = Icons.delete_outline;
                 title = 'Deleted ₹${_fmt(e['amt'] as double)} from ${e['flat']}';
-                subtitle = e['name'] as String;
+                subtitle = e['contributionType'] == kTypeCarryForward
+                    ? '${e['name']}  ·  Carry forward balance is available again in its source event'
+                    : e['name'] as String;
                 actionRef = e['ref'] as DocumentReference?;
-                if (actionRef != null) onRestore = () => _restore(actionRef!, e);
+                // Carry-forward deletions are log-only — no Restore here.
+                // The freed-up balance is already selectable again from
+                // Carry Forward Balance on the source event; re-adding it
+                // that way (rather than an in-place restore) keeps the
+                // source/destination bookkeeping unambiguous.
+                if (actionRef != null && e['contributionType'] != kTypeCarryForward) {
+                  onRestore = () => _restore(actionRef!, e);
+                }
               case 'restored':
                 iconBg = Colors.teal.shade50; iconColor = Colors.teal.shade700;
                 icon = Icons.restore_outlined;
@@ -10546,12 +11909,77 @@ class _ActivityTabState extends State<_ActivityTab> {
                 icon = Icons.pending_outlined;
                 title = 'Volunteer moved to pending: ${e['name']}';
                 subtitle = 'Role: ${e['role']}';
+              case 'carry_forward_out':
+                final isReversed = e['reversed'] == true;
+                iconBg = isReversed ? Colors.grey.shade100 : Colors.blue.shade50;
+                iconColor = isReversed ? Colors.grey.shade500 : Colors.blue.shade700;
+                icon = Icons.move_up;
+                title = 'Carried forward ₹${_fmt(e['amt'] as double)} out'
+                    '${isReversed ? ' (reversed)' : ''}';
+                subtitle = isReversed
+                    ? 'No longer moved to ${e['destEventName']} — balance available again'
+                    : 'Moved to: ${e['destEventName']}';
+                // Only let admin permanently clear this log entry once the
+                // transfer has already been reversed (the destination-side
+                // contribution was deleted) — deleting it while still active
+                // would hide history without freeing the destination's money.
+                if (isReversed) {
+                  final transferRef = e['ref'] as DocumentReference?;
+                  if (transferRef != null) {
+                    onDelete = () async {
+                      final confirmDel = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('Remove Log Entry'),
+                          content: const Text(
+                              'Permanently remove this carry-forward record from Activity? This cannot be undone.'),
+                          actions: [
+                            TextButton(
+                                onPressed: () => Navigator.pop(ctx, false),
+                                child: const Text('Cancel')),
+                            ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.red.shade600,
+                                    foregroundColor: Colors.white),
+                                onPressed: () => Navigator.pop(ctx, true),
+                                child: const Text('Remove')),
+                          ],
+                        ),
+                      );
+                      if (confirmDel == true) {
+                        await transferRef.delete();
+                      }
+                    };
+                  }
+                }
               default:
+                final contribType = e['contributionType'] as String? ?? '';
+                final isAnon = e['isAnonymous'] == true;
                 iconBg = Colors.blue.shade50; iconColor = Colors.blue.shade700;
                 icon = Icons.add_circle_outline;
-                title = 'Admin recorded ₹${_fmt(e['amt'] as double)} for ${e['flat']}';
+                title = contribType == kTypeExternal
+                    ? 'Admin recorded external donation ₹${_fmt(e['amt'] as double)}'
+                    : isAnon
+                        ? 'Admin recorded anonymous ₹${_fmt(e['amt'] as double)} contribution'
+                        : 'Admin recorded ₹${_fmt(e['amt'] as double)} for ${e['flat']}';
                 subtitle = (e['name'] as String).isNotEmpty
                     ? '${e['name']}  ·  ${e['mode']}' : e['mode'] as String;
+                final editDoc = e['doc'] as QueryDocumentSnapshot?;
+                final editData = e['data'] as Map<String, dynamic>?;
+                if (editDoc != null && editData != null) {
+                  onEdit = () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => AddContributionScreen(
+                            eventId: widget.eventId,
+                            existingDocId: editDoc.id,
+                            existingData: editData,
+                          ),
+                        ),
+                      );
+                  onDelete = () => _ContributionsTabState._deleteContribution(
+                      context, editDoc, editData);
+                }
             }
 
             return Padding(
@@ -10601,7 +12029,11 @@ class _ActivityTabState extends State<_ActivityTab> {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        if (dt != null)
+                        if (e['imported'] == true)
+                          Text('N/A',
+                              style: TextStyle(
+                                  fontSize: 10, color: Colors.grey.shade400))
+                        else if (dt != null)
                           Text(_fmtTime(dt),
                               style: TextStyle(
                                   fontSize: 10, color: Colors.grey.shade400)),
@@ -10634,24 +12066,50 @@ class _ActivityTabState extends State<_ActivityTab> {
                             ),
                           ),
                         ],
-                        if (onDelete != null) ...[
+                        if (onEdit != null || onDelete != null) ...[
                           const SizedBox(height: 4),
-                          GestureDetector(
-                            onTap: onDelete,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: Colors.red.shade50,
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: Colors.red.shade200),
-                              ),
-                              child: Text('Delete',
-                                  style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.red.shade700)),
-                            ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (onEdit != null)
+                                GestureDetector(
+                                  onTap: onEdit,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blue.shade50,
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: Colors.blue.shade200),
+                                    ),
+                                    child: Text('Edit',
+                                        style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.blue.shade700)),
+                                  ),
+                                ),
+                              if (onEdit != null && onDelete != null)
+                                const SizedBox(width: 6),
+                              if (onDelete != null)
+                                GestureDetector(
+                                  onTap: onDelete,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.shade50,
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: Colors.red.shade200),
+                                    ),
+                                    child: Text('Delete',
+                                        style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.red.shade700)),
+                                  ),
+                                ),
+                            ],
                           ),
                         ],
                       ],
@@ -10667,6 +12125,7 @@ class _ActivityTabState extends State<_ActivityTab> {
         );     // Column
       },
       ),      // contributions StreamBuilder
+      ),      // carryForwardTransfers StreamBuilder
     );        // volunteers StreamBuilder
   }
 }

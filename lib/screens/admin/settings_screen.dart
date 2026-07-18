@@ -1,4 +1,5 @@
 ﻿import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../utils/country_codes.dart';
 import '../../theme/app_theme.dart';
@@ -688,6 +689,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _CountryCodeCard(ref: _ref, data: data),
               const SizedBox(height: 10),
               _PaymentModesCard(ref: _ref, data: data),
+              const SizedBox(height: 10),
+              _ExternalDonationHintCard(ref: _ref, data: data),
             ],
           );
         },
@@ -803,6 +806,138 @@ class _DefaultNoteCardState extends State<_DefaultNoteCard> {
                 ),
         ),
         onSubmitted: (_) => _save(),
+      ),
+    );
+  }
+}
+
+// ── External Donation Name Hint Card ──────────────────────────────────────────
+
+class _ExternalDonationHintCard extends StatefulWidget {
+  final DocumentReference ref;
+  final Map<String, dynamic> data;
+  const _ExternalDonationHintCard({required this.ref, required this.data});
+
+  @override
+  State<_ExternalDonationHintCard> createState() =>
+      _ExternalDonationHintCardState();
+}
+
+class _ExternalDonationHintCardState extends State<_ExternalDonationHintCard> {
+  late TextEditingController _ctrl;
+  bool _saving = false;
+  Timer? _debounce;
+
+  static const _default = 'e.g. ACT Broadband';
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(
+        text: widget.data['externalDonationHint'] as String? ?? '');
+  }
+
+  @override
+  void didUpdateWidget(_ExternalDonationHintCard old) {
+    super.didUpdateWidget(old);
+    final newVal = widget.data['externalDonationHint'] as String? ?? '';
+    final pendingEdit = _saving || (_debounce?.isActive ?? false);
+    if (_ctrl.text != newVal && !pendingEdit) {
+      _ctrl.text = newVal;
+    }
+  }
+
+  @override
+  void dispose() {
+    // Flush any pending debounced edit immediately — the widget may be torn
+    // down (navigation, collapsing the section) before the debounce timer
+    // would otherwise fire.
+    if (_debounce?.isActive ?? false) {
+      _debounce!.cancel();
+      _saveNow();
+    }
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  // Fire-and-forget write used from dispose(), which can't be async.
+  void _saveNow() {
+    final v = _ctrl.text.trim();
+    final current = widget.data['externalDonationHint'] as String? ?? '';
+    if (v == current) return;
+    widget.ref.set(
+        {'externalDonationHint': v.isEmpty ? _default : v},
+        SetOptions(merge: true));
+  }
+
+  void _onChanged(String _) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 600), _save);
+  }
+
+  Future<void> _save() async {
+    final v = _ctrl.text.trim();
+    final current = widget.data['externalDonationHint'] as String? ?? '';
+    if (v == current) return; // nothing changed — skip the write/snackbar
+    if (mounted) setState(() => _saving = true);
+    try {
+      await widget.ref.set(
+          {'externalDonationHint': v.isEmpty ? _default : v},
+          SetOptions(merge: true));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('External donation example text saved'),
+          backgroundColor: Colors.green,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _CollapsibleCard(
+      icon: Icons.corporate_fare_outlined,
+      iconColor: Colors.teal,
+      title: 'External Donation Example Text',
+      subtitle:
+          'Shown as the example hint in the Donor / Organization Name field when adding an External donation.',
+      child: TextField(
+        controller: _ctrl,
+        onChanged: _onChanged,
+        decoration: InputDecoration(
+          hintText: _default,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: Colors.teal, width: 2),
+          ),
+          suffixIcon: _saving
+              ? const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2)))
+              : IconButton(
+                  icon: const Icon(Icons.save_outlined, color: Colors.teal),
+                  onPressed: () {
+                    _debounce?.cancel();
+                    _save();
+                  },
+                  tooltip: 'Save',
+                ),
+        ),
+        onSubmitted: (_) {
+          _debounce?.cancel();
+          _save();
+        },
       ),
     );
   }
