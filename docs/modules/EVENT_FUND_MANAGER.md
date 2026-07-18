@@ -1,6 +1,6 @@
 # Event Fund Manager — Module Documentation
 **Module:** Event Fund Manager (+ Task Management)  
-**Status:** ✅ Live (Sessions 1–8 — 2026-06-14 to 2026-07-04)  
+**Status:** ✅ Live (Sessions 1–10 — 2026-06-14 to 2026-07-18)  
 **Screens:** 11 screens + 1 dashboard with 8 admin tabs / 4 resident tabs
 
 ---
@@ -42,10 +42,12 @@ Admin creates an event with a target amount → collects contributions flat-by-f
 - Event status badge (Active / Closed), with Reopen Event available once closed
 - Admin popup menu: Edit Event, Close/Reopen Event, Send Notification, Manage Sponsor Packages, Delete Event (cascades all subcollections)
 - **Configurable stat chips** — Cash, Online, Collected/Total, Spent, Expected, Balance, Anonymous, External, chosen per event type in Event Settings → Overview Stats (defaults to all shown)
-- Collection status by block (live via `_BlockStatsWidget`); tapping a block jumps to Contributions tab filtered to it
+- Collection status by block (live via `_BlockStatsWidget`); tapping a block jumps to Contributions tab filtered to it. Above the wing list, a "`X of Y residents contributed`" summary line uses the same paid/total flat counts as the block chips below it
 - **Leaderboard** — "Top Contributors" ranked by flat total; anonymous and external-donor amounts are excluded from ranking (footnoted/shown separately). Configurable per event type for residents, but **always shown to admin** for oversight regardless of the setting
 - **Special vs Regular breakdown** (admin only) — totals Regular vs Special separately, lists each special contribution by flat; External Donations excluded (own category)
-- **External Donations** (admin only) — total + list of non-resident donors (broadband company, builders, store operators, etc.)
+- **External Donations** (admin only) — total + list of non-resident donors (broadband company, builders, store operators, etc.), with a Cash/Online breakdown in the section header
+- **Anonymous** section — same Cash/Online breakdown as External Donations
+- **Anonymous/External card** — Carried Forward is now a third chip alongside Anonymous and External in the same card (previously its own standalone row)
 - **My Contribution** (resident only) — the logged-in resident's own running total, tap for a detail/edit/delete sheet
 - **Our Sponsors** wall — public list of sponsor tiers/names, respects the Anonymous toggle
 - Budget vs Actual PDF report export
@@ -56,8 +58,9 @@ Admin creates an event with a target amount → collects contributions flat-by-f
 - Block level: flat count, pending count badge
 - Flat level: contribution amount, type badge, PENDING badge if not received, ANONYMOUS badge (admin still sees real name/flat — anonymity only hides identity from other residents), edit icon, PDF receipt download
 - **Flat chip grid** — each block shows floor-grouped flat grid with configurable rows per floor (1/2/3 from community settings)
-- Grand total banner at bottom (received only, pending excluded)
+- Grand total banner at bottom (received only, pending excluded, and excludes Sponsorship-type amounts — those are shown individually in the Sponsored Contributions section but not summed into this total, since a sponsor item's value is often nominal rather than cash collected)
 - Flats sorted by flat number; wings/blocks sorted alphabetically
+- Anonymous contributions display exclusively under the Anonymous section — not also under Residents/Unassigned/External/Sponsored — even though they may technically belong to one of those categories too (a display-only rule; nothing is double-counted in the grand total)
 
 ### Follow-up Tab (admin only)
 - Same Wing → Block → Flat chip grid layout
@@ -101,7 +104,9 @@ Birds-eye view of task management for volunteer coordination. See §6 for full d
   description: string,
   targetAmount: number,
   expectedAmountPerFlat: number?,  // optional; drives "Pay Remaining Balance" banner
-  sponsorPackages: [ {name, amount, perks} ],  // admin-defined tiers
+  sponsorPackages: [ {name, amount, perks} ],  // admin-defined items; amount is optional (0 = no preset price)
+  carriedForwardOut: number,    // cumulative amount locked as carried forward to other events; recomputed
+                                 // fresh from carryForwardTransfers on every delete/restore, not incremented
   startDate: Timestamp,
   endDate: Timestamp,
   status: 'active' | 'closed',
@@ -112,20 +117,39 @@ Birds-eye view of task management for volunteer coordination. See §6 for full d
 }
 ```
 
+### `/events/{sourceEventId}/carryForwardTransfers/{transferId}`
+Auditable record of a balance moved out of this event into another. Created by `CarryForwardScreen` alongside the destination contribution, with each doc holding the other's ID so either side can find and reverse the other.
+```
+{
+  amount: number,
+  destEventId: string,
+  destEventName: string,
+  destContributionId: string,   // the contribution doc this transfer created on the destination event
+  createdAt: string (ISO),
+  reversed: boolean              // true once the destination contribution is deleted; excluded from carriedForwardOut
+}
+```
+
 ### `/events/{eventId}/contributions/{contribId}`
 ```
 {
-  wing: string,                 // '' for External Donation
-  block: string,                // '' for External Donation
-  flatNumber: string,           // '' for External Donation
+  wing: string,                 // '' for External Donation / Carry Forward
+  block: string,                // '' for External Donation / Carry Forward
+  flatNumber: string,           // '' for External Donation / Carry Forward
   fullAddress: string,
   residentName: string,         // donor/organization name for External Donation
   amount: number,
   contributionType: 'Regular Contribution' | 'Special Contribution' | 'Sponsorship' | 'External Donation'
-                     | 'Carry Forward' | 'Ganesh Laddu' (legacy),
+                     | 'Carry Forward (Previous Year)' | 'Ganesh Laddu' (legacy),
   specialDescription: string,   // populated when type = Special Contribution, else ''
-  sponsorPackageName: string?,  // populated when type = Sponsorship
-  isAnonymous: boolean,         // hides identity from other residents/public wall; admin always sees real name/flat
+  sponsorPackageName: string?,  // populated when type = Sponsorship (the selected item/package name)
+  sponsorItem: string?,         // populated when type = Sponsorship — free text, "what are they sponsoring"
+  carryForwardSourceEventId: string?,    // populated when type = Carry Forward
+  carryForwardSourceEventName: string?,  // populated when type = Carry Forward
+  carryForwardTransferId: string?,       // links back to the source event's carryForwardTransfers doc
+  isAnonymous: boolean,         // hides identity from other residents/public wall; admin always sees real name/flat;
+                                 // also takes display priority in the Contributions tab — an anonymous doc shows
+                                 // only in the Anonymous section, never also under Residents/Unassigned/External/Sponsored
   paymentMode: string,          // from community_settings.paymentModes list
   amountReceived: boolean,      // false = pending
   referenceId: string?,         // optional; shown when mode requires reference (UPI, Bank, etc.)
@@ -291,14 +315,16 @@ Per-event task board for coordinating volunteer work — admin creates and assig
 |------|-------------|-------------|
 | Regular Contribution | Standard flat contribution | — |
 | Special Contribution | One-off special amount (e.g. from donor, surplus) | `specialDescription` text box |
-| Sponsorship | Business/individual sponsor at a defined package tier | `sponsorPackageName` tier picker |
+| Sponsorship | Business/individual sponsor with a named item and optional preset amount | `sponsorPackageName` item picker, `sponsorItem` free-text "what are they sponsoring" |
 | External Donation | Donation from a non-resident source (broadband company, builder, store operator, etc.) | Donor/Organization Name instead of wing/block/flat; no flat selection shown |
-| Carry Forward *(legacy)* | Contribution carried from a previous event | — |
+| Carry Forward | Leftover balance brought in from any past event via Carry Forward Balance | `carryForwardSourceEventId`, `carryForwardSourceEventName`, `carryForwardTransferId` |
 | Ganesh Laddu *(legacy)* | In-kind contribution (laddus for prasad) | — |
 
 **Special Contribution:** when this type is selected, a multi-line text field ("Special Contribution Description") is shown and required. Saved as `specialDescription` in Firestore. Loaded back when editing.
 
-**Sponsorship:** tier picker populated from `events/{eventId}.sponsorPackages` (configured via Manage Sponsor Packages); shown publicly in the "Our Sponsors" wall unless anonymous.
+**Sponsorship:** item picker populated from `events/{eventId}.sponsorPackages` (configured via Manage Sponsor Packages, formerly called "tiers" — renamed to "items" since the amount is now optional and not every sponsor is priced on a fixed ladder). Contribution Type is a dropdown; Wing/Block/Flat are all independently optional for this type (a sponsor may be an outside business or a resident who only wants part of their address recorded). Shown publicly on the Event tab's "Sponsor Highlights" card (configurable, see §10) without a ₹ amount, and itemized with amounts in the Contributions tab's Sponsored Contributions section — but excluded from that tab's own total sum.
+
+**Carry Forward:** created via Event Tools → Carry Forward Balance, which lets an admin bring some or all of a past event's leftover balance (`totalCollected − totalSpent − carriedForwardOut`) into the current event. Tracked bidirectionally: the destination contribution and a `carryForwardTransfers` doc on the source event reference each other's IDs, so deleting either side can find and reverse the other. See §4 for the full data model.
 
 **External Donation:** admin-only (reuses the existing admin-only Record Contribution screen — no extra permission code needed). Wing/block/flat UI is skipped entirely; a required "Donor / Organization Name" field is shown instead. Counted into Collected/Cash-Online totals like any other contribution, shown in a dedicated "External" Overview chip and an admin-only donor list, and excluded from the Special vs Regular breakdown and the Leaderboard ranking (which already skips empty-flat entries).
 
@@ -331,6 +357,10 @@ Each contribution has a **Received / Pending** toggle:
 | Task checklist/dependencies embedded as arrays; comments as a subcollection | Checklist/dependencies are small and bounded (cheap whole-array rewrite); comments grow unbounded and need their own live stream, consistent with how contributions/expenses/volunteers are modeled |
 | Task assignment restricted to that event's approved volunteers | Volunteers register per-event; a global assignee pool would let tasks go to people not actually signed up for that event |
 | Overview Stats chips configurable per event type, default = all shown | Different event types care about different numbers; unset config must not silently hide chips on existing events |
+| Carry-forward bookkeeping recomputed fresh from `carryForwardTransfers` on every delete/restore/recalculate, not `FieldValue.increment()` (Session 10) | Increment-based tracking silently drifted whenever an entry was deleted or restored since there was no exact-reversal path; recompute-from-source-of-truth is self-healing even against already-corrupted historical data |
+| Carry-forward legacy fallback matches by `destEventId` + `amount`, filtering `reversed != true` client-side (Session 10) | Transfers created before the bidirectional-link system existed have no `carryForwardTransferId` to look up directly; Firestore `!=` queries exclude docs missing the field entirely, so the filter must happen client-side |
+| Anonymous flag takes display priority over `contributionType` in the Contributions tab (Session 10) | Contributions were rendering in two sections at once even though the grand total only counted them once — fixed by making section membership, not the total, respect the anonymous flag first |
+| Sponsorship amounts excluded from the Contributions tab's own total but not from `totalCollected` (Session 10) | The tab's local total answers "cash actually collected," which a nominal sponsor-item value would distort; `totalCollected`/Budget-vs-Actual is a separate, higher-stakes ledger left untouched |
 
 ---
 
@@ -390,6 +420,8 @@ Accessed from Admin panel → Settings icon.
 ### Event Settings — `event_type_settings_screen.dart`
 Accessed from Admin panel → Events tab → tune icon (⚙️).
 
+**Search (Session 10):** search box at the top of the screen filters a static registry of every leaf settings section (label + keywords + which group it lives in); tapping a result auto-expands that top-level group and scrolls it into view. Settings here are nested up to 3 levels deep (group → section → category), so this is the fastest way to reach something like Sponsor Packages without manually expanding each collapsed group in turn.
+
 **Pooja Schedule:**
 - Collapsable hierarchy: top section → EventCategory groups → individual event types
 - Default morning/evening slot capacity (stepper)
@@ -423,7 +455,8 @@ Accessed from Admin panel → Events tab → tune icon (⚙️).
 - Admin always sees it regardless of this setting (Session 8 change)
 
 **Sponsor Packages:**
-- Opt-in per event type; admin then defines the actual tiers per-event via Event Tools → Manage Sponsor Packages
+- Opt-in per event type; admin then defines the actual items per-event via Event Tools → Manage Sponsor Packages
+- Items ("tiers" pre-Session-10) have a name and optional amount (0/blank = no preset price, for in-kind items like a donated idol) plus optional perks text
 
 **Applicable Tabs (Session 9):**
 - Per event type, which of the 11 dashboard tabs even apply to this kind of event (e.g. no Prasad tab for a Community Potluck)
@@ -431,7 +464,7 @@ Accessed from Admin panel → Events tab → tune icon (⚙️).
 - Stored as `/eventTypeConfig/{typeId}.applicableTabs`; unset means all 11 shown (opt-out, safe default for existing events); at least one tab must stay applicable (Overview is the forced minimum)
 
 **Resident Visibility (Session 9):**
-- Per event type: which of the 7 resident-facing tabs (Event, Overview, Expenses, Volunteers, Competitions, Prasad, Leaderboard) residents see, plus section-level toggles within each of those tabs (e.g. Overview's Budget vs Actual / Stat Chips / Block Stats / Sponsors; Volunteers' invitation/appreciation banners and My Registrations; etc.)
+- Per event type: which of the 7 resident-facing tabs (Event, Overview, Expenses, Volunteers, Competitions, Prasad, Leaderboard) residents see, plus section-level toggles within each of those tabs (e.g. Overview's Budget vs Actual / Stat Chips / Block Stats / Sponsors; Event tab's Event Details / Sponsor Highlights (Session 10) / Event Schedule / Pooja Schedule; Volunteers' invitation/appreciation banners and My Registrations; etc.)
 - Opt-in (unset means nothing shown to residents) — the inverse default from Applicable Tabs, since this is a deliberate "turn on what residents should see" control, not a safety fallback
 - Stored as `/eventTypeConfig/{typeId}.residentTabs`, `.residentOverviewSections`, and `.residentTabSections.{tabId}`
 - Effective resident tabs = `residentTabs` ∩ `applicableTabs` — a tab only shows to residents if it's both marked applicable to the event type and explicitly enabled for residents

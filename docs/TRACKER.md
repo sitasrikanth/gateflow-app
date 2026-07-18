@@ -1,5 +1,5 @@
 # GateFlow — 12-Week Progress Tracker
-> Last updated: 2026-07-17 (Session 9) | Tell Claude what you completed and this file gets updated automatically.
+> Last updated: 2026-07-18 (Session 10) | Tell Claude what you completed and this file gets updated automatically.
 
 ---
 
@@ -652,6 +652,35 @@ Live 2024 Ganesh Chaturthi data import (141 contributions, 40 expenses, cross-va
 
 ---
 
+## SESSION 10 — CARRY-FORWARD SELF-HEALING, SPONSOR ITEMS, SETTINGS SEARCH (2026-07-18)
+
+Bug-fix-heavy session triggered by real usage of the carry-forward and sponsor-package features after Session 9's data import, plus a batch of UX cleanup requested along the way.
+
+| # | Feature | Status | Notes |
+|---|---|---|---|
+| 1 | Carry-forward delete/restore lifecycle rebuilt | ✅ Fixed | New `events/{sourceId}/carryForwardTransfers/{id}` subcollection bidirectionally linked to the destination contribution (`carryForwardTransferId` / `destContributionId`). Deleting the destination-side entry now reverses (`reversed: true`) the source transfer instead of leaving it stuck; `carriedForwardOut` on the source event is recomputed fresh from live transfers on every delete/restore/recalculate instead of trusting `FieldValue.increment`, eliminating the drift bugs that showed up under real use. |
+| 2 | "Recalculate Carry-Forward Balance" admin action | ✅ Built | New Event Tools menu item that cross-checks every transfer against its destination contribution's live status and rewrites `reversed`/`carriedForwardOut` from scratch — self-heals any already-broken data from before this fix existed. |
+| 3 | Restore removed for carry-forward Activity entries | ✅ Built | Deleting a carry-forward-out log entry is now log-only (no Restore button); admin re-imports the balance via Carry Forward Balance picker instead, which is self-healing by design. |
+| 4 | Legacy carry-forward data fallback | ✅ Built | Transfers created before the linking system existed (no `carryForwardTransferId`) are matched by `destEventId` + `amount` as a best-effort fallback, filtering `reversed != true` client-side (Firestore `!=` excludes docs missing the field entirely). |
+| 5 | Anonymous contributions given display priority | ✅ Fixed | A contribution's `isAnonymous` flag now takes precedence over its `contributionType` for *display* purposes — excluded from Residents/wing tiles, Unassigned, External Donations, and Sponsored Contributions sections (previously showed in two places at once); Overview's Anonymous vs External stat chips now use `if/else if` instead of independent `if` checks. Grand totals were never actually double-counted — only the visual listing was confusing. |
+| 6 | Cash/Online breakdown on External Donations + Anonymous sections | ✅ Built | Matches the breakdown already shown on Residents and Unassigned sections in the Contributions tab. |
+| 7 | Carried Forward chip merged into Anonymous/External card | ✅ Built | Moved out of its own standalone row in Overview and folded into `_AnonymousExternalCard` as a third chip, alongside Anonymous and External. |
+| 8 | Residents-contributed count in Collection Status by Block | ✅ Built | "`X of Y residents contributed`" line added above the wing list, computed from the same paid/total flat counts used to render the block chips below it. |
+| 9 | Sponsor Packages: amount made optional | ✅ Built | Not every sponsor item (e.g. a donated idol) has a fixed price; the Add/Edit dialog no longer requires an amount, and items with none just show the name (no "₹0"). |
+| 10 | Sponsor Packages: "Tier" renamed to "Item" | ✅ Built | "Add/Edit Sponsor Tier" → "Add/Edit Sponsor Item", "Tier Name" → "Item Name", empty-state and delete-confirm text updated to match, across both the management screen and the Add Contribution sponsor picker. |
+| 11 | Sponsor tier/item dialog validation fix | ✅ Fixed | Previously silently discarded the entered name/amount if invalid with zero feedback (dialog just closed and nothing appeared); now validates inline with a visible error message and doesn't close until valid. |
+| 12 | Sponsorship Wing/Block/Flat fully optional | ✅ Fixed | Previously required Flat if Wing/Block were set; now all three are independently optional with no cross-field requirement, and labels simplified to a plain "(Optional)" suffix. |
+| 13 | Contribution Type selector: cards → dropdown | ✅ Built | Replaced the tappable-card list with a `DropdownButtonFormField`, description shown below the selected value. |
+| 14 | Event Settings search bar | ✅ Built | Search box at the top of Event Settings filters a static registry of every leaf setting section; tapping a result auto-expands its parent group and scrolls it into view — solves the "can't find Sponsor Packages, it's 3 levels of collapsed sections deep" problem. |
+| 15 | Sponsor Highlights card moved from Overview to Event tab | ✅ Built | The "Thank You to Our Sponsors!" narrative card is no longer unconditionally shown on Overview; it now lives in the Event tab, gated behind a new `sponsor_highlights` toggle in Event Settings → Resident Visibility → Event Tab Sections (same opt-in pattern as Event Schedule/Pooja Schedule), positioned above Event Schedule per follow-up request. |
+| 16 | Sponsorship amounts excluded from Contributions tab total | ✅ Built | The tab's own "Total: ₹X" header sum now skips `Sponsorship`-type contributions (item value is often nominal, not cash collected) — a local display-only change, doesn't touch the event's official `totalCollected` ledger or Overview/Budget-vs-Actual figures. Individual amounts are still shown in the Sponsored Contributions section. |
+| 17 | Sponsor amount removed from the public highlight card | ✅ Built | The Event tab's Sponsor Highlights card no longer shows a ₹ figure per sponsor (still shown per-item in the admin Contributions tab). |
+| 18 | "sponsored X tier" text bug | ✅ Fixed | Dropped the redundant literal word "tier" from the sentence (was rendering e.g. "sponsored Laddu tier" even when "Laddu" was just the item name). |
+
+**Status legend:** ✅ Built | 🟡 Partial | 🔲 Planned
+
+---
+
 ## KEY DECISIONS LOG
 
 | Date | Decision | Reason |
@@ -692,6 +721,13 @@ Live 2024 Ganesh Chaturthi data import (141 contributions, 40 expenses, cross-va
 | 2026-07-17 | Admin tab bar/`TabController` made dynamic (built from `applicableTabs`) instead of a fixed 11-tab list | Required for Applicable Tabs to actually hide tabs from admins; the FAB's tab-detection logic was changed from raw index checks (`tab == 2`) to tab-identity checks since tab positions can now shift per event type |
 | 2026-07-17 | One generalized `_ResidentTabSectionsSection` widget trio reused across all 6 non-Overview tabs' section toggles | Avoids ~18 near-identical classes (3 per tab × 6 tabs); parameterized by tab id, emoji, title, help text, and section defs instead |
 | 2026-07-17 | Duplicate-import signature = flat/item + amount + date (not a full-row match) | Matches the realistic "accidentally re-imported the same file" case without requiring every column (payment mode, note, vendor) to also match; existing records fetched once per import, not per row |
+| 2026-07-18 | Carry-forward bookkeeping recomputed fresh from source-of-truth on every delete/restore/recalculate, not `FieldValue.increment()` | Increment-based tracking silently drifted whenever a carry-forward entry was deleted or restored, since there was no way to reverse exactly what was added; recomputing from the `carryForwardTransfers` subcollection + destination contribution status every time is self-healing even against already-corrupted historical data |
+| 2026-07-18 | Restore button removed for carry-forward Activity log entries (log-only, re-import instead) | Restoring a carry-forward-out log entry can't cleanly re-establish the link to a destination contribution that may have moved on; re-importing via the Carry Forward Balance picker goes through the same self-healing path as a fresh transfer |
+| 2026-07-18 | Anonymous flag takes display priority over `contributionType` in Contributions tab sections | Contributions were appearing in two sections at once (e.g. Anonymous + External) even though `grandTotal` only counted them once — the fix is purely which section a doc is *rendered* under, not a change to any total |
+| 2026-07-18 | Sponsor package amount made optional | Not every sponsor "item" is a fixed-price tier — some are in-kind donations (an idol, flowers) with no set price, but still worth tracking and recognizing |
+| 2026-07-18 | "Tier" renamed to "Item" throughout the sponsor packages UI | Once amount became optional, "tier" (implying a fixed pricing ladder) no longer matched what admins were actually using the feature for — arbitrary named sponsor items, priced or not |
+| 2026-07-18 | Sponsorship amounts excluded from the Contributions tab's own total, but not from `totalCollected` | The tab's local total answers "how much cash came in," which a nominal item value would distort; `totalCollected`/Budget-vs-Actual are a separate, unaffected ledger since changing those has much bigger financial-reporting consequences |
+| 2026-07-18 | Event Settings search is a static per-file keyword registry, not live-indexed | Settings sections are a small, fixed, rarely-changing set (~20 entries); a hardcoded registry is simpler and faster than building a generic search index for content that changes maybe once a session |
 
 ---
 

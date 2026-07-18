@@ -1,6 +1,6 @@
 # GateFlow — Product & Architecture Overview
 ### "Your community, connected."
-**Version:** 1.5 | **Date:** 2026-07-17 | **Stage:** Active Development (Week 9 of 12)
+**Version:** 1.6 | **Date:** 2026-07-18 | **Stage:** Active Development (Week 9 of 12)
 
 ---
 
@@ -288,6 +288,10 @@ Week 12    🔜 PUBLIC LAUNCH 🚀
 | — External Donations (non-resident sources) | ✅ Done |
 | — Configurable Overview Stats chips per event type | ✅ Done |
 | — Task Management (assign, checklist, dependencies, comments, photos) | ✅ Done |
+| — Applicable Tabs + Resident Visibility (two-tier tab/section access control) | ✅ Done |
+| — Self-healing carry-forward (bidirectional transfer tracking, recompute on delete/restore) | ✅ Done |
+| — Sponsor Packages: optional amount, renamed to "Items", Wing/Block/Flat fully optional | ✅ Done |
+| — Event Settings search bar (jump to any settings group) | ✅ Done |
 | Expense categories screen (admin) | ✅ Done |
 | Firestore rules (open for quickCode auth) | ✅ Done |
 | Firebase Storage (Blaze plan upgrade) | ✅ Done — used for receipts, expense/task photos |
