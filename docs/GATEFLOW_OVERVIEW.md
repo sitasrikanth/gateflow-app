@@ -1,6 +1,6 @@
 # GateFlow — Product & Architecture Overview
 ### "Your community, connected."
-**Version:** 1.6 | **Date:** 2026-07-18 | **Stage:** Active Development (Week 9 of 12)
+**Version:** 1.7 | **Date:** 2026-07-24 | **Stage:** Active Development (Week 9 of 12)
 
 ---
 
@@ -292,6 +292,12 @@ Week 12    🔜 PUBLIC LAUNCH 🚀
 | — Self-healing carry-forward (bidirectional transfer tracking, recompute on delete/restore) | ✅ Done |
 | — Sponsor Packages: optional amount, renamed to "Items", Wing/Block/Flat fully optional | ✅ Done |
 | — Event Settings search bar (jump to any settings group) | ✅ Done |
+| **Temple Manager module** (new top-level module, own admin tab + resident quick-access card) | ✅ Done |
+| — Donations (tiers, receipts, history, self-report/confirm) | ✅ Done |
+| — Daily Routine (schedule, priests, festivals, daily-reset ritual checklist) | ✅ Done |
+| — Assets (inventory + maintenance log) | ✅ Done |
+| — Anniversary Pooja Reminders (recurring, WhatsApp send, confirm/sponsor) | ✅ Done |
+| — Transparency Reports (stats, category breakdowns, combined audit trail) | ✅ Done |
 | Expense categories screen (admin) | ✅ Done |
 | Firestore rules (open for quickCode auth) | ✅ Done |
 | Firebase Storage (Blaze plan upgrade) | ✅ Done — used for receipts, expense/task photos |

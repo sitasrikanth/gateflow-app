@@ -10,6 +10,7 @@ import '../events/event_list_screen.dart';
 import 'resident_events_screen.dart';
 import '../../theme/app_theme.dart';
 import '../settings/theme_settings_sheet.dart';
+import '../temple/temple_home_screen.dart';
 
 class ResidentHomeScreen extends StatefulWidget {
   const ResidentHomeScreen({super.key});
@@ -464,6 +465,18 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen> {
                         subtitle: 'History',
                         color: const Color(0xFF1A73E8),
                         onTap: () {},
+                      ),
+                      const SizedBox(width: 12),
+                      _QuickActionCard(
+                        icon: Icons.temple_hindu_outlined,
+                        label: 'Temple',
+                        subtitle: 'Donations',
+                        color: Colors.deepOrange,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const TempleHomeScreen(isAdmin: false)),
+                        ),
                       ),
                     ],
                   ),

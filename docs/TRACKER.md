@@ -1,5 +1,5 @@
 # GateFlow — 12-Week Progress Tracker
-> Last updated: 2026-07-18 (Session 10) | Tell Claude what you completed and this file gets updated automatically.
+> Last updated: 2026-07-24 (Session 11) | Tell Claude what you completed and this file gets updated automatically.
 
 ---
 
@@ -681,6 +681,24 @@ Bug-fix-heavy session triggered by real usage of the carry-forward and sponsor-p
 
 ---
 
+## SESSION 11 — NEW MODULE: TEMPLE MANAGEMENT (2026-07-24)
+
+Community requested a new amenity module for a temple attached to the gated community, distinct from Events (which are time-boxed) since a temple is an ongoing amenity. Built as a brand-new top-level module — new "Temple" tab in admin nav (5th tab), new "Temple" Quick Access card on resident home — covering all 7 requested features across 5 sub-tabs. See `docs/modules/TEMPLE_MANAGER.md` for full detail.
+
+| # | Feature | Status | Notes |
+|---|---|---|---|
+| 1 | Temple Fund Contributions / Donations | ✅ Built | Configurable tiers (name, amount, benefits, recognition), donor details with an external/non-resident toggle, payment mode including a dedicated In-Kind option, categories, anonymous toggle, PDF receipts, searchable/filterable history, resident self-report → admin-confirm pending queue (same trust pattern as Events). Totals computed live from the collection rather than an incremented ledger field, avoiding the whole class of drift bugs just fixed on the Events side this session. |
+| 2 | Anniversary Pooja Reminders | ✅ Built | Recurring (month + day, no year) occasions sorted by days-until-next-occurrence; WhatsApp deep-link reminder (no push notification infra yet, matches the existing Follow-up tab's reminder pattern); resident Confirm / Sponsor-this-pooja actions (Sponsor opens the donation form). |
+| 3 | Transparency & Tracking | ✅ Built | Reports tab: Collected/Spent/Balance stats, category breakdowns (donations and expenses separately) as progress bars, and a merged chronological audit-trail feed combining donations + expenses + asset additions. Read-only for residents; admin gets the same view plus a Record Expense entry point. |
+| 4 | Daily Temple Routine | ✅ Built | Four sub-sections in one tab: configurable daily pooja schedule (time-sorted), priest assignments (name + assigned weekdays), festival/special-event calendar (dated, upcoming-sorted), and a ritual checklist whose completion state resets automatically every day (a new date is a fresh, empty log doc). |
+| 5 | Temple Donations | ✅ Built | Same feature as #1 — the original wishlist's #5 and #7 (Donation History) were the same thing described twice; merged into one. |
+| 6 | Temple Assets | ✅ Built | Inventory (idols, ornaments, utensils, furniture, sound systems, etc.) with category, condition (Good/Needs Repair/Damaged), estimated value, and a per-asset maintenance log subcollection (date, description, cost, performed by) — same "small bounded fields + unbounded subcollection" pattern as Task comments. |
+| 7 | Donation History | ✅ Built | Merged into #1/#5 (see above). |
+
+**Status legend:** ✅ Built | 🟡 Partial | 🔲 Planned
+
+---
+
 ## KEY DECISIONS LOG
 
 | Date | Decision | Reason |
@@ -728,6 +746,11 @@ Bug-fix-heavy session triggered by real usage of the carry-forward and sponsor-p
 | 2026-07-18 | "Tier" renamed to "Item" throughout the sponsor packages UI | Once amount became optional, "tier" (implying a fixed pricing ladder) no longer matched what admins were actually using the feature for — arbitrary named sponsor items, priced or not |
 | 2026-07-18 | Sponsorship amounts excluded from the Contributions tab's own total, but not from `totalCollected` | The tab's local total answers "how much cash came in," which a nominal item value would distort; `totalCollected`/Budget-vs-Actual are a separate, unaffected ledger since changing those has much bigger financial-reporting consequences |
 | 2026-07-18 | Event Settings search is a static per-file keyword registry, not live-indexed | Settings sections are a small, fixed, rarely-changing set (~20 entries); a hardcoded registry is simpler and faster than building a generic search index for content that changes maybe once a session |
+| 2026-07-24 | Temple built as a new top-level module (own admin tab + resident quick-access card), not nested inside Events | A temple is a standing amenity, not a time-boxed event with a start/end date — forcing it into the Events data model (contributions/expenses per-event) would be the wrong shape |
+| 2026-07-24 | Temple donation/expense totals computed live from their collections, never an incremented ledger field | Sidesteps entirely the class of `totalCollected` drift bugs this session spent significant effort fixing on the Events side (increment desyncing on delete/restore) — a new module gets to start clean |
+| 2026-07-24 | Temple PDF receipt and its save/share helpers duplicated in their own file rather than reused from `event_pdf_report.dart` | Keeps the Temple module decoupled from Events internals, matching the "new top-level module" architecture decision; the duplication is small (one receipt layout + a bottom-sheet helper) |
+| 2026-07-24 | Ritual checklist completion stored per-day (`templeRitualLog/{yyyy-MM-dd}`), template stored separately in `appSettings/templeRoutine` | A checklist that's redone every day needs today's state to reset automatically; storing the template and the daily instance separately means a new date is a fresh empty log with no extra code |
+| 2026-07-24 | Anniversary reminders store month+day only (no year), next-occurrence computed at read time | These are yearly recurring occasions — storing a specific year would require updating every record annually; computing "next occurrence" from today's date handles the year-wraparound automatically |
 
 ---
 

@@ -15,6 +15,7 @@ import '../../theme/app_theme.dart';
 import '../settings/theme_settings_sheet.dart';
 import '../../utils/event_status.dart';
 import '../events/featured_event_banner.dart';
+import '../temple/temple_home_screen.dart';
 
 class AdminHomeScreen extends StatefulWidget {
   const AdminHomeScreen({super.key});
@@ -30,7 +31,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this, initialIndex: 3);
+    _tabController = TabController(length: 5, vsync: this, initialIndex: 3);
   }
 
   @override
@@ -111,6 +112,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen>
                     Tab(text: 'Guards'),
                     Tab(text: 'Visitors'),
                     Tab(text: 'Events'),
+                    Tab(text: 'Temple'),
                   ],
                 ),
               ],
@@ -126,6 +128,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen>
                 _GuardsTab(),
                 _VisitorsTab(),
                 _EventsTab(),
+                TempleHomeBody(isAdmin: true),
               ],
             ),
           ),

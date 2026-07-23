@@ -5511,7 +5511,11 @@ class _VolunteersTabState extends State<_VolunteersTab> {
           ),
           const SizedBox(width: 10),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+            Text(name,
+                style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                    color: Theme.of(context).textTheme.bodyLarge?.color)),
             if (flat.isNotEmpty || phone.isNotEmpty)
               Text([if (flat.isNotEmpty) flat, if (phone.isNotEmpty) phone].join('  ·  '),
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
@@ -6134,8 +6138,8 @@ class _MyRegistrationCard extends StatelessWidget {
         ]),
         const Divider(height: 14),
         Row(children: [
-          Text('Role: ', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-          Text(role, style: const TextStyle(fontSize: 13)),
+          Text('Role: ', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.grey.shade800)),
+          Text(role, style: TextStyle(fontSize: 13, color: Colors.grey.shade800)),
         ]),
         if (note.isNotEmpty) ...[
           const SizedBox(height: 4),
@@ -6190,7 +6194,11 @@ class _PendingCard extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+            Text(name,
+                style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                    color: Colors.grey.shade800)),
             Text([if (flat.isNotEmpty) flat, role].where((s) => s.isNotEmpty).join('  ·  '),
                 style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
           ])),
